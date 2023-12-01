@@ -432,12 +432,16 @@ int run_inference(OrtSession* session,
    FILE* read_source;
 #if 1
 
+#ifdef __clang__
    #pragma clang diagnostic push
    #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif //__clang__
 
    setmode(_fileno(stdin), O_BINARY);
 
+#ifdef __clang__
    #pragma clang diagnostic pop
+#endif //__clang__
 
    read_source = stdin;
 #else
