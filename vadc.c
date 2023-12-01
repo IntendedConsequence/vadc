@@ -183,21 +183,23 @@ void process_chunks(size_t window_size_samples,
    }
 }
 
-struct FeedState
+typedef int b32;
+
+typedef struct FeedState
 {
    int temp_end;
    int current_speech_start;
-   bool triggered;
-};
+   b32 triggered;
+} FeedState;
 
-struct FeedProbabilityResult
+typedef struct FeedProbabilityResult
 {
    int speech_start;
    int speech_end;
-   bool is_valid;
-};
+   b32 is_valid;
+} FeedProbabilityResult;
 
-FeedProbabilityResult feed_probability(FeedState &state,
+FeedProbabilityResult feed_probability(FeedState *state,
                       int min_silence_duration_chunks,
                       int min_speech_duration_chunks,
                       float probability,
@@ -206,47 +208,47 @@ FeedProbabilityResult feed_probability(FeedState &state,
                       int global_chunk_index
                       )
 {
-   FeedProbabilityResult result = {};
+   FeedProbabilityResult result = {0};
 
-   if (probability >= threshold && state.temp_end > 0)
+   if (probability >= threshold && state->temp_end > 0)
    {
-      state.temp_end = 0;
+      state->temp_end = 0;
    }
 
-   if (!state.triggered)
+   if (!state->triggered)
    {
 
       if (probability >= threshold)
       {
-         state.triggered = true;
-         state.current_speech_start = global_chunk_index;
+         state->triggered = 1;
+         state->current_speech_start = global_chunk_index;
       }
    }
    else
    {
       if (probability < neg_threshold)
       {
-         if (state.temp_end == 0)
+         if (state->temp_end == 0)
          {
-            state.temp_end = global_chunk_index;
+            state->temp_end = global_chunk_index;
          }
-         if (global_chunk_index - state.temp_end < min_silence_duration_chunks)
+         if (global_chunk_index - state->temp_end < min_silence_duration_chunks)
          {
 
          }
          else
          {
 
-            if (state.temp_end - state.current_speech_start >= min_speech_duration_chunks)
+            if (state->temp_end - state->current_speech_start >= min_speech_duration_chunks)
             {
-               result.speech_start = state.current_speech_start;
-               result.speech_end = state.temp_end;
-               result.is_valid = true;
+               result.speech_start = state->current_speech_start;
+               result.speech_end = state->temp_end;
+               result.is_valid = 1;
             }
 
-            state.current_speech_start = 0;
-            state.temp_end = 0;
-            state.triggered = false;
+            state->current_speech_start = 0;
+            state->temp_end = 0;
+            state->triggered = 0;
          }
       }
    }
@@ -315,7 +317,7 @@ int run_inference(OrtSession* session,
                   float threshold,
                   float neg_threshold,
                   float speech_pad_ms,
-                  bool raw_probabilities) {
+                  b32 raw_probabilities) {
    OrtMemoryInfo* memory_info;
    ORT_ABORT_ON_ERROR(g_ort->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &memory_info));
 
@@ -331,13 +333,13 @@ int run_inference(OrtSession* session,
 
    const float chunk_duration_ms = window_size_samples / (float)sample_rate * 1000.0f;
 
-   int min_speech_duration_chunks = min_speech_duration_ms / chunk_duration_ms + 0.5f;
+   int min_speech_duration_chunks = (int)(min_speech_duration_ms / chunk_duration_ms + 0.5f);
    if (min_speech_duration_chunks < 1)
    {
       min_speech_duration_chunks = 1;
    }
 
-   int min_silence_duration_chunks = min_silence_duration_ms / chunk_duration_ms + 0.5f;
+   int min_silence_duration_chunks = (int)(min_silence_duration_ms / chunk_duration_ms + 0.5f);
    if (min_silence_duration_chunks < 1)
    {
       min_silence_duration_chunks = 1;
@@ -402,7 +404,7 @@ int run_inference(OrtSession* session,
 
    const char* input_names[] = {"input", "h0", "c0"};
    const char* output_names[] = {"output", "hn", "cn"};
-   OrtValue* output_tensors[3] = {};
+   OrtValue* output_tensors[3] = {0};
 
    OrtValue** output_prob_tensor = &output_tensors[0];
    int64_t prob_shape[] = {1, 2, 1};
@@ -442,10 +444,10 @@ int run_inference(OrtSession* session,
    read_source = fopen("RED.s16le", "rb");
 #endif
 
-   FeedState state = {};
+   FeedState state = {0};
    int global_chunk_index = 0;
 
-   FeedProbabilityResult buffered = {};
+   FeedProbabilityResult buffered = {0};
 
 
    size_t values_read = 0;
@@ -509,7 +511,7 @@ int run_inference(OrtSession* session,
          {
             float probability = probabilities_buffer[i];
 
-         FeedProbabilityResult feed_result = feed_probability(state,
+            FeedProbabilityResult feed_result = feed_probability(&state,
                           min_silence_duration_chunks,
                           min_speech_duration_chunks,
                           probability,
@@ -546,13 +548,13 @@ int run_inference(OrtSession* session,
       // NOTE(irwin): snap last speech segment to actual audio length
       if (state.triggered)
       {
-      int audio_length_samples = (global_chunk_index - 1) * window_size_samples;
+      int audio_length_samples = (int)((global_chunk_index - 1) * window_size_samples);
       if (audio_length_samples - (state.current_speech_start * window_size_samples) > (min_speech_duration_chunks * window_size_samples))
       {
          FeedProbabilityResult final_segment;
-         final_segment.is_valid = true;
+         final_segment.is_valid = 1;
          final_segment.speech_start = state.current_speech_start;
-         final_segment.speech_end = audio_length_samples / window_size_samples;
+         final_segment.speech_end = (int)(audio_length_samples / window_size_samples);
 
          buffered = combine_or_emit_speech_segment(buffered, final_segment,
                                                       speech_pad_ms,
@@ -573,11 +575,11 @@ int run_inference(OrtSession* session,
 }
 
 
-struct ArgOption
+typedef struct ArgOption
 {
    const char *name;
    float value;
-};
+} ArgOption;
 
 enum ArgOptionIndex
 {
@@ -609,7 +611,7 @@ int main(int arg_count, char **arg_array)
    float neg_threshold;
    float speech_pad_ms;
 
-   bool raw_probabilities = false;
+   b32 raw_probabilities = 0;
 
    for (int arg_index = 1; arg_index < arg_count; ++arg_index)
    {
@@ -631,7 +633,7 @@ int main(int arg_count, char **arg_array)
                if (arg_value_index < arg_count)
                {
                   const char *arg_value_string = arg_array[arg_value_index];
-                  float arg_value = atof(arg_value_string);
+                  float arg_value = (float)atof(arg_value_string);
                   if (arg_value > 0.0f)
                   {
                      option->value = arg_value;
@@ -668,9 +670,10 @@ int main(int arg_count, char **arg_array)
    ORT_ABORT_ON_ERROR(g_ort->SetIntraOpNumThreads(session_options, 1));
    ORT_ABORT_ON_ERROR(g_ort->SetInterOpNumThreads(session_options, 1));
 
-   const size_t model_path_buffer_size = 1024;
-   wchar_t model_path[model_path_buffer_size];
-   GetModuleFileNameW(NULL, model_path, model_path_buffer_size);
+#define MODEL_PATH_BUFFER_SIZE 1024
+   const size_t model_path_buffer_size = MODEL_PATH_BUFFER_SIZE;
+   wchar_t model_path[MODEL_PATH_BUFFER_SIZE];
+   GetModuleFileNameW(NULL, model_path, (DWORD)model_path_buffer_size);
 
    wchar_t* last_slash = wcsrchr( model_path, L'\\' );
    if (last_slash)
