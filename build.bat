@@ -8,4 +8,4 @@ set CommonLinkerFlags=/incremental:no
 
 %CLANG% %CommonCompilerFlags% vadc.c /link %CommonLinkerFlags% kernel32.lib lib\onnxruntime.lib
 
-%CLANG% %CommonCompilerFlags% filter_script.cpp /link %CommonLinkerFlags% kernel32.lib
+%CLANG% %CommonCompilerFlags% filter_script.c /link %CommonLinkerFlags% kernel32.lib

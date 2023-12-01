@@ -20,5 +20,5 @@ set CL=/Zi /O1
 set LINK=kernel32.lib
 
 cl.exe /nologo vadc.c /W4 /link /INCREMENTAL:NO /SUBSYSTEM:CONSOLE lib\onnxruntime.lib
-cl.exe /nologo filter_script.cpp /W4 /link /INCREMENTAL:NO /SUBSYSTEM:CONSOLE
+cl.exe /nologo filter_script.c /W4 /link /INCREMENTAL:NO /SUBSYSTEM:CONSOLE
 del *.obj *.res >nul
