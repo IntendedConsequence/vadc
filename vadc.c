@@ -12,6 +12,10 @@
 
 #define SILERO_V4 0
 
+#ifndef FROM_STDIN
+#define FROM_STDIN 1
+#endif
+
 const OrtApi* g_ort = NULL;
 
 #if SILERO_V4
@@ -459,7 +463,7 @@ int run_inference(OrtSession* session,
    float *probabilities_buffer = (float *)malloc(chunks_count * sizeof(float));
 
    FILE* read_source;
-#if 1
+#if FROM_STDIN
 
 #ifdef __clang__
    #pragma clang diagnostic push
