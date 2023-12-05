@@ -1,4 +1,5 @@
-#include <stdio.h>
+#include "vadc.h"
+
 #include <assert.h>
 #include <io.h>
 #include <fcntl.h>
@@ -6,12 +7,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
-#include "include/onnxruntime_c_api.h"
-
-#include "utils.h"
-
-#define SILERO_V4 0
-
+#include "onnx_helpers.c"
 #ifndef FROM_STDIN
 #define FROM_STDIN 1
 #endif
@@ -37,7 +33,6 @@ static FILE *getDebugFile()
 }
 
 
-const OrtApi* g_ort = NULL;
 
 #if SILERO_V4
 const wchar_t* model_filename = L"silero_vad_v4.onnx";
@@ -45,122 +40,6 @@ const wchar_t* model_filename = L"silero_vad_v4.onnx";
 const wchar_t* model_filename = L"silero_vad_v3.onnx";
 #endif
 
-#define ArrayCount(x) (sizeof(x) / sizeof((x)[0]))
-
-#define ORT_ABORT_ON_ERROR(expr)                             \
-  do {                                                       \
-    OrtStatus* onnx_status = (expr);                         \
-    if (onnx_status != NULL) {                               \
-      const char* msg = g_ort->GetErrorMessage(onnx_status); \
-      fprintf(stderr, "%s\n", msg);                          \
-      g_ort->ReleaseStatus(onnx_status);                     \
-      abort();                                               \
-    }                                                        \
-  } while (0);
-
-void verify_input_output_count(OrtSession* session) {
-   OrtAllocator *allocator;
-   ORT_ABORT_ON_ERROR(g_ort->GetAllocatorWithDefaultOptions(&allocator));
-
-   size_t count;
-   ORT_ABORT_ON_ERROR(g_ort->SessionGetInputCount(session, &count));
-   for (size_t i = 0; i < count; ++i)
-   {
-      char *input_name;
-      g_ort->SessionGetInputName(session, i, allocator, &input_name);
-      printf("Input index %zu name: %s\n", i, input_name);
-   }
-   // assert(count == 1);
-
-   ORT_ABORT_ON_ERROR(g_ort->SessionGetOutputCount(session, &count));
-   for (size_t i = 0; i < count; ++i)
-   {
-      char *output_name;
-      g_ort->SessionGetOutputName(session, i, allocator, &output_name);
-      printf("Output index %zu name: %s\n", i, output_name);
-   }
-   // assert(count == 1);
-}
-
-void create_tensor(OrtMemoryInfo* memory_info, OrtValue** out_tensor, int64_t *shape, size_t shape_count, float* input, size_t input_count)
-{
-   const size_t input_size = input_count * sizeof(float);
-
-   *out_tensor = NULL;
-   ORT_ABORT_ON_ERROR(g_ort->CreateTensorWithDataAsOrtValue(memory_info, input, input_size, shape,
-                                                           shape_count, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT,
-                                                           out_tensor));
-   assert(*out_tensor != NULL);
-   int is_tensor;
-   ORT_ABORT_ON_ERROR(g_ort->IsTensor(*out_tensor, &is_tensor));
-   assert(is_tensor);
-}
-
-void create_tensor_int64(OrtMemoryInfo* memory_info, OrtValue** out_tensor, int64_t *shape, size_t shape_count, int64_t* input, size_t input_count)
-{
-   const size_t input_size = input_count * sizeof(int64_t);
-
-   *out_tensor = NULL;
-   ORT_ABORT_ON_ERROR(g_ort->CreateTensorWithDataAsOrtValue(memory_info, input, input_size, shape,
-                                                           shape_count, ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64,
-                                                           out_tensor));
-   assert(*out_tensor != NULL);
-   int is_tensor;
-   ORT_ABORT_ON_ERROR(g_ort->IsTensor(*out_tensor, &is_tensor));
-   assert(is_tensor);
-}
-
-int enable_cuda(OrtSessionOptions* session_options)
-{
-   // OrtCUDAProviderOptions is a C struct. C programming language doesn't have constructors/destructors.
-   OrtCUDAProviderOptions o;
-   // Here we use memset to initialize every field of the above data struct to zero.
-   memset(&o, 0, sizeof(o));
-   // But is zero a valid value for every variable? Not quite. It is not guaranteed. In the other words: does every enum
-   // type contain zero? The following line can be omitted because EXHAUSTIVE is mapped to zero in onnxruntime_c_api.h.
-   o.cudnn_conv_algo_search = OrtCudnnConvAlgoSearchExhaustive;
-   o.gpu_mem_limit = SIZE_MAX;
-   OrtStatus* onnx_status = g_ort->SessionOptionsAppendExecutionProvider_CUDA(session_options, &o);
-   if (onnx_status != NULL)
-   {
-      const char* msg = g_ort->GetErrorMessage(onnx_status);
-      fprintf(stderr, "%s\n", msg);
-      g_ort->ReleaseStatus(onnx_status);
-      return -1;
-   }
-   return 0;
-}
-
-typedef struct VADC_Context
-{
-   const OrtValue *const *input_tensors;
-   OrtValue **output_tensors;
-   OrtSession *session;
-   const char **input_names;
-   const char **output_names;
-   const size_t inputs_count;
-   const size_t outputs_count;
-   
-   float *output_tensor_state_h;
-   float *output_tensor_state_c;
-   float *output_tensor_prob;
-   
-   const size_t window_size_samples;
-   float *input_tensor_samples;
-
-   const size_t state_count;
-   float *input_tensor_state_h;
-   float *input_tensor_state_c;
-} VADC_Context;
-
-typedef struct VADC_Chunk_Result
-{
-   float probability;
-
-   size_t state_count;
-   float *state_h;
-   float *state_c;
-} VADC_Chunk_Result;
 
 VADC_Chunk_Result run_inference_on_single_chunk( VADC_Context context,
                                                  const size_t samples_count,
@@ -245,25 +124,9 @@ void process_chunks( VADC_Context context,
                                                                 context.output_tensor_state_c );
 
       *probabilities_buffer++ = result.probability;
-
-      // TODO(irwin): copy state
    }
 }
 
-
-typedef struct FeedState
-{
-   int temp_end;
-   int current_speech_start;
-   b32 triggered;
-} FeedState;
-
-typedef struct FeedProbabilityResult
-{
-   int speech_start;
-   int speech_end;
-   b32 is_valid;
-} FeedProbabilityResult;
 
 FeedProbabilityResult feed_probability(FeedState *state,
                       int min_silence_duration_chunks,
@@ -323,8 +186,12 @@ FeedProbabilityResult feed_probability(FeedState *state,
    return result;
 }
 
-#define to_ms(in_chunks) (in_chunks / chunks_per_second)
-void emit_speech_segment(FeedProbabilityResult segment, float speech_pad_ms, float chunks_per_second)
+static inline float to_ms(int in_chunks)
+{
+   return in_chunks / chunks_per_second;
+}
+
+void emit_speech_segment(FeedProbabilityResult segment, float speech_pad_ms)
 {
    const float speech_pad_s = speech_pad_ms / 1000.0f;
 
@@ -342,8 +209,7 @@ void emit_speech_segment(FeedProbabilityResult segment, float speech_pad_ms, flo
 }
 
 FeedProbabilityResult combine_or_emit_speech_segment(FeedProbabilityResult buffered, FeedProbabilityResult feed_result,
-                                                     float speech_pad_ms,
-                                                     float chunks_per_second)
+                                                     float speech_pad_ms)
 {
    FeedProbabilityResult result = buffered;
 
@@ -364,7 +230,7 @@ FeedProbabilityResult combine_or_emit_speech_segment(FeedProbabilityResult buffe
       }
       else
       {
-         emit_speech_segment(result, speech_pad_ms, chunks_per_second);
+         emit_speech_segment(result, speech_pad_ms);
 
          result = feed_result;
       }
@@ -393,12 +259,6 @@ int run_inference(OrtSession* session,
    // const float min_silence_duration_ms = 100.0f;
    // const float speech_pad_ms           = 30.0f;
 
-   const size_t window_size_samples = 1536;
-   const size_t sample_rate = 16000;
-   const float chunks_per_second = (float)sample_rate / window_size_samples;
-
-   const float chunk_duration_ms = window_size_samples / (float)sample_rate * 1000.0f;
-
    int min_speech_duration_chunks = (int)(min_speech_duration_ms / chunk_duration_ms + 0.5f);
    if (min_speech_duration_chunks < 1)
    {
@@ -418,11 +278,7 @@ int run_inference(OrtSession* session,
    int64_t input_tensor_samples_shape[] = {1, input_count};
    const size_t input_tensor_samples_shape_count = ArrayCount(input_tensor_samples_shape);
 
-#if SILERO_V4
-   OrtValue* input_tensors[4];
-#else
-   OrtValue* input_tensors[3];
-#endif
+   OrtValue* input_tensors[SILERO_INPUT_TENSOR_COUNT];
 
    create_tensor(memory_info, &input_tensors[0], input_tensor_samples_shape, input_tensor_samples_shape_count, input_tensor_samples, input_count);
 
@@ -455,28 +311,22 @@ int run_inference(OrtSession* session,
    OrtValue** sr_tensor = &input_tensors[3];
    create_tensor_int64(memory_info, sr_tensor, sr_shape, sr_shape_count, &sr, 1);
 
-   // g_ort->ReleaseMemoryInfo(memory_info);
-
    const char* input_names[] = {"input", "h", "c", "sr"};
-   const char* output_names[] = {"output", "hn", "cn"};
-   OrtValue* output_tensors[3] = {};
 
-   OrtValue** output_prob_tensor = &output_tensors[0];
    int64_t prob_shape[] = {1, 1};
-   const size_t prob_shape_count = ArrayCount(prob_shape);
    float prob[1];
 #else
-   // g_ort->ReleaseMemoryInfo(memory_info);
-
    const char* input_names[] = {"input", "h0", "c0"};
-   const char* output_names[] = {"output", "hn", "cn"};
-   OrtValue* output_tensors[3] = {0};
 
-   OrtValue** output_prob_tensor = &output_tensors[0];
    int64_t prob_shape[] = {1, 2, 1};
-   const size_t prob_shape_count = ArrayCount(prob_shape);
    float prob[2];
 #endif
+
+   const char *output_names[] = { "output", "hn", "cn" };
+   OrtValue *output_tensors[3] = { 0 };
+   OrtValue **output_prob_tensor = &output_tensors[0];
+   const size_t prob_shape_count = ArrayCount( prob_shape );
+
    create_tensor(memory_info, output_prob_tensor, prob_shape, prob_shape_count, &prob[0], prob_shape_count);
 
    OrtValue** state_h_out_tensor = &output_tensors[1];
@@ -484,6 +334,8 @@ int run_inference(OrtSession* session,
 
    OrtValue** state_c_out_tensor = &output_tensors[2];
    create_tensor(memory_info, state_c_out_tensor, state_shape, state_shape_count, state_c_out, state_count);
+
+   // g_ort->ReleaseMemoryInfo(memory_info);
 
 
    // NOTE(irwin): read samples from a file or stdin and run inference
@@ -606,8 +458,7 @@ int run_inference(OrtSession* session,
          if (feed_result.is_valid)
          {
             buffered = combine_or_emit_speech_segment(buffered, feed_result,
-                                                      speech_pad_ms,
-                                                      chunks_per_second);
+                                                      speech_pad_ms);
          }
 
             // printf("%f\n", probability);
@@ -640,14 +491,13 @@ int run_inference(OrtSession* session,
          final_segment.speech_end = (int)(audio_length_samples / window_size_samples);
 
          buffered = combine_or_emit_speech_segment(buffered, final_segment,
-                                                      speech_pad_ms,
-                                                      chunks_per_second);
+                                                      speech_pad_ms);
       }
    }
 
    if (buffered.is_valid)
       {
-         emit_speech_segment(buffered, speech_pad_ms, chunks_per_second);
+         emit_speech_segment(buffered, speech_pad_ms);
       }
    }
 
