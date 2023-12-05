@@ -8,6 +8,8 @@
 
 #include "include/onnxruntime_c_api.h"
 
+#include "utils.h"
+
 #define SILERO_V4 0
 
 const OrtApi* g_ort = NULL;
@@ -104,17 +106,22 @@ int enable_cuda(OrtSessionOptions* session_options)
    return 0;
 }
 
-void process_chunks(const size_t window_size_samples,
+typedef struct
+{
+   const OrtValue* const* input_tensors;
+   OrtValue** output_tensors;
+   OrtSession* session;
+   const char** input_names;
+   const char** output_names;
+   const size_t state_count;
+} VADC_Context;
+
+void process_chunks( VADC_Context context, 
+                     const size_t window_size_samples,
                     const size_t buffered_samples_count,
                     float *input_tensor_samples,
                     const float *samples_buffer_float32,
-                    const OrtValue* const input_tensors[],
-                    OrtValue* output_tensors[],
-                    OrtSession* session,
-                    const char* input_names[],
-                    const char* output_names[],
                     float prob[],
-                    const size_t state_count,
                     float state_h[],
                     float state_h_out[],
                     float state_c[],
@@ -148,19 +155,19 @@ void process_chunks(const size_t window_size_samples,
       size_t inputs_count = 3;
 #endif
 
-      ORT_ABORT_ON_ERROR(g_ort->Run(session,
+      ORT_ABORT_ON_ERROR(g_ort->Run(context.session,
                                     NULL,
-                                    input_names,
-                                    input_tensors,
+                                    context.input_names,
+                                    context.input_tensors,
                                     inputs_count,
-                                    output_names,
+                                    context.output_names,
                                     3,
-                                    output_tensors)
+                                    context.output_tensors)
       );
-      assert(output_tensors[0] != NULL);
+      assert(context.output_tensors[0] != NULL);
 
       int is_tensor;
-      ORT_ABORT_ON_ERROR(g_ort->IsTensor(output_tensors[0], &is_tensor));
+      ORT_ABORT_ON_ERROR(g_ort->IsTensor(context.output_tensors[0], &is_tensor));
       assert(is_tensor);
 
       #if SILERO_V4
@@ -171,19 +178,17 @@ void process_chunks(const size_t window_size_samples,
       *probabilities_buffer++ = prob[1];
       #endif
 
-      for (size_t i = 0; i < state_count; ++i)
+      for (size_t i = 0; i < context.state_count; ++i)
       {
          state_h[i] = state_h_out[i];
       }
 
-      for (size_t i = 0; i < state_count; ++i)
+      for (size_t i = 0; i < context.state_count; ++i)
       {
          state_c[i] = state_c_out[i];
       }
    }
 }
-
-typedef int b32;
 
 typedef struct FeedState
 {
@@ -448,6 +453,17 @@ int run_inference(OrtSession* session,
    read_source = fopen("RED.s16le", "rb");
 #endif
 
+
+   VADC_Context context =
+   {
+      .input_tensors = input_tensors,
+      .output_tensors = output_tensors,
+      .session = session,
+      .input_names = input_names,
+      .output_names = output_names,
+      .state_count = state_count
+   };
+
    FeedState state = {0};
    int global_chunk_index = 0;
 
@@ -492,17 +508,12 @@ int run_inference(OrtSession* session,
          break;
       }
 
-      process_chunks(window_size_samples,
+      process_chunks( context,
+                      window_size_samples,
                      values_read,
                      input_tensor_samples,
                      samples_buffer_float32,
-                     input_tensors,
-                     output_tensors,
-                     session,
-                     input_names,
-                     output_names,
                      prob,
-                     state_count,
                      state_h,
                      state_h_out,
                      state_c,
