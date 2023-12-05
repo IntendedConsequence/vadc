@@ -17,12 +17,14 @@
 #define DEBUG_WRITE_STATE_TO_FILE 0
 #endif
 
+#if DEBUG_WRITE_STATE_TO_FILE
 typedef struct DEBUG_Silero_State 
 {
    float samples[1536];
    float state_h[128];
    float state_c[128];
 } DEBUG_Silero_State;
+
 static FILE *getDebugFile()
 {
    static FILE *debug_file = NULL;
@@ -32,7 +34,7 @@ static FILE *getDebugFile()
    }
    return debug_file;
 }
-
+#endif
 
 
 static const wchar_t model_filename[] = SILERO_FILENAME;
