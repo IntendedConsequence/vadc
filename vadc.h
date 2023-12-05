@@ -62,6 +62,8 @@ typedef struct VADC_Context
    const size_t state_count;
    float *input_tensor_state_h;
    float *input_tensor_state_c;
+   b32 is_silero_v4;
+   s32 silero_probability_out_index;
 } VADC_Context;
 
 typedef struct VADC_Chunk_Result

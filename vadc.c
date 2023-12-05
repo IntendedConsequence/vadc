@@ -91,7 +91,7 @@ VADC_Chunk_Result run_inference_on_single_chunk( VADC_Context context,
    ORT_ABORT_ON_ERROR( g_ort->IsTensor( context.output_tensors[0], &is_tensor ) );
    assert( is_tensor );
 
-   float result_probability = context.output_tensor_prob[SILERO_PROBABILITY_OUT_INDEX];
+   float result_probability = context.output_tensor_prob[context.silero_probability_out_index];
    result.probability = result_probability;
 
    result.state_h = context.output_tensor_state_h;
@@ -249,6 +249,11 @@ int run_inference(OrtSession* session,
                   float neg_threshold,
                   float speech_pad_ms,
                   b32 raw_probabilities) {
+   size_t model_input_count = 0;
+   ORT_ABORT_ON_ERROR(g_ort->SessionGetInputCount( session, &model_input_count ));
+   Assert( model_input_count == 3 || model_input_count == 4 );
+   const b32 is_silero_v4 = model_input_count == 4;
+
    OrtMemoryInfo* memory_info;
    ORT_ABORT_ON_ERROR(g_ort->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &memory_info));
 
@@ -277,7 +282,8 @@ int run_inference(OrtSession* session,
    int64_t input_tensor_samples_shape[] = {1, input_count};
    const size_t input_tensor_samples_shape_count = ArrayCount(input_tensor_samples_shape);
 
-   OrtValue* input_tensors[SILERO_INPUT_TENSOR_COUNT];
+   const size_t silero_input_tensor_count = is_silero_v4 ? 4 : 3;
+   OrtValue* input_tensors[4];
 
    create_tensor(memory_info, &input_tensors[0], input_tensor_samples_shape, input_tensor_samples_shape_count, input_tensor_samples, input_count);
 
@@ -302,8 +308,8 @@ int run_inference(OrtSession* session,
 
    OrtValue** state_c_tensor = &input_tensors[2];
    create_tensor(memory_info, state_c_tensor, state_shape, state_shape_count, state_c, state_count);
-
-   if ( SILERO_V4 )
+   
+   if ( is_silero_v4 )
    {
       int64_t sr = 16000;
       int64_t sr_shape[] = { 1, 1 };
@@ -329,8 +335,8 @@ int run_inference(OrtSession* session,
    VAR_UNUSED( prob_shape_count_v4 );
    VAR_UNUSED( prob_shape_count_v3 );
 
-   const char **input_names = SILERO_V4 ? input_names_v4 : input_names_v3;
-   int64_t *prob_shape = SILERO_V4 ? prob_shape_v4 : prob_shape_v3;
+   const char **input_names = is_silero_v4 ? input_names_v4 : input_names_v3;
+   int64_t *prob_shape = is_silero_v4 ? prob_shape_v4 : prob_shape_v3;
 
    float prob[2];
 
@@ -338,7 +344,7 @@ int run_inference(OrtSession* session,
    OrtValue *output_tensors[3] = { 0 };
    OrtValue **output_prob_tensor = &output_tensors[0];
    
-   const size_t prob_shape_count = SILERO_V4 ? prob_shape_count_v4 : prob_shape_count_v3;
+   const size_t prob_shape_count = is_silero_v4 ? prob_shape_count_v4 : prob_shape_count_v3;
 
    create_tensor(memory_info, output_prob_tensor, prob_shape, prob_shape_count, &prob[0], prob_shape_count);
 
@@ -396,8 +402,10 @@ int run_inference(OrtSession* session,
       .output_tensor_prob = prob,
       .input_tensor_samples = input_tensor_samples,
 
-      .inputs_count = SILERO_INPUT_TENSOR_COUNT,
-      .outputs_count = 3
+      .inputs_count = silero_input_tensor_count,
+      .outputs_count = 3,
+      .is_silero_v4 = is_silero_v4,
+      .silero_probability_out_index = is_silero_v4 ? 0 : 1
    };
 
    FeedState state = {0};
@@ -531,6 +539,7 @@ enum ArgOptionIndex
    ArgOptionIndex_NegThresholdRelative,
    ArgOptionIndex_SpeechPad,
    ArgOptionIndex_RawProbabilities,
+   ArgOptionIndex_Model,
 
    ArgOptionIndex_COUNT
 };
@@ -542,6 +551,7 @@ ArgOption options[] = {
    {"--neg_threshold_relative", 0.15f},
    {"--speech_pad", 30.0f},
    {"--raw_probabilities", 0.0f},
+   {"--model", 0.0f},
 };
 
 int main(int arg_count, char **arg_array)
@@ -552,6 +562,8 @@ int main(int arg_count, char **arg_array)
    float neg_threshold_relative;
    float neg_threshold;
    float speech_pad_ms;
+
+   wchar_t *model_path_arg = NULL;
 
    b32 raw_probabilities = 0;
 
@@ -568,6 +580,37 @@ int main(int arg_count, char **arg_array)
             {
                // TODO(irwin): bool options
                option->value = 1.0f;
+            }
+            else if ( arg_option_index == ArgOptionIndex_Model )
+            {
+               int arg_value_index = arg_index + 1;
+               if ( arg_value_index < arg_count )
+               {
+                  const char *arg_value_string = arg_array[arg_value_index];
+                  int buf_char_count_needed = MultiByteToWideChar(
+                     CP_UTF8,
+                     0,
+                     arg_value_string,
+                     -1,
+                     0,
+                     0
+                  );
+                  if ( buf_char_count_needed )
+                  {
+                     model_path_arg = malloc( (buf_char_count_needed + 1) * sizeof( wchar_t ) );
+                     MultiByteToWideChar(
+                        CP_UTF8,
+                        0,
+                        arg_value_string,
+                        -1,
+                        model_path_arg,
+                        buf_char_count_needed
+                     );
+
+                     //(*dest)[buf_char_count_needed] = 0;
+                  }
+                  option->value = 1.0f;
+               }
             }
             else
             {
@@ -617,7 +660,12 @@ int main(int arg_count, char **arg_array)
    wchar_t model_path[MODEL_PATH_BUFFER_SIZE];
    GetModuleFileNameW(NULL, model_path, (DWORD)model_path_buffer_size);
    PathRemoveFileSpecW( model_path );
-   PathAppendW( model_path, model_filename );
+   PathAppendW( model_path, model_path_arg ? model_path_arg : model_filename );
+
+//    if ( model_path_arg )
+//    {
+//       fwprintf( stderr, L"%s", model_path_arg );
+//    }
 
    {
       OrtSession* session;
