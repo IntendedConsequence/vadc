@@ -47,6 +47,8 @@ This is done after the speech segments have been detected. The speech segments a
 
 `--raw_probabilities`: Output raw speech/silence classification probabilities for each audio chunk. This is mostly useful for debugging.
 
+`--model`: Specify explicit path to model. Supports silero v3 and v4 (`silero_vad_v3.onnx` and `silero_vad_v4.onnx`).
+
 ## More info
 
 Silero model outputs probability for each chunk of audio. One chunk is 1536 samples long, which at 16kHz is 0.096 seconds, or 96ms long.
