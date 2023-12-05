@@ -106,86 +106,113 @@ int enable_cuda(OrtSessionOptions* session_options)
    return 0;
 }
 
-typedef struct
+typedef struct VADC_Context
 {
-   const OrtValue* const* input_tensors;
-   OrtValue** output_tensors;
-   OrtSession* session;
-   const char** input_names;
-   const char** output_names;
-   const size_t state_count;
+   const OrtValue *const *input_tensors;
+   OrtValue **output_tensors;
+   OrtSession *session;
+   const char **input_names;
+   const char **output_names;
    const size_t inputs_count;
    const size_t outputs_count;
+   
+   float *output_tensor_state_h;
+   float *output_tensor_state_c;
+   float *output_tensor_prob;
+   
+   const size_t window_size_samples;
+   float *input_tensor_samples;
 
-   float *state_h;
-   float *state_h_out;
-   float *state_c;
-   float *state_c_out;
+   const size_t state_count;
+   float *input_tensor_state_h;
+   float *input_tensor_state_c;
 } VADC_Context;
 
+typedef struct VADC_Chunk_Result
+{
+   float probability;
+
+   size_t state_count;
+   float *state_h;
+   float *state_c;
+} VADC_Chunk_Result;
+
+VADC_Chunk_Result run_inference_on_single_chunk( VADC_Context context,
+                                                 const size_t samples_count,
+                                                 const float *samples_buffer_float32,
+                                                 float *state_h_in,
+                                                 float *state_c_in )
+{
+   Assert( samples_count > 0 && samples_count <= context.window_size_samples );
+
+   VADC_Chunk_Result result = { 0 };
+
+   memmove( context.input_tensor_samples, samples_buffer_float32, samples_count * sizeof( context.input_tensor_samples[0] ) );
+
+   // NOTE(irwin): pad chunks with not enough samples
+   if ( samples_count < context.window_size_samples )
+   {
+      for ( size_t pad_index = samples_count; pad_index < context.window_size_samples; ++pad_index )
+      {
+         context.input_tensor_samples[pad_index] = 0.0f;
+      }
+   }
+
+   memmove( context.input_tensor_state_h, state_h_in, context.state_count * sizeof( context.input_tensor_state_h[0] ) );
+   memmove( context.input_tensor_state_c, state_c_in, context.state_count * sizeof( context.input_tensor_state_c[0] ) );
+
+   ORT_ABORT_ON_ERROR( g_ort->Run( context.session,
+                                   NULL,
+                                   context.input_names,
+                                   context.input_tensors,
+                                   context.inputs_count,
+                                   context.output_names,
+                                   context.outputs_count,
+                                   context.output_tensors )
+   );
+   assert( context.output_tensors[0] != NULL );
+
+   int is_tensor;
+   ORT_ABORT_ON_ERROR( g_ort->IsTensor( context.output_tensors[0], &is_tensor ) );
+   assert( is_tensor );
+
+   float result_probability = SILERO_V4 ? context.output_tensor_prob[0] : context.output_tensor_prob[1];
+   result.probability = result_probability;
+
+   result.state_h = context.output_tensor_state_h;
+   result.state_c = context.output_tensor_state_c;
+
+   return result;
+}
+
+
 void process_chunks( VADC_Context context, 
-                     const size_t window_size_samples,
                     const size_t buffered_samples_count,
-                    float *input_tensor_samples,
                     const float *samples_buffer_float32,
-                    float prob[],
                     float *probabilities_buffer)
 {
    for (size_t offset = 0;
         offset < buffered_samples_count;
-        offset += window_size_samples)
+        offset += context.window_size_samples)
    {
       // NOTE(irwin): copy a slice of the buffered samples
       size_t samples_count_left = buffered_samples_count - offset;
-      size_t window_size = samples_count_left > window_size_samples ? window_size_samples : samples_count_left;
-      for (size_t i = 0; i < window_size; ++i)
-      {
-         input_tensor_samples[i] = samples_buffer_float32[offset + i];
-      }
+      size_t window_size = samples_count_left > context.window_size_samples ? context.window_size_samples : samples_count_left;
+      
+      // IMPORTANT(irwin): hardcoded to use state from previous inference, assumed to be in output tensor memory
+      // TODO(irwin): dehardcode
+      VADC_Chunk_Result result = run_inference_on_single_chunk( context,
+                                                                window_size,
+                                                                samples_buffer_float32,
+                                                                context.output_tensor_state_h,
+                                                                context.output_tensor_state_c );
 
-      // NOTE(irwin): pad chunks with not enough samples
-      if (window_size < window_size_samples)
-      {
-         for (size_t pad_index = 0; pad_index < window_size_samples - window_size; ++pad_index)
-         {
-            input_tensor_samples[window_size + pad_index] = 0.0f;
-         }
-      }
+      *probabilities_buffer++ = result.probability;
 
-      ORT_ABORT_ON_ERROR(g_ort->Run(context.session,
-                                    NULL,
-                                    context.input_names,
-                                    context.input_tensors,
-                                    context.inputs_count,
-                                    context.output_names,
-                                    context.outputs_count,
-                                    context.output_tensors)
-      );
-      assert(context.output_tensors[0] != NULL);
-
-      int is_tensor;
-      ORT_ABORT_ON_ERROR(g_ort->IsTensor(context.output_tensors[0], &is_tensor));
-      assert(is_tensor);
-
-      #if SILERO_V4
-      *probabilities_buffer++ = prob[0];
-      #else
-      // NOTE(irwin): seems like actual probability is in second float
-      // printf("%f %f\n", prob[0], prob[1]);
-      *probabilities_buffer++ = prob[1];
-      #endif
-
-      for (size_t i = 0; i < context.state_count; ++i)
-      {
-         context.state_h[i] = context.state_h_out[i];
-      }
-
-      for (size_t i = 0; i < context.state_count; ++i)
-      {
-         context.state_c[i] = context.state_c_out[i];
-      }
+      // TODO(irwin): copy state
    }
 }
+
 
 typedef struct FeedState
 {
@@ -459,10 +486,13 @@ int run_inference(OrtSession* session,
       .input_names = input_names,
       .output_names = output_names,
       .state_count = state_count,
-      .state_h = state_h,
-      .state_c = state_c,
-      .state_h_out = state_h_out,
-      .state_c_out = state_c_out,
+      .input_tensor_state_h = state_h,
+      .input_tensor_state_c = state_c,
+      .output_tensor_state_h = state_h_out,
+      .output_tensor_state_c = state_c_out,
+      .window_size_samples = window_size_samples,
+      .output_tensor_prob = prob,
+      .input_tensor_samples = input_tensor_samples,
 
 #if SILERO_V4
       .inputs_count = 4,
@@ -517,11 +547,8 @@ int run_inference(OrtSession* session,
       }
 
       process_chunks( context,
-                      window_size_samples,
                      values_read,
-                     input_tensor_samples,
                      samples_buffer_float32,
-                     prob,
                      probabilities_buffer);
 
       if (!raw_probabilities)
