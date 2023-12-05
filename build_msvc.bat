@@ -17,7 +17,7 @@ if "%VSCMD_ARG_TGT_ARCH%" neq "x64" (
 )
 
 set CL=/W4 /WX /Zi /O1 /diagnostics:caret /options:strict /D_CRT_SECURE_NO_WARNINGS
-set LINK=/INCREMENTAL:NO /SUBSYSTEM:CONSOLE kernel32.lib
+set LINK=/INCREMENTAL:NO /SUBSYSTEM:CONSOLE kernel32.lib Shlwapi.lib
 
 cl.exe /nologo vadc.c /link lib\onnxruntime.lib
 cl.exe /nologo filter_script.c /link

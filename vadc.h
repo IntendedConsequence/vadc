@@ -6,12 +6,17 @@
 
 #define SILERO_V4 0
 
+#define SILERO_FILENAME_V4 L"silero_vad_v4.onnx"
+#define SILERO_FILENAME_V3 L"silero_vad_v3.onnx"
+
 #if SILERO_V4
 #define SILERO_PROBABILITY_OUT_INDEX 0
 #define SILERO_INPUT_TENSOR_COUNT 4
+#define SILERO_FILENAME L"silero_vad_v4.onnx"
 #else
 #define SILERO_PROBABILITY_OUT_INDEX 1
 #define SILERO_INPUT_TENSOR_COUNT 3
+#define SILERO_FILENAME L"silero_vad_v3.onnx"
 #endif
 
 #define SILERO_WINDOW_SIZE_SAMPLES 1536

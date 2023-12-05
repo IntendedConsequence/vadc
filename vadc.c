@@ -6,6 +6,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <Shlwapi.h>
 
 #include "onnx_helpers.c"
 #ifndef FROM_STDIN
@@ -34,11 +35,7 @@ static FILE *getDebugFile()
 
 
 
-#if SILERO_V4
-const wchar_t* model_filename = L"silero_vad_v4.onnx";
-#else
-const wchar_t* model_filename = L"silero_vad_v3.onnx";
-#endif
+static const wchar_t model_filename[] = SILERO_FILENAME;
 
 
 VADC_Chunk_Result run_inference_on_single_chunk( VADC_Context context,
@@ -92,7 +89,7 @@ VADC_Chunk_Result run_inference_on_single_chunk( VADC_Context context,
    ORT_ABORT_ON_ERROR( g_ort->IsTensor( context.output_tensors[0], &is_tensor ) );
    assert( is_tensor );
 
-   float result_probability = SILERO_V4 ? context.output_tensor_prob[0] : context.output_tensor_prob[1];
+   float result_probability = context.output_tensor_prob[SILERO_PROBABILITY_OUT_INDEX];
    result.probability = result_probability;
 
    result.state_h = context.output_tensor_state_h;
@@ -186,7 +183,7 @@ FeedProbabilityResult feed_probability(FeedState *state,
    return result;
 }
 
-static inline float to_ms(int in_chunks)
+static inline float to_s(int in_chunks)
 {
    return in_chunks / chunks_per_second;
 }
@@ -195,10 +192,10 @@ void emit_speech_segment(FeedProbabilityResult segment, float speech_pad_ms)
 {
    const float speech_pad_s = speech_pad_ms / 1000.0f;
 
-   float speech_end_padded = to_ms(segment.speech_end) + speech_pad_s;
+   float speech_end_padded = to_s(segment.speech_end) + speech_pad_s;
 
    // NOTE(irwin): print previous start/end times padded in seconds
-   float speech_start_padded = to_ms(segment.speech_start) - speech_pad_s;
+   float speech_start_padded = to_s(segment.speech_start) - speech_pad_s;
    if (speech_start_padded < 0.0f)
    {
       speech_start_padded = 0.0f;
@@ -215,7 +212,7 @@ FeedProbabilityResult combine_or_emit_speech_segment(FeedProbabilityResult buffe
 
    const float speech_pad_s = speech_pad_ms / 1000.0f;
 
-   float current_speech_start_padded = to_ms(feed_result.speech_start) - speech_pad_s;
+   float current_speech_start_padded = to_s(feed_result.speech_start) - speech_pad_s;
    if (current_speech_start_padded < 0.0f)
    {
       current_speech_start_padded = 0.0f;
@@ -223,7 +220,7 @@ FeedProbabilityResult combine_or_emit_speech_segment(FeedProbabilityResult buffe
 
    if (result.is_valid)
    {
-      float buffered_speech_end_padded = to_ms(result.speech_end) + speech_pad_s;
+      float buffered_speech_end_padded = to_s(result.speech_end) + speech_pad_s;
       if (buffered_speech_end_padded >= current_speech_start_padded)
       {
          result.speech_end = feed_result.speech_end;
@@ -304,28 +301,42 @@ int run_inference(OrtSession* session,
    OrtValue** state_c_tensor = &input_tensors[2];
    create_tensor(memory_info, state_c_tensor, state_shape, state_shape_count, state_c, state_count);
 
-#if SILERO_V4
-   int64_t sr = 16000;
-   int64_t sr_shape[] = {1, 1};
-   const size_t sr_shape_count = ArrayCount(sr_shape);
-   OrtValue** sr_tensor = &input_tensors[3];
-   create_tensor_int64(memory_info, sr_tensor, sr_shape, sr_shape_count, &sr, 1);
+   if ( SILERO_V4 )
+   {
+      int64_t sr = 16000;
+      int64_t sr_shape[] = { 1, 1 };
+      const size_t sr_shape_count = ArrayCount( sr_shape );
+      OrtValue **sr_tensor = &input_tensors[3];
+      create_tensor_int64( memory_info, sr_tensor, sr_shape, sr_shape_count, &sr, 1 );
+   }
 
-   const char* input_names[] = {"input", "h", "c", "sr"};
+   const char *input_names_v4[] = { "input", "h", "c", "sr" };
+   const char *input_names_v3[] = { "input", "h0", "c0" };
 
-   int64_t prob_shape[] = {1, 1};
-   float prob[1];
-#else
-   const char* input_names[] = {"input", "h0", "c0"};
+   VAR_UNUSED( input_names_v4 );
+   VAR_UNUSED( input_names_v3 );
 
-   int64_t prob_shape[] = {1, 2, 1};
+   int64_t prob_shape_v4[] = { 1, 1 };
+   int64_t prob_shape_v3[] = { 1, 2, 1 };
+
+   VAR_UNUSED( prob_shape_v4 );
+   VAR_UNUSED( prob_shape_v3 );
+
+   const size_t prob_shape_count_v4 = ArrayCount( prob_shape_v4 );
+   const size_t prob_shape_count_v3 = ArrayCount( prob_shape_v3 );
+   VAR_UNUSED( prob_shape_count_v4 );
+   VAR_UNUSED( prob_shape_count_v3 );
+
+   const char **input_names = SILERO_V4 ? input_names_v4 : input_names_v3;
+   int64_t *prob_shape = SILERO_V4 ? prob_shape_v4 : prob_shape_v3;
+
    float prob[2];
-#endif
 
    const char *output_names[] = { "output", "hn", "cn" };
    OrtValue *output_tensors[3] = { 0 };
    OrtValue **output_prob_tensor = &output_tensors[0];
-   const size_t prob_shape_count = ArrayCount( prob_shape );
+   
+   const size_t prob_shape_count = SILERO_V4 ? prob_shape_count_v4 : prob_shape_count_v3;
 
    create_tensor(memory_info, output_prob_tensor, prob_shape, prob_shape_count, &prob[0], prob_shape_count);
 
@@ -383,11 +394,7 @@ int run_inference(OrtSession* session,
       .output_tensor_prob = prob,
       .input_tensor_samples = input_tensor_samples,
 
-#if SILERO_V4
-      .inputs_count = 4,
-#else
-      .inputs_count = 3,
-#endif
+      .inputs_count = SILERO_INPUT_TENSOR_COUNT,
       .outputs_count = 3
    };
 
@@ -607,14 +614,10 @@ int main(int arg_count, char **arg_array)
    const size_t model_path_buffer_size = MODEL_PATH_BUFFER_SIZE;
    wchar_t model_path[MODEL_PATH_BUFFER_SIZE];
    GetModuleFileNameW(NULL, model_path, (DWORD)model_path_buffer_size);
+   PathRemoveFileSpecW( model_path );
+   PathAppendW( model_path, model_filename );
 
-   wchar_t* last_slash = wcsrchr( model_path, L'\\' );
-   if (last_slash)
    {
-      size_t model_path_buffer_remaining_size_after_last_slash = model_path_buffer_size - (last_slash - model_path);
-      *++last_slash = 0;
-      wcscat_s(last_slash, model_path_buffer_remaining_size_after_last_slash, model_filename);
-
       OrtSession* session;
       ORT_ABORT_ON_ERROR(g_ort->CreateSession(env, model_path, session_options, &session));
 
