@@ -114,6 +114,13 @@ typedef struct
    const char** input_names;
    const char** output_names;
    const size_t state_count;
+   const size_t inputs_count;
+   const size_t outputs_count;
+
+   float *state_h;
+   float *state_h_out;
+   float *state_c;
+   float *state_c_out;
 } VADC_Context;
 
 void process_chunks( VADC_Context context, 
@@ -122,10 +129,6 @@ void process_chunks( VADC_Context context,
                     float *input_tensor_samples,
                     const float *samples_buffer_float32,
                     float prob[],
-                    float state_h[],
-                    float state_h_out[],
-                    float state_c[],
-                    float state_c_out[],
                     float *probabilities_buffer)
 {
    for (size_t offset = 0;
@@ -149,19 +152,13 @@ void process_chunks( VADC_Context context,
          }
       }
 
-#if SILERO_V4
-      size_t inputs_count = 4;
-#else
-      size_t inputs_count = 3;
-#endif
-
       ORT_ABORT_ON_ERROR(g_ort->Run(context.session,
                                     NULL,
                                     context.input_names,
                                     context.input_tensors,
-                                    inputs_count,
+                                    context.inputs_count,
                                     context.output_names,
-                                    3,
+                                    context.outputs_count,
                                     context.output_tensors)
       );
       assert(context.output_tensors[0] != NULL);
@@ -180,12 +177,12 @@ void process_chunks( VADC_Context context,
 
       for (size_t i = 0; i < context.state_count; ++i)
       {
-         state_h[i] = state_h_out[i];
+         context.state_h[i] = context.state_h_out[i];
       }
 
       for (size_t i = 0; i < context.state_count; ++i)
       {
-         state_c[i] = state_c_out[i];
+         context.state_c[i] = context.state_c_out[i];
       }
    }
 }
@@ -461,7 +458,18 @@ int run_inference(OrtSession* session,
       .session = session,
       .input_names = input_names,
       .output_names = output_names,
-      .state_count = state_count
+      .state_count = state_count,
+      .state_h = state_h,
+      .state_c = state_c,
+      .state_h_out = state_h_out,
+      .state_c_out = state_c_out,
+
+#if SILERO_V4
+      .inputs_count = 4,
+#else
+      .inputs_count = 3,
+#endif
+      .outputs_count = 3
    };
 
    FeedState state = {0};
@@ -514,10 +522,6 @@ int run_inference(OrtSession* session,
                      input_tensor_samples,
                      samples_buffer_float32,
                      prob,
-                     state_h,
-                     state_h_out,
-                     state_c,
-                     state_c_out,
                      probabilities_buffer);
 
       if (!raw_probabilities)
