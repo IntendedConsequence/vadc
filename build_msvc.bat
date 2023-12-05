@@ -1,7 +1,12 @@
 @echo off
 setlocal enabledelayedexpansion
 
-where /Q cl.exe || (
+set BUILD_CACHE=%~dp0\_build_cache.cmd
+
+if exist "!BUILD_CACHE!" (
+  rem cache file exists, so call it to set env variables very fast
+  call "!BUILD_CACHE!"
+) else (
   set __VSCMD_ARG_NO_LOGO=1
   for /f "tokens=*" %%i in ('"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -requires Microsoft.VisualStudio.Workload.NativeDesktop -property installationPath') do set VS=%%i
   if "!VS!" equ "" (
@@ -9,7 +14,18 @@ where /Q cl.exe || (
     exit /b 1
   )
   call "!VS!\VC\Auxiliary\Build\vcvarsall.bat" amd64 || exit /b 1
+
+  echo set PATH=!PATH!> "!BUILD_CACHE!"
+  echo set INCLUDE=!INCLUDE!>> "!BUILD_CACHE!"
+  echo set LIB=!LIB!>> "!BUILD_CACHE!"
+  echo set VSCMD_ARG_TGT_ARCH=!VSCMD_ARG_TGT_ARCH!>> "!BUILD_CACHE!"
+
+  rem Depending on whether you are build .NET or other stuff, there are more
+  rem env variables you might want to add to cache, like:
+  rem Platform, FrameworkDir, NETFXSDKDir, WindowsSdkDir, WindowsSDKVersion, VCINSTALLDIR, ...
 )
+
+rem put your build commands here
 
 if "%VSCMD_ARG_TGT_ARCH%" neq "x64" (
   echo ERROR: please run this from MSVC x64 native tools command prompt, 32-bit target is not supported!
