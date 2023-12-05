@@ -207,7 +207,7 @@ void process_chunks( VADC_Context context,
       // TODO(irwin): dehardcode
       VADC_Chunk_Result result = run_inference_on_single_chunk( context,
                                                                 window_size,
-                                                                samples_buffer_float32,
+                                                                samples_buffer_float32 + offset,
                                                                 context.output_tensor_state_h,
                                                                 context.output_tensor_state_c );
 
