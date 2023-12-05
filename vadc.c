@@ -16,6 +16,27 @@
 #define FROM_STDIN 1
 #endif
 
+#ifndef DEBUG_WRITE_STATE_TO_FILE
+#define DEBUG_WRITE_STATE_TO_FILE 0
+#endif
+
+typedef struct DEBUG_Silero_State 
+{
+   float samples[1536];
+   float state_h[128];
+   float state_c[128];
+} DEBUG_Silero_State;
+static FILE *getDebugFile()
+{
+   static FILE *debug_file = NULL;
+   if ( debug_file == NULL )
+   {
+      debug_file = fopen( "debug_state.out", "wb" );
+   }
+   return debug_file;
+}
+
+
 const OrtApi* g_ort = NULL;
 
 #if SILERO_V4
@@ -148,6 +169,9 @@ VADC_Chunk_Result run_inference_on_single_chunk( VADC_Context context,
                                                  float *state_c_in )
 {
    Assert( samples_count > 0 && samples_count <= context.window_size_samples );
+#if DEBUG_WRITE_STATE_TO_FILE
+   FILE *debug_file = getDebugFile();
+#endif
 
    VADC_Chunk_Result result = { 0 };
 
@@ -164,6 +188,15 @@ VADC_Chunk_Result run_inference_on_single_chunk( VADC_Context context,
 
    memmove( context.input_tensor_state_h, state_h_in, context.state_count * sizeof( context.input_tensor_state_h[0] ) );
    memmove( context.input_tensor_state_c, state_c_in, context.state_count * sizeof( context.input_tensor_state_c[0] ) );
+#if DEBUG_WRITE_STATE_TO_FILE
+   DEBUG_Silero_State debug_state;
+   float *source = context.input_tensor_samples;
+   size_t source_size_bytes = 1536 * sizeof( context.input_tensor_samples[0] );
+   memmove( debug_state.samples, source, source_size_bytes );
+   memmove( debug_state.state_h, context.input_tensor_state_h, context.state_count * sizeof( context.input_tensor_state_h[0] ) );
+   memmove( debug_state.state_c, context.input_tensor_state_c, context.state_count * sizeof( context.input_tensor_state_c[0] ) );
+   fwrite( &debug_state, sizeof( DEBUG_Silero_State ), 1, debug_file );
+#endif
 
    ORT_ABORT_ON_ERROR( g_ort->Run( context.session,
                                    NULL,
