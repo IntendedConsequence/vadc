@@ -16,9 +16,9 @@ if "%VSCMD_ARG_TGT_ARCH%" neq "x64" (
   exit /b 1
 )
 
-set CL=/Zi /O1
-set LINK=kernel32.lib
+set CL=/W4 /WX /Zi /O1 /diagnostics:caret /options:strict
+set LINK=/INCREMENTAL:NO /SUBSYSTEM:CONSOLE kernel32.lib
 
-cl.exe /nologo vadc.c /W4 /link /INCREMENTAL:NO /SUBSYSTEM:CONSOLE lib\onnxruntime.lib
-cl.exe /nologo filter_script.c /W4 /link /INCREMENTAL:NO /SUBSYSTEM:CONSOLE
+cl.exe /nologo vadc.c /link lib\onnxruntime.lib
+cl.exe /nologo filter_script.c /link
 del *.obj *.res >nul

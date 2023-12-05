@@ -104,17 +104,17 @@ int enable_cuda(OrtSessionOptions* session_options)
    return 0;
 }
 
-void process_chunks(size_t window_size_samples,
-                    size_t buffered_samples_count,
+void process_chunks(const size_t window_size_samples,
+                    const size_t buffered_samples_count,
                     float *input_tensor_samples,
-                    float *samples_buffer_float32,
-                    OrtValue* input_tensors[],
+                    const float *samples_buffer_float32,
+                    const OrtValue* const input_tensors[],
                     OrtValue* output_tensors[],
                     OrtSession* session,
                     const char* input_names[],
                     const char* output_names[],
                     float prob[],
-                    size_t state_count,
+                    const size_t state_count,
                     float state_h[],
                     float state_h_out[],
                     float state_c[],
@@ -151,11 +151,11 @@ void process_chunks(size_t window_size_samples,
       ORT_ABORT_ON_ERROR(g_ort->Run(session,
                                     NULL,
                                     input_names,
-                                    (const OrtValue* const*)&input_tensors[0],
+                                    input_tensors,
                                     inputs_count,
                                     output_names,
                                     3,
-                                   &output_tensors[0])
+                                    output_tensors)
       );
       assert(output_tensors[0] != NULL);
 
@@ -437,7 +437,7 @@ int run_inference(OrtSession* session,
    #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #endif //__clang__
 
-   setmode(_fileno(stdin), O_BINARY);
+   _setmode(_fileno(stdin), O_BINARY);
 
 #ifdef __clang__
    #pragma clang diagnostic pop
