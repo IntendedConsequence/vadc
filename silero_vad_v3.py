@@ -11,9 +11,9 @@ from torch import ops
 import torch.nn.functional
 import torch.nn.functional as F
 
-# torch.set_grad_enabled(False)
-# torch.set_num_threads(1)
-# torch.set_num_interop_threads(1)
+torch.set_grad_enabled(False)
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
 
 def chunks(audio_data: np.ndarray):
     window_size_in_chunks = 96
@@ -77,22 +77,28 @@ def transform_(self, input_data):
 
 
 class STFT(torch.nn.Module):
-    filter_length : int = 256
-    hop_length : int = 64
-    win_length : int = 256
-    window : str = "hann"
+    filter_length : int
+    hop_length : int
+    win_length : int
+    window : str
 
     def __init__(self):
         super().__init__()
+
+        self.filter_length = 256
+        self.hop_length : int = 64
+        self.win_length : int = 256
+        self.window : str = "hann"
+
         self.register_buffer("forward_basis_buffer", torch.zeros([258, 1, 256]))
 
     def forward(self,
         input_data: torch.Tensor) -> torch.Tensor:
-        _0 = ((self).transform_(input_data, ))[0]
+        _0 = (self).transform_(input_data, )
         return _0
 
     def transform_(self,
-        input_data: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        input_data: torch.Tensor) -> torch.Tensor:
         num_batches = input_data.size(0)
         num_samples = input_data.size(1)
         input_data0 = input_data.view([num_batches, 1, num_samples])
@@ -120,9 +126,9 @@ class STFT(torch.nn.Module):
 
         _7 = torch.add(torch.pow(real_part, 2), torch.pow(imag_part, 2))
         magnitude = torch.sqrt(_7)
-        # phase = torch.atan2(ops.prim.data(imag_part), ops.prim.data(real_part))
-        phase = torch.atan2(imag_part.data, real_part.data)
-        return (magnitude, phase)
+        # phase = torch.atan2(imag_part.data, real_part.data)
+        # return (magnitude, phase)
+        return magnitude
 
 def simple_pad(x, pad: int):
     left_pad = torch.flip(x[:, :, 1: 1+pad], (-1,))
@@ -131,10 +137,13 @@ def simple_pad(x, pad: int):
 
 class AdaptiveAudioNormalization(torch.nn.Module):
     filter_: torch.Tensor
-    to_pad: int = 3
+    to_pad: int
 
     def __init__(self):
         super().__init__()
+
+        self.to_pad = 3
+
         self.register_buffer("filter_", torch.zeros((1, 1, 7)))
 
     def forward(self, spect: torch.Tensor) -> torch.Tensor:
@@ -176,7 +185,7 @@ class ConvBlock(torch.nn.Module):
             self.proj = torch.nn.Conv1d(in_channels=in_channels, out_channels=out_channels_pw_proj, kernel_size=1, stride=1, padding=0, dilation=1, groups=1, padding_mode='zeros')
         else:
             # TODO(irwin): consider identity to get rid of if check in forward
-            self.proj = None
+            self.proj = torch.nn.Identity()
         self.activation = torch.nn.ReLU()
 
     # def forward_(self: __torch__.models.number_vad_model.ConvBlock, x: torch.Tensor) -> torch.Tensor:
@@ -189,17 +198,10 @@ class ConvBlock(torch.nn.Module):
     #     activation = self.activation
     #     return (activation).forward(x9, )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         residual = x
         x = self.pw_conv(self.dw_conv(x))
-        if self.proj is not None:
-            residual = self.proj(residual)
-        try:
-            x += residual
-        except RuntimeError:
-            print("residual", residual.size())
-            print("x", x.size())
-            raise
+        x += self.proj(residual)
         x = self.activation(x)
         return x
 
@@ -207,7 +209,7 @@ class ConvBlock(torch.nn.Module):
 class MultiHeadAttention(torch.nn.Module):
     scale : float
     n_heads : int
-    has_out_proj : bool = True
+    has_out_proj : bool
 #   QKV : __torch__.torch.nn.modules.linear.Linear
 #   out_proj : __torch__.torch.nn.modules.linear.___torch_mangle_3.Linear
 
@@ -217,8 +219,12 @@ class MultiHeadAttention(torch.nn.Module):
         self.n_heads = n_heads
 
         self.QKV = torch.nn.Linear(in_features=qkv_in_features, out_features=qkv_out_features)
-        self.out_proj = torch.nn.Linear(in_features=qkv_in_features, out_features=qkv_in_features)
         self.has_out_proj = True
+
+        if self.has_out_proj:
+            self.out_proj = torch.nn.Linear(in_features=qkv_in_features, out_features=qkv_in_features)
+        else:
+            self.out_proj = torch.nn.Identity()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # _1 = __torch__.torch.nn.functional.softmax
@@ -271,9 +277,11 @@ class MultiHeadAttention(torch.nn.Module):
         # _10 = torch.contiguous(torch.transpose(attn, 0, 1))
         # attn0 = torch.transpose(torch.view(_10, [seq, bsz, dim]), 0, 1)
 
-        if self.has_out_proj:
-            attn = self.out_proj(attn)
-            return attn
+        # if self.has_out_proj:
+        #     attn = self.out_proj(attn)
+        attn = self.out_proj(attn)
+
+        return attn
 
         # has_out_proj = self.has_out_proj
         # if has_out_proj:
@@ -285,20 +293,14 @@ class MultiHeadAttention(torch.nn.Module):
 
 
 class TransformerLayer(torch.nn.Module):
-    reshape_inputs : bool = True
-    training : bool = False
-    # attention : MultiHeadAttention
-    # activation : torch.nn.ReLU
-    # linear1 : torch.nn.Linear
-    # linear2 : torch.nn.Linear
-    # norm1 : torch.nn.LayerNorm
-    # norm2 : torch.nn.LayerNorm
-    # dropout : torch.nn.Dropout
-    # dropout1 : torch.nn.Dropout
-    # dropout2 : torch.nn.Dropout
+    # reshape_inputs : bool
+    training : bool
 
     def __init__(self, shape: int, att_qkv_in: int, att_qkv_out: int, scale: float = 2 * np.sqrt(2)):
         super().__init__()
+        # self.reshape_inputs : bool = True
+        self.training : bool = False
+
         self.attention = MultiHeadAttention(qkv_in_features=att_qkv_in, qkv_out_features=att_qkv_out, scale=scale)
         self.activation = torch.nn.ReLU()
         self.dropout1 = torch.nn.Dropout(0.1)
@@ -311,8 +313,9 @@ class TransformerLayer(torch.nn.Module):
 
     def forward(self, x):
         # (batch * dims * sequence) => (batch * sequence * dims)
-        if self.reshape_inputs:
-            x = x.permute(0, 2, 1).contiguous()
+        # if self.reshape_inputs:
+        #     x = x.permute(0, 2, 1).contiguous()
+        x = x.permute(0, 2, 1).contiguous()
 
         attn = self.attention(x)
         x = x + self.dropout1(attn)
@@ -323,8 +326,9 @@ class TransformerLayer(torch.nn.Module):
         x = self.norm2(x)
 
         # (batch * sequence * dims) => (batch * dims * sequence)
-        if self.reshape_inputs:
-            x = x.permute(0, 2, 1).contiguous()
+        # if self.reshape_inputs:
+        #     x = x.permute(0, 2, 1).contiguous()
+        x = x.permute(0, 2, 1).contiguous()
         return x
 
     # def forward__(self, x: torch.Tensor) -> torch.Tensor:
@@ -659,6 +663,7 @@ def foo():
     silero_restored2.load_state_dict(torch.load("silero_vad_v3_16k.pt"))
     silero_restored2.train(False)
 
+
     audio_data = np.fromfile(r'RED.s16le', dtype=np.int16)
     torch_probs = np.loadtxt("torch.probs")
 
@@ -669,9 +674,14 @@ def foo():
     hn = torch.from_numpy(h0)
     cn = torch.from_numpy(c0)
 
+    # example random input [1, 1536]
+    rand_input = torch.rand([1, 1536])
+
+    silero_compiled = torch.jit.script(silero_restored2, example_inputs=(rand_input, hn, cn))
+
     probs = []
     for i, chunk in enumerate(chunks(audio_data)):
-        result = silero_restored2(torch.from_numpy(chunk).reshape([1, 1536]), hn, cn)
+        result = silero_compiled(torch.from_numpy(chunk).reshape([1, 1536]), hn, cn)
         # result = restored_model1(torch.from_numpy(chunk).reshape([1, 1536]), hn, cn)
         prob_result = result[0]
         hn = result[1]
