@@ -633,8 +633,37 @@ class Silero_VAD_V3(torch.nn.Module):
             torch.nn.Sigmoid()
         )
 
+    def forward_stateless(self, input_data):
+        x = input_data
+
+        x0 = (self.feature_extractor).forward(x, )
+        x1 = (self.adaptive_normalization).forward(x0, )
+
+        # baseline_first_layer = (first_layer).forward(x1, )
+        x2 = (self.first_layer).forward(x1, )
+
+        # baseline_encoder = (encoder).forward(x2, )
+        x3 = (self.encoder).forward(x2, )
+        return x3
+
+    def forward_stateful(self, encoded_data, h, c):
+        x3 = encoded_data
+
+        # _3 = (lstm).forward__0(torch.permute(x3, [0, 2, 1]), (h, c), )
+        _3 = self.lstm(torch.permute(x3, [0, 2, 1]), (h, c), )
+
+        x6, _4, = _3
+        hn1, cn1, = _4
+        x4, hn, cn = x6, hn1, cn1
+        # x7 = (decoder).forward(torch.permute(x4, [0, 2, 1]), )
+        x7 = (self.decoder).forward(torch.permute(x4, [0, 2, 1]), )
+
+        return (x7, hn, cn)
 
     def forward(self, input_data, h, c):
+        return self.forward_stateful(self.forward_stateless(input_data), h, c)
+
+    def forward_(self, input_data, h, c):
         x = input_data
 
         x0 = (self.feature_extractor).forward(x, )
@@ -658,6 +687,11 @@ class Silero_VAD_V3(torch.nn.Module):
 
         return (x7, hn, cn)
 
+def chunks_grouped(audio_data, group_size):
+    from itertools import zip_longest
+    args = [iter(chunks(audio_data))] * group_size
+    return zip_longest(*args)
+
 def foo():
     silero_restored2 = Silero_VAD_V3()
     silero_restored2.load_state_dict(torch.load("silero_vad_v3_16k.pt"))
@@ -674,23 +708,41 @@ def foo():
     hn = torch.from_numpy(h0)
     cn = torch.from_numpy(c0)
 
-    # example random input [1, 1536]
-    rand_input = torch.rand([1, 1536])
+    batch_size = 32
+    # example random input [batch_size, 1536]
+    rand_input = torch.rand([batch_size, 1536])
 
-    silero_compiled = torch.jit.script(silero_restored2, example_inputs=(rand_input, hn, cn))
+    silero = silero_restored2
+    # silero = torch.jit.script(silero_restored2, example_inputs=(rand_input, hn, cn))
+    # silero_stateless = torch.jit.trace(silero_restored2.forward_stateless, example_inputs=(rand_input, ))
+    # silero_stateful = torch.jit.trace(silero_restored2.forward_stateful, example_inputs=(torch.rand((1, 64, 7)), hn, cn))
 
     probs = []
-    for i, chunk in enumerate(chunks(audio_data)):
-        result = silero_compiled(torch.from_numpy(chunk).reshape([1, 1536]), hn, cn)
-        # result = restored_model1(torch.from_numpy(chunk).reshape([1, 1536]), hn, cn)
-        prob_result = result[0]
-        hn = result[1]
-        cn = result[2]
+    for chunk_batch in chunks_grouped(audio_data, batch_size):
+        result_batch = []
+        if batch_size == 1:
+            for chunk in chunk_batch:
+                result_stateless = silero.forward_stateless(torch.from_numpy(chunk).reshape([1, 1536]))
+                result_batch.append(result_stateless)
+        else:
+            chunks_batched = np.array([c for c in chunk_batch if c is not None])
+            result_stateless = silero.forward_stateless(torch.from_numpy(chunks_batched))
+            for j in range(result_stateless.shape[0]):
+                # print(result_stateless.shape)
+                result_batch.append(result_stateless[j:j+1, :, :])
 
-        prob = prob_result[0][1].item()
-        probs.append(prob)
-        # break
+        for result_stateless in result_batch:
+            result = silero.forward_stateful(result_stateless, hn, cn)
+            # result = restored_model1(torch.from_numpy(chunk).reshape([1, 1536]), hn, cn)
+            prob_result = result[0]
+            hn = result[1]
+            cn = result[2]
 
+            prob = prob_result[0][1].item()
+            probs.append(prob)
+            # break
+
+    # print(chunks_batched.shape)
     # print(prob)
 
     if True:
