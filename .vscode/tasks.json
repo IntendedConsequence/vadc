@@ -1,0 +1,50 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Project",
+            "type": "shell",
+            "command": "cmd",
+            "args": [
+                "/c",
+                "${workspaceFolder}\\build_msvc.bat"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true,
+                "clear": false
+            },
+            "problemMatcher": [
+                {
+                    // The problem is owned by the cpp language service.
+                    "owner": "cpp",
+                    // The file name for reported problems is relative to the opened folder.
+                    "fileLocation": ["relative", "${workspaceFolder}"],
+                    // The actual pattern to match problems in the output.
+                    "pattern": {
+                      // The regular expression. Example to match: helloWorld.c:5:3: warning: implicit declaration of function ‘printf’ [-Wimplicit-function-declaration]
+                      "regexp": "^(.*)\\((\\d+),(\\d+)\\):\\s+(warning|error)\\s+(\\w+\\d+):\\s+(.*)$",
+                      // The first match group matches the file name which is relative.
+                      "file": 1,
+                      // The second match group matches the line on which the problem occurred.
+                      "line": 2,
+                      // The third match group matches the column at which the problem occurred.
+                      "column": 3,
+                      // The fourth match group matches the problem's severity. Can be ignored. Then all problems are captured as errors.
+                      "severity": 4,
+                      // The fifth match group matches the message.
+                      "code": 5,
+                      "message": 6
+                    }
+                  }
+            ]
+        }
+    ]
+}
