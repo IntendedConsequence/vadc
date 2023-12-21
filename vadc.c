@@ -434,9 +434,12 @@ int run_inference(OrtSession* session,
             samples_buffer_float32[i] = value;
          }
 
-         for (size_t i = 0; i < values_read; ++i)
+         if (max_value > 0.0f)
          {
-            samples_buffer_float32[i] /= max_value;
+            for (size_t i = 0; i < values_read; ++i)
+            {
+               samples_buffer_float32[i] /= max_value;
+            }
          }
       }
       else
