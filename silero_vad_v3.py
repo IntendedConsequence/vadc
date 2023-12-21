@@ -7,7 +7,7 @@ import numpy as np
 
 from types import NoneType
 from typing import Optional, Tuple
-from torch import ops
+from torch import Value, ops
 import torch.nn.functional
 import torch.nn.functional as F
 
@@ -631,6 +631,46 @@ class Silero_VAD_V3(torch.nn.Module):
             torch.nn.Sigmoid()
         )
 
+    def spam(self, input, h, c) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+        # h, c = hc
+
+        r0, (h, c) = self.lstm(input[0:0+1, :, :], (h, c))
+        r1, (h, c) = self.lstm(input[1:1+1, :, :], (h, c))
+        r2, (h, c) = self.lstm(input[2:2+1, :, :], (h, c))
+        r3, (h, c) = self.lstm(input[3:3+1, :, :], (h, c))
+        r4, (h, c) = self.lstm(input[4:4+1, :, :], (h, c))
+        r5, (h, c) = self.lstm(input[5:5+1, :, :], (h, c))
+        r6, (h, c) = self.lstm(input[6:6+1, :, :], (h, c))
+        r7, (h, c) = self.lstm(input[7:7+1, :, :], (h, c))
+        r8, (h, c) = self.lstm(input[8:8+1, :, :], (h, c))
+        r9, (h, c) = self.lstm(input[9:9+1, :, :], (h, c))
+        r10, (h, c) = self.lstm(input[10:10+1, :, :], (h, c))
+        r11, (h, c) = self.lstm(input[11:11+1, :, :], (h, c))
+        r12, (h, c) = self.lstm(input[12:12+1, :, :], (h, c))
+        r13, (h, c) = self.lstm(input[13:13+1, :, :], (h, c))
+        r14, (h, c) = self.lstm(input[14:14+1, :, :], (h, c))
+        r15, (h, c) = self.lstm(input[15:15+1, :, :], (h, c))
+        r16, (h, c) = self.lstm(input[16:16+1, :, :], (h, c))
+        r17, (h, c) = self.lstm(input[17:17+1, :, :], (h, c))
+        r18, (h, c) = self.lstm(input[18:18+1, :, :], (h, c))
+        r19, (h, c) = self.lstm(input[19:19+1, :, :], (h, c))
+        r20, (h, c) = self.lstm(input[20:20+1, :, :], (h, c))
+        r21, (h, c) = self.lstm(input[21:21+1, :, :], (h, c))
+        r22, (h, c) = self.lstm(input[22:22+1, :, :], (h, c))
+        r23, (h, c) = self.lstm(input[23:23+1, :, :], (h, c))
+        r24, (h, c) = self.lstm(input[24:24+1, :, :], (h, c))
+        r25, (h, c) = self.lstm(input[25:25+1, :, :], (h, c))
+        r26, (h, c) = self.lstm(input[26:26+1, :, :], (h, c))
+        r27, (h, c) = self.lstm(input[27:27+1, :, :], (h, c))
+        r28, (h, c) = self.lstm(input[28:28+1, :, :], (h, c))
+        r29, (h, c) = self.lstm(input[29:29+1, :, :], (h, c))
+        r30, (h, c) = self.lstm(input[30:30+1, :, :], (h, c))
+        r31, (h, c) = self.lstm(input[31:31+1, :, :], (h, c))
+
+        r = torch.stack([r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31], dim=0).squeeze()
+
+        return r, (h, c)
+
     def forward_stateless(self, input_data):
         x = input_data
 
@@ -658,7 +698,7 @@ class Silero_VAD_V3(torch.nn.Module):
 
         return (x7, hn, cn)
 
-    def forward(self, input_data, h, c):
+    def forward__(self, input_data, h, c):
         return self.forward_stateful(self.forward_stateless(input_data), h, c)
 
     def forward_(self, input_data, h, c):
@@ -675,12 +715,37 @@ class Silero_VAD_V3(torch.nn.Module):
         # assert np.allclose(baseline_encoder, x3)
 
         # _3 = (lstm).forward__0(torch.permute(x3, [0, 2, 1]), (h, c), )
-        _3 = self.lstm(torch.permute(x3, [0, 2, 1]), (h, c), )
+        _3 = self.lstm(torch.permute(x3, [0, 2, 1]), (h, c) )
 
         x6, _4, = _3
         hn1, cn1, = _4
         x4, hn, cn = x6, hn1, cn1
         # x7 = (decoder).forward(torch.permute(x4, [0, 2, 1]), )
+        x7 = (self.decoder).forward(torch.permute(x4, [0, 2, 1]), )
+
+        return (x7, hn, cn)
+
+    def forward(self, input_data, h, c):
+        x = input_data
+
+        x0 = (self.feature_extractor).forward(x, )
+        x1 = (self.adaptive_normalization).forward(x0, )
+
+        # baseline_first_layer = (first_layer).forward(x1, )
+        x2 = (self.first_layer).forward(x1, )
+
+        # baseline_encoder = (encoder).forward(x2, )
+        x3 = (self.encoder).forward(x2, )
+        # assert np.allclose(baseline_encoder, x3)
+
+        # _3 = (lstm).forward__0(torch.permute(x3, [0, 2, 1]), (h, c), )
+        _3 = self.spam(torch.permute(x3, [0, 2, 1]), h, c )
+
+        x6, _4, = _3
+        hn1, cn1, = _4
+        x4, hn, cn = x6, hn1, cn1
+        # x7 = (decoder).forward(torch.permute(x4, [0, 2, 1]), )
+        # print(x4.shape)
         x7 = (self.decoder).forward(torch.permute(x4, [0, 2, 1]), )
 
         return (x7, hn, cn)
@@ -732,8 +797,12 @@ def foo():
     # example random input [batch_size, 1536]
     rand_input = torch.rand([batch_size, 1536])
 
-    silero = silero_restored2
-    # silero = torch.jit.script(silero_restored2, example_inputs=(rand_input, hn, cn))
+    # silero = silero_restored2
+    silero = torch.jit.script(silero_restored2, example_inputs=(rand_input, hn, cn))
+
+    onnx_exported_filename = "silero_restored_v3.1_16k.onnx"
+    ort = OnnxWrapper(onnx_exported_filename)
+    # torch.onnx.export(silero_restored2, (rand_input, hn, cn), onnx_exported_filename, input_names=["input", "h0", "c0"])
     # silero_stateless = torch.jit.trace(silero_restored2.forward_stateless, example_inputs=(rand_input, ))
     # silero_stateful = torch.jit.trace(silero_restored2.forward_stateful, example_inputs=(torch.rand((1, 64, 7)), hn, cn))
 
@@ -744,6 +813,24 @@ def foo():
             for chunk in chunk_batch:
                 result_stateless = silero.forward_stateless(torch.from_numpy(chunk).reshape([1, 1536]))
                 result_batch.append(result_stateless)
+        elif batch_size == 32:
+            chunks_batched = np.array([c for c in chunk_batch if c is not None])
+            rem = batch_size - chunks_batched.shape[0]
+            if rem > 0:
+                chunks_batched = np.concatenate([chunks_batched, np.zeros((rem, 1536), dtype=np.float32)])
+
+            result_stateless = ort(torch.from_numpy(chunks_batched), hn, cn)
+            # result_stateless = silero.forward(torch.from_numpy(chunks_batched), hn, cn)
+
+            result = result_stateless
+            prob_result = result[0]
+            hn = torch.from_numpy(result[1])
+            cn = torch.from_numpy(result[2])
+
+            for i in range(prob_result.shape[0] - rem):
+                prob = prob_result[i][1].item()
+                probs.append(prob)
+
         else:
             chunks_batched = np.array([c for c in chunk_batch if c is not None])
             result_stateless = silero.forward_stateless(torch.from_numpy(chunks_batched))
@@ -751,16 +838,19 @@ def foo():
                 # print(result_stateless.shape)
                 result_batch.append(result_stateless[j:j+1, :, :])
 
-        for result_stateless in result_batch:
-            result = silero.forward_stateful(result_stateless, hn, cn)
-            # result = restored_model1(torch.from_numpy(chunk).reshape([1, 1536]), hn, cn)
-            prob_result = result[0]
-            hn = result[1]
-            cn = result[2]
+        if batch_size == 32:
+            pass
+        else:
+            for result_stateless in result_batch:
+                result = silero.forward_stateful(result_stateless, hn, cn)
+                # result = restored_model1(torch.from_numpy(chunk).reshape([1, 1536]), hn, cn)
+                prob_result = result[0]
+                hn = result[1]
+                cn = result[2]
 
-            prob = prob_result[0][1].item()
-            probs.append(prob)
-            # break
+                prob = prob_result[0][1].item()
+                probs.append(prob)
+                # break
 
     # print(chunks_batched.shape)
     # print(prob)
