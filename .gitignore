@@ -1,1 +1,7 @@
 .vs/
+__pycache__/
+venv/
+libonnx/
+tinygrad/
+silero-vad-models/
+silero_vad_v3_16k/
