@@ -692,6 +692,28 @@ def chunks_grouped(audio_data, group_size):
     args = [iter(chunks(audio_data))] * group_size
     return zip_longest(*args)
 
+class OnnxWrapper():
+    def __init__(self, path):
+        import onnxruntime
+        # onnxruntime.SessionOptions
+        options = onnxruntime.SessionOptions()
+        options.inter_op_num_threads = 1
+        options.intra_op_num_threads = 1
+        self.session = onnxruntime.InferenceSession(path, options, providers=['CPUExecutionProvider'])
+
+        self.reset_states()
+
+    def reset_states(self):
+        self._h = np.zeros((2, 1, 64)).astype('float32')
+        self._c = np.zeros((2, 1, 64)).astype('float32')
+
+    def __call__(self, x, h, c):
+        ort_inputs = {'input': x.numpy(), 'h0': h.numpy(), 'c0': c.numpy()}
+        ort_outs = self.session.run(None, ort_inputs)
+        out = ort_outs
+
+        return out
+
 def foo():
     silero_restored2 = Silero_VAD_V3()
     silero_restored2.load_state_dict(torch.load("silero_vad_v3_16k.pt"))
