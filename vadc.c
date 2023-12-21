@@ -18,7 +18,7 @@
 #endif
 
 #if DEBUG_WRITE_STATE_TO_FILE
-typedef struct DEBUG_Silero_State 
+typedef struct DEBUG_Silero_State
 {
    float samples[1536];
    float state_h[128];
@@ -101,7 +101,7 @@ VADC_Chunk_Result run_inference_on_single_chunk( VADC_Context context,
 }
 
 
-void process_chunks( VADC_Context context, 
+void process_chunks( VADC_Context context,
                     const size_t buffered_samples_count,
                     const float *samples_buffer_float32,
                     float *probabilities_buffer)
@@ -113,7 +113,7 @@ void process_chunks( VADC_Context context,
       // NOTE(irwin): copy a slice of the buffered samples
       size_t samples_count_left = buffered_samples_count - offset;
       size_t window_size = samples_count_left > context.window_size_samples ? context.window_size_samples : samples_count_left;
-      
+
       // IMPORTANT(irwin): hardcoded to use state from previous inference, assumed to be in output tensor memory
       // TODO(irwin): dehardcode
       VADC_Chunk_Result result = run_inference_on_single_chunk( context,
@@ -308,7 +308,7 @@ int run_inference(OrtSession* session,
 
    OrtValue** state_c_tensor = &input_tensors[2];
    create_tensor(memory_info, state_c_tensor, state_shape, state_shape_count, state_c, state_count);
-   
+
    if ( is_silero_v4 )
    {
       int64_t sr = 16000;
@@ -343,7 +343,7 @@ int run_inference(OrtSession* session,
    const char *output_names[] = { "output", "hn", "cn" };
    OrtValue *output_tensors[3] = { 0 };
    OrtValue **output_prob_tensor = &output_tensors[0];
-   
+
    const size_t prob_shape_count = is_silero_v4 ? prob_shape_count_v4 : prob_shape_count_v3;
 
    create_tensor(memory_info, output_prob_tensor, prob_shape, prob_shape_count, &prob[0], prob_shape_count);
