@@ -359,7 +359,10 @@ int run_inference(OrtSession* session,
 
    // NOTE(irwin): read samples from a file or stdin and run inference
    // NOTE(irwin): at 16000 sampling rate, one chunk is 96 ms or 1536 samples
+   // NOTE(irwin): chunks count being 96, the same as one chunk's length in milliseconds,
+   // is purely coincidental
    const int chunks_count = 96;
+   // NOTE(irwin): buffered_samples_count is the normalization window size
    const size_t buffered_samples_count = window_size_samples * chunks_count;
 
    short *samples_buffer_s16 = (short *)malloc(buffered_samples_count * sizeof(short));
