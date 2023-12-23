@@ -428,3 +428,25 @@ class LSTM:
         for i, cell in enumerate(self.cells):
             new_hc.append(cell(new_hc[i][:x.shape[0]], hc[i]))
         return Tensor.stack(new_hc[1:]).realize()
+
+class Decoder:
+    def __init__(self):
+        # decoder.1.weight
+        # decoder.1.bias
+
+        self.conv1d = nn.Conv1d(in_channels=64, out_channels=2, kernel_size=1)
+
+    def __call__(self, x: Tensor) -> Tensor:
+        return self.forward(x)
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.conv1d(x.relu()).mean(axis=2, keepdim=True).sigmoid()
+            # torch.nn.ReLU(),
+            # torch.nn.Conv1d(in_channels=64, out_channels=2, kernel_size=1),
+            # torch.nn.AdaptiveAvgPool1d(output_size=1),
+            # torch.nn.Sigmoid()
+
+    def load_state_dict(self, state_dict, prefix=''):
+        t = {k.replace(prefix, 'conv1d.'): v for k, v in state_dict.items() if k.startswith(prefix)}
+        # print(t)
+        nn.state.load_state_dict(self, t)
