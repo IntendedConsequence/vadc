@@ -1,5 +1,7 @@
 import tinygrad as tg
 from tinygrad import nn, Tensor
+from tinygrad.jit import TinyJit
+
 
 import numpy as np
 
@@ -308,7 +310,7 @@ class Encoder:
         nn.state.load_state_dict(self, t)
 
     def __call__(self, x: Tensor) -> Tensor:
-        return super().__call__(x)
+        return self.forward(x)
 
     def forward(self, x: Tensor) -> Tensor:
         x0 = self.transformer(x)
@@ -358,3 +360,71 @@ class Encoder:
         #                                       conv1d_4,
         #                                       batch_norm1d_4,
         #                                       relu_4)
+
+class LSTMCell:
+  def __init__(self, input_size, hidden_size, dropout):
+    self.dropout = dropout
+
+    self.weights_ih = Tensor.uniform(hidden_size * 4, input_size)
+    self.bias_ih = Tensor.uniform(hidden_size * 4)
+    self.weights_hh = Tensor.uniform(hidden_size * 4, hidden_size)
+    self.bias_hh = Tensor.uniform(hidden_size * 4)
+
+  def __call__(self, x, hc):
+    gates = x.linear(self.weights_ih.T, self.bias_ih) + hc[:x.shape[0]].linear(self.weights_hh.T, self.bias_hh)
+
+    i, f, g, o = gates.chunk(4, 1)
+    i, f, g, o = i.sigmoid(), f.sigmoid(), g.tanh(), o.sigmoid()
+
+    c = (f * hc[x.shape[0]:]) + (i * g)
+    h = (o * c.tanh()).dropout(self.dropout)
+
+    return Tensor.cat(h, c).realize()
+
+
+class LSTM:
+    def __init__(self, input_size, hidden_size, layers, dropout):
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.layers = layers
+
+        self.cells = [LSTMCell(input_size, hidden_size, dropout) if i == 0 else LSTMCell(hidden_size, hidden_size, dropout if i != layers - 1 else 0) for i in range(layers)]
+
+    def load_state_dict(self, state_dict, prefix=''):
+        mapping = {
+            "weight_ih_l0": "cells.0.weights_ih",
+            "weight_hh_l0": "cells.0.weights_hh",
+            "bias_ih_l0": "cells.0.bias_ih",
+            "bias_hh_l0": "cells.0.bias_hh",
+            "weight_ih_l1": "cells.1.weights_ih",
+            "weight_hh_l1": "cells.1.weights_hh",
+            "bias_ih_l1": "cells.1.bias_ih",
+            "bias_hh_l1": "cells.1.bias_hh"
+        }
+        t = {mapping[k.replace(prefix, '')]: v for k, v in state_dict.items() if k.startswith(prefix)}
+        # print('\n'.join(t.keys()))
+        nn.state.load_state_dict(self, t)
+
+    def __call__(self, x, hc):
+        # @TinyJit
+        def _do_step(x_, hc_):
+            return self.do_step(x_, hc_)
+
+        if hc is None:
+            hc = Tensor.zeros(self.layers, 2 * x.shape[1], self.hidden_size, requires_grad=False)
+
+        output = None
+        for t in range(x.shape[0]):
+            hc = _do_step(x[t] + 1 - 1, hc) # TODO: why do we need to do this?
+            if output is None:
+                output = hc[-1:, :x.shape[1]]
+            else:
+                output = output.cat(hc[-1:, :x.shape[1]], dim=0).realize()
+
+        return output, hc
+
+    def do_step(self, x, hc):
+        new_hc = [x]
+        for i, cell in enumerate(self.cells):
+            new_hc.append(cell(new_hc[i][:x.shape[0]], hc[i]))
+        return Tensor.stack(new_hc[1:]).realize()
