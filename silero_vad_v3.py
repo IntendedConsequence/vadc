@@ -15,9 +15,9 @@ torch.set_grad_enabled(False)
 torch.set_num_threads(1)
 torch.set_num_interop_threads(1)
 
-def chunks(audio_data: np.ndarray):
-    window_size_in_chunks = 96
-    chunk_size = 1536
+def chunks(audio_data: np.ndarray, chunk_size=1536, window_size_in_chunks=96):
+    # window_size_in_chunks = 96
+    # chunk_size = 1536
     window_size_in_samples = window_size_in_chunks * chunk_size
 
     # h0, c0 = np.zeros((2, 1, 64), dtype=np.float32), np.zeros((2, 1, 64), dtype=np.float32)
@@ -85,20 +85,18 @@ class STFT(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.filter_length = 256
+        self.filter_length: int = 256
         self.hop_length : int = 64
         self.win_length : int = 256
         self.window : str = "hann"
 
         self.register_buffer("forward_basis_buffer", torch.zeros([258, 1, 256]))
 
-    def forward(self,
-        input_data: torch.Tensor) -> torch.Tensor:
+    def forward(self, input_data: torch.Tensor) -> torch.Tensor:
         _0 = (self).transform_(input_data, )
         return _0
 
-    def transform_(self,
-        input_data: torch.Tensor) -> torch.Tensor:
+    def transform_(self, input_data: torch.Tensor) -> torch.Tensor:
         num_batches = input_data.size(0)
         num_samples = input_data.size(1)
         input_data0 = input_data.view([num_batches, 1, num_samples])
@@ -130,7 +128,7 @@ class STFT(torch.nn.Module):
         # return (magnitude, phase)
         return magnitude
 
-def simple_pad(x, pad: int):
+def simple_pad(x: torch.Tensor, pad: int) -> torch.Tensor:
     left_pad = torch.flip(x[:, :, 1: 1+pad], (-1,))
     right_pad = torch.flip(x[:, :, -1 - pad: -1], (-1,))
     return torch.cat([left_pad, x, right_pad], dim=2)
@@ -311,7 +309,7 @@ class TransformerLayer(torch.nn.Module):
         self.linear1 = torch.nn.Linear(in_features=shape, out_features=shape)
         self.linear2 = torch.nn.Linear(in_features=shape, out_features=shape)
 
-    def forward(self, x):
+    def forward(self, x) -> torch.Tensor:
         # (batch * dims * sequence) => (batch * sequence * dims)
         # if self.reshape_inputs:
         #     x = x.permute(0, 2, 1).contiguous()
