@@ -452,6 +452,47 @@ class Decoder:
         # print(t)
         nn.state.load_state_dict(self, t)
 
+class STFT:
+    filter_length : int
+    hop_length : int
+    win_length : int
+    window : str
+
+    def __init__(self):
+        self.filter_length: int = 256
+        self.hop_length : int = 64
+        self.win_length : int = 256
+        self.window : str = "hann"
+
+        self.forward_basis_buffer = Tensor.zeros(258, 1, 256)
+
+    def forward(self, input_data: Tensor) -> Tensor:
+        return self.transform_(input_data)
+
+    def transform_(self, input_data: Tensor) -> Tensor:
+        filter_length = self.filter_length
+
+        num_batches = input_data.shape[0]
+        num_samples = input_data.shape[1]
+
+        # [N, 1536] -> [N, 1, 1536]
+        for_padding = input_data.reshape([num_batches, 1, num_samples])
+        half = filter_length // 2
+        # padded = for_padding.pad([half, half, 0, 0], "reflect", 0.)
+        padded = simple_pad(for_padding, half)
+        # [N, 1, 1536] -> [N, 1, 1, 1, 1536]
+        padded_squeezed = padded
+        forward_transform = padded_squeezed.conv2d(self.forward_basis_buffer, stride=self.hop_length)
+        # print(forward_transform.shape)
+        cutoff = half + 1
+
+        real_part = forward_transform[:, :cutoff, :]
+        imag_part = forward_transform[:, cutoff:, :]
+
+        magnitude = Tensor.sqrt(real_part ** 2 + imag_part ** 2)
+        return magnitude
+
+# 1d pad with reflect across last dim a tensor of shape [N, 1, S]
 def simple_pad(x: Tensor, pad: int) -> Tensor:
     left_pad = x[:, :, 1: 1+pad].flip(-1)
     right_pad = x[:, :, -1 - pad: -1].flip(-1)
@@ -471,15 +512,16 @@ class AdaptiveAudioNormalization:
         spect = (spect * megabyte + 1.0).log()
         if len(spect.shape) == 2:
             spect = spect[None, :, :]
-        mean = spect.mean(dim=1, keepdim=True)
+        mean = spect.mean(1, keepdim=True)
         mean = simple_pad(mean, self.to_pad)
         mean = mean.conv2d(self.filter_)
-        mean_mean = mean.mean(dim=-1, keepdim=True)
+        mean_mean = mean.mean(-1, keepdim=True)
         spect = spect.add(-mean_mean)
         return spect
 
 class Silero:
     def __init__(self):
+        self.feature_extractor = STFT()
         self.adaptive_normalization = AdaptiveAudioNormalization()
         self.first_layer = ConvBlock()
         self.encoder = Encoder()
@@ -487,6 +529,7 @@ class Silero:
         self.decoder = Decoder()
 
     def load_state_dict(self, silero_state_dict_tg):
+        load_state_dict_prefix(self.feature_extractor, silero_state_dict_tg, prefix="feature_extractor.")
         load_state_dict_prefix(self.adaptive_normalization, silero_state_dict_tg, prefix="adaptive_normalization.")
         load_state_dict_prefix(self.first_layer, silero_state_dict_tg, prefix="first_layer.")
         load_state_dict_prefix(self.encoder, silero_state_dict_tg, prefix="encoder.")
