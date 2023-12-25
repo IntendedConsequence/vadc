@@ -452,14 +452,42 @@ class Decoder:
         # print(t)
         nn.state.load_state_dict(self, t)
 
+def simple_pad(x: Tensor, pad: int) -> Tensor:
+    left_pad = x[:, :, 1: 1+pad].flip(-1)
+    right_pad = x[:, :, -1 - pad: -1].flip(-1)
+    return Tensor.cat(left_pad, x, right_pad, dim=2)
+
+class AdaptiveAudioNormalization:
+    filter_: Tensor
+    to_pad: int
+
+    def __init__(self):
+        self.to_pad = 3
+
+        self.filter_ = Tensor.zeros(1, 1, 7)
+
+    def forward(self, spect: Tensor) -> Tensor:
+        megabyte: int = 1024 * 1024
+        spect = (spect * megabyte + 1.0).log()
+        if len(spect.shape) == 2:
+            spect = spect[None, :, :]
+        mean = spect.mean(dim=1, keepdim=True)
+        mean = simple_pad(mean, self.to_pad)
+        mean = mean.conv2d(self.filter_)
+        mean_mean = mean.mean(dim=-1, keepdim=True)
+        spect = spect.add(-mean_mean)
+        return spect
+
 class Silero:
     def __init__(self):
+        self.adaptive_normalization = AdaptiveAudioNormalization()
         self.first_layer = ConvBlock()
         self.encoder = Encoder()
         self.lstm = LSTM(64, 64, 2, 0.1)
         self.decoder = Decoder()
 
     def load_state_dict(self, silero_state_dict_tg):
+        load_state_dict_prefix(self.adaptive_normalization, silero_state_dict_tg, prefix="adaptive_normalization.")
         load_state_dict_prefix(self.first_layer, silero_state_dict_tg, prefix="first_layer.")
         load_state_dict_prefix(self.encoder, silero_state_dict_tg, prefix="encoder.")
         load_state_dict_prefix(self.lstm, silero_state_dict_tg, "lstm.")
