@@ -536,18 +536,20 @@ class Silero:
         load_state_dict_prefix(self.lstm, silero_state_dict_tg, "lstm.")
         load_state_dict_prefix(self.decoder, silero_state_dict_tg, "decoder.1.")
 
-    def __call__(self, x: Tensor) -> Tensor:
-        return self.forward(x)
+    def __call__(self, x: Tensor, *args) -> Tensor:
+        return self.forward(x, *args)
 
-    def forward(self, x, hc=None):
-        if hc is None:
-            # [layers, batch, features]
-            # h [2, 1, 64]
-            #       +
-            # c [2, 1, 64]
-            hc = Tensor.zeros(2, 2, 64)
+    def forward(self, x: Tensor, h: Tensor, c: Tensor):
+        if False:
+            if hc is None:
+                # [layers, batch, features]
+                # h [2, 1, 64]
+                #       +
+                # c [2, 1, 64]
+                hc = Tensor.zeros(2, 2, 64)
+        hc = Tensor.cat(h, c, dim=1)
 
-        tg_in = Tensor(x.numpy())
+        tg_in = x
         x = self.first_layer(tg_in)
         x = self.encoder(x)
         # (batch, feature, seq) - > (seq, batch, feature)
@@ -566,7 +568,7 @@ class Silero:
             x, hc = x[0], x[1]
             res.append(x)
             hctg = hc
-        x = res[0].cat(*res[1:], dim=1)
+        x = Tensor.cat(*res, dim=1)
 
         # x = self.lstm(x.permute([2, 0, 1]), hctg)
 
@@ -589,4 +591,4 @@ class Silero:
 
         decoder_out_tg = x
 
-        return decoder_out_tg, hc
+        return decoder_out_tg, hc[:, 0, None, :], hc[:, 1, None, :]
