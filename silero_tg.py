@@ -390,6 +390,7 @@ class LSTM:
 
         self.cells = [LSTMCell(input_size, hidden_size, dropout) if i == 0 else LSTMCell(hidden_size, hidden_size, dropout if i != layers - 1 else 0) for i in range(layers)]
 
+    # TODO(irwin): _asdict?
     def load_state_dict(self, state_dict, prefix=''):
         mapping = {
             "weight_ih_l0": "cells.0.weights_ih",
@@ -450,3 +451,71 @@ class Decoder:
         t = {k.replace(prefix, 'conv1d.'): v for k, v in state_dict.items() if k.startswith(prefix)}
         # print(t)
         nn.state.load_state_dict(self, t)
+
+class Silero:
+    def __init__(self):
+        self.first_layer = ConvBlock()
+        self.encoder = Encoder()
+        self.lstm = LSTM(64, 64, 2, 0.1)
+        self.decoder = Decoder()
+
+    def load_state_dict(self, silero_state_dict_tg):
+        load_state_dict_prefix(self.first_layer, silero_state_dict_tg, prefix="first_layer.")
+        load_state_dict_prefix(self.encoder, silero_state_dict_tg, prefix="encoder.")
+        load_state_dict_prefix(self.lstm, silero_state_dict_tg, "lstm.")
+        load_state_dict_prefix(self.decoder, silero_state_dict_tg, "decoder.1.")
+
+    def __call__(self, x: Tensor) -> Tensor:
+        return self.forward(x)
+
+    def forward(self, x, hc=None):
+        if hc is None:
+            # [layers, batch, features]
+            # h [2, 1, 64]
+            #       +
+            # c [2, 1, 64]
+            hc = Tensor.zeros(2, 2, 64)
+
+        tg_in = Tensor(x.numpy())
+        x = self.first_layer(tg_in)
+        x = self.encoder(x)
+        # (batch, feature, seq) - > (seq, batch, feature)
+        test_batch = False
+        if test_batch:
+            x = x.cat(x)
+
+        batch_size = x.shape[0]
+
+        hctg = hc
+
+        # NOTE(irwin): batch support for sequential chunks, unbatches lstm processing (untested with batch_size > 1 yet)
+        res = []
+        for batch in range(batch_size):
+            x = self.lstm(x[0].unsqueeze(0).permute([2, 0, 1]), hctg)
+            x, hc = x[0], x[1]
+            res.append(x)
+            hctg = hc
+        x = res[0].cat(*res[1:], dim=1)
+
+        # x = self.lstm(x.permute([2, 0, 1]), hctg)
+
+        # x, hc = x[0], x[1]
+        # decoder [7, 1, 64] -> [1, 64, 7] (seq, batch, feature) -> (batch, feature, seq)
+        x = x.permute([1, 2, 0])
+
+        if test_batch:
+            hc = hc.permute(1, 2, 0)
+            hc1 = hc[:2]
+            hc2 = hc[2:4]
+            assert np.equal(x[0], x[1])
+            assert np.equal(hc1, hc2)
+        x = self.decoder(x)
+        # x = x[0].permute([1, 2, 0])
+        # x = x.relu()
+        # x = decoder.conv1d(x)
+        # x = x.mean(axis=2, keepdim=True)
+        # x = x.sigmoid()
+
+        decoder_out_tg = x
+
+        return decoder_out_tg, hc
