@@ -1,9 +1,15 @@
 import tinygrad as tg
 from tinygrad import nn, Tensor
+from tinygrad.helpers import Timing
 from tinygrad.jit import TinyJit
+
+from tinygrad import Device
+# Device.DEFAULT = "CPU"
 
 
 import numpy as np
+
+from silero_vad_v3 import chunks_grouped
 
 def Identity(x):
     return x
@@ -379,7 +385,7 @@ class LSTMCell:
     c = (f * hc[x.shape[0]:]) + (i * g)
     h = (o * c.tanh()).dropout(self.dropout)
 
-    return Tensor.cat(h, c).realize()
+    return Tensor.cat(h, c)
 
 
 class LSTM:
@@ -406,6 +412,8 @@ class LSTM:
         # print('\n'.join(t.keys()))
         nn.state.load_state_dict(self, t)
 
+
+    # @TinyJit
     def __call__(self, x, hc):
         # @TinyJit
         def _do_step(x_, hc_):
@@ -416,19 +424,20 @@ class LSTM:
 
         output = None
         for t in range(x.shape[0]):
+            # hc = self.do_step(x[t], hc) # TODO: why do we need to do this?
             hc = _do_step(x[t] + 1 - 1, hc) # TODO: why do we need to do this?
             if output is None:
                 output = hc[-1:, :x.shape[1]]
             else:
-                output = output.cat(hc[-1:, :x.shape[1]], dim=0).realize()
+                output = output.cat(hc[-1:, :x.shape[1]], dim=0)
 
-        return output, hc
+        return output.realize(), hc.realize()
 
     def do_step(self, x, hc):
         new_hc = [x]
         for i, cell in enumerate(self.cells):
             new_hc.append(cell(new_hc[i][:x.shape[0]], hc[i]))
-        return Tensor.stack(new_hc[1:]).realize()
+        return Tensor.stack(new_hc[1:])
 
 class Decoder:
     def __init__(self):
@@ -539,6 +548,7 @@ class Silero:
     def __call__(self, x: Tensor, *args) -> Tensor:
         return self.forward(x, *args)
 
+    # @TinyJit
     def forward(self, x: Tensor, h: Tensor, c: Tensor):
         if False:
             if hc is None:
@@ -549,9 +559,21 @@ class Silero:
                 hc = Tensor.zeros(2, 2, 64)
         hc = Tensor.cat(h, c, dim=1)
 
-        tg_in = x
-        x = self.first_layer(tg_in)
-        x = self.encoder(x)
+        @TinyJit
+        def not_lstm(x):
+            x = self.feature_extractor.forward(x)
+            x = self.adaptive_normalization.forward(x)
+            x = self.first_layer(x)
+            x = self.encoder(x)
+            return x.realize()
+
+        with Timing("not lstm: "):
+            x = not_lstm(x)
+
+        # with Timing("adaptive_normalization: "):
+        # with Timing("first_layer: "):
+        # with Timing("encoder: "):
+
         # (batch, feature, seq) - > (seq, batch, feature)
         test_batch = False
         if test_batch:
@@ -561,18 +583,21 @@ class Silero:
 
         hctg = hc
 
-        # NOTE(irwin): batch support for sequential chunks, unbatches lstm processing (untested with batch_size > 1 yet)
-        res = []
-        for batch in range(batch_size):
-            x = self.lstm(x[0].unsqueeze(0).permute([2, 0, 1]), hctg)
-            x, hc = x[0], x[1]
-            res.append(x)
-            hctg = hc
-        x = Tensor.cat(*res, dim=1)
+        with Timing("lstm: "):
+            if batch_size > 1:
+                # NOTE(irwin): batch support for sequential chunks, unbatches lstm processing (untested with batch_size > 1 yet)
+                res = []
+                batches = x
+                for batch in range(batch_size):
+                    x = self.lstm(batches[batch].unsqueeze(0).permute([2, 0, 1]), hctg)
+                    x, hc = x[0], x[1]
+                    res.append(x)
+                    hctg = hc
+                x = Tensor.cat(*res, dim=1)
+            else:
+                x = self.lstm(x.permute([2, 0, 1]), hctg)
+                x, hc = x[0], x[1]
 
-        # x = self.lstm(x.permute([2, 0, 1]), hctg)
-
-        # x, hc = x[0], x[1]
         # decoder [7, 1, 64] -> [1, 64, 7] (seq, batch, feature) -> (batch, feature, seq)
         x = x.permute([1, 2, 0])
 
@@ -582,7 +607,9 @@ class Silero:
             hc2 = hc[2:4]
             assert np.equal(x[0], x[1])
             assert np.equal(hc1, hc2)
-        x = self.decoder(x)
+
+        with Timing("decoder: "):
+            x = self.decoder(x)
         # x = x[0].permute([1, 2, 0])
         # x = x.relu()
         # x = decoder.conv1d(x)
@@ -591,4 +618,55 @@ class Silero:
 
         decoder_out_tg = x
 
-        return decoder_out_tg, hc[:, 0, None, :], hc[:, 1, None, :]
+        return decoder_out_tg.realize(), hc[:, 0, None, :].realize(), hc[:, 1, None, :].realize()
+
+def foo():
+    from pathlib import Path
+
+    silero = Silero()
+    silero.load_state_dict(nn.state.torch_load('silero_vad_v3_16k.pt'))
+
+    audio_data = np.fromfile(r'RED.s16le', dtype=np.int16)
+    torch_probs = np.loadtxt("torch.probs")
+
+    h0 = np.zeros((2,1,64), dtype=np.float32)
+    c0 = np.zeros_like(h0)
+
+    hn = Tensor(h0)
+    cn = Tensor(c0)
+
+    batch_size = 64
+    # example random input [batch_size, 1536]
+    # rand_input = torch.rand([batch_size, 1536])
+
+    # silero = torch.jit.script(silero_restored2, example_inputs=(rand_input, hn, cn))
+    # silero_stateless = torch.jit.trace(silero_restored2.forward_stateless, example_inputs=(rand_input, ))
+    # silero_stateful = torch.jit.trace(silero_restored2.forward_stateful, example_inputs=(torch.rand((1, 64, 7)), hn, cn))
+
+    probs = []
+    for chunk_batch in chunks_grouped(audio_data, batch_size):
+        result = silero.forward(Tensor(np.array([c for c in chunk_batch if c is not None])), hn, cn)
+
+        prob_result = result[0]
+        hn = result[1]
+        cn = result[2]
+
+        for n in range(prob_result.shape[0]):
+            prob = prob_result[n][1].item()
+            probs.append(prob)
+
+    if True:
+        Path('current.probs').write_text('\n'.join(f"{p:0.6f}" for p in probs))
+        print(np.abs(probs - torch_probs).mean())
+        # print(subprocess.check_output(["fc", "current.probs", "torch.probs"]).decode('utf-8', errors='replace'))
+
+    if False:
+        probs = []
+        for i, chunk in enumerate(chunks(audio_data)):
+            result = jit_model._model1(torch.from_numpy(chunk), hn, cn).item()
+            probs.append(result)
+            break
+
+if __name__ == "__main__":
+    Tensor.training = False
+    foo()
