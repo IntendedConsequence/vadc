@@ -26,8 +26,8 @@ void convolve_mc_mf (float *arr, int in_channel_count, int array_count, float *k
 {
     for (int i = 0; i < filter_count; ++i)
     {
-        int stride = i * in_channel_count * array_count;
-        convolve_mc(arr, in_channel_count, array_count, kernels + i * in_channel_count, arr_out + i * array_count);
+        int out_stride = i * array_count;
+        convolve_mc(arr, in_channel_count, array_count, kernels + i * in_channel_count, arr_out + out_stride);
     }
 }
 
@@ -38,6 +38,7 @@ void convolve_mc_mf_batch (int batch, float *arr, int in_channel_count, int arra
     for (int i = 0; i < batch; ++i)
     {
         int stride = i * in_channel_count * array_count;
-        convolve_mc_mf(arr + stride, in_channel_count, array_count, kernels, filter_count, arr_out + i * array_count * filter_count);
+        int out_stride = i * array_count * filter_count;
+        convolve_mc_mf(arr + stride, in_channel_count, array_count, kernels, filter_count, arr_out + out_stride);
     }
 }
