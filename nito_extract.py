@@ -33,12 +33,13 @@ def find_structs (fn):
   cands = patt.findall(open(fn).read())
   return
 
-def find_funcs (fn):
+def find_funcs (fn: str):
   patt = re.compile("\n[a-zA-Z][^{;=]{1,}{",re.DOTALL)
   cands = patt.findall(open(fn).read())
 
   res = []
 
+  c: str
   for c in cands:
     ret = c.strip().split()[0]
     fn  = c.strip().split()[1]
@@ -85,7 +86,7 @@ def tokenize(x):
       p = i
   return toks
 
-def code (code_src, **kargs):
+def code (code_src: str, **kargs) -> Clib:
   suff = "_nito"
   tmpdir = tempfile.mkdtemp(suffix="_" + suff)
   open(tmpdir + "/nito_inline.c","wb").write(code_src.encode("utf8"))
@@ -104,7 +105,7 @@ shim_src = """
 #
 """
 
-def file (libpath, **args):
+def file (libpath: str, **args):
   # look for the compiler
   base_cmd = None
   for opt,test in compiler_cands:
