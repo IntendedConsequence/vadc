@@ -5,6 +5,7 @@ MIT/BSD
 
 
 import os, sys, tempfile, struct, ctypes, re, collections
+import subprocess
 
 fields = ["return_t", "name", "arg_ts"]
 CBound = collections.namedtuple("CBound", ["return_t","name","arg_ts"])
@@ -35,9 +36,9 @@ def find_structs (fn):
 def find_funcs (fn):
   patt = re.compile("\n[a-zA-Z][^{;=]{1,}{",re.DOTALL)
   cands = patt.findall(open(fn).read())
-  
+
   res = []
- 
+
   for c in cands:
     ret = c.strip().split()[0]
     fn  = c.strip().split()[1]
@@ -54,7 +55,7 @@ def find_funcs (fn):
       arg = arg.replace("*"," ").split()[0]
       if is_ptr:
         if arg == "char": arg = "char*"
-        else: arg = "void*" 
+        else: arg = "void*"
       arg_types.append(arg)
     ok = True
     if ret not in amap and ret != "void": ok = False
@@ -82,7 +83,7 @@ def tokenize(x):
     if not (L in alphanum and R in alphanum): # token break
       toks.append(x[p:i])
       p = i
-  return toks 
+  return toks
 
 def code (code_src, **kargs):
   suff = "_nito"
@@ -90,7 +91,7 @@ def code (code_src, **kargs):
   open(tmpdir + "/nito_inline.c","wb").write(code_src.encode("utf8"))
   libpath = tmpdir + "/nito_inline.c"
   kargs["__nito_inline__tmpdir"] = tmpdir
-  return file(libpath, **kargs) 
+  return file(libpath, **kargs)
 
 compiler_cands = [
   ("clang", "clang --version"),
@@ -107,11 +108,12 @@ def file (libpath, **args):
   # look for the compiler
   base_cmd = None
   for opt,test in compiler_cands:
-    check = "%s 1>/dev/null 2>/dev/null" % test
+    # check = "%s 1>/dev/null 2>/dev/null" % test
+    check = f"{test} 1>{os.devnull} 2>{os.devnull}"
     if os.system(check) == 0:
       base_cmd = opt
       break
-  assert base_cmd != None, "Couldn't find any match in compiler list" 
+  assert base_cmd != None, "Couldn't find any match in compiler list"
 
   # determine path and name for the library
   tmpdir = args.get("__nito_inline_tmpdir",None)
@@ -126,26 +128,39 @@ def file (libpath, **args):
     defs.append("-D%s=%s" % (k,v))
   defs = " ".join(defs)
 
-  flags = ["std=c99","O2","march=native","ffast-math"]
+  # flags = ["std=c99","O2","march=native","ffast-math"]
+  flags = ["v", "shared", "std=c99","O2","march=native"]
 
   # compile to object code
   cmd = base_cmd + " "
   cmd += " ".join(["-" + x for x in flags]) + " "
-  if sys.platform != "darwin": cmd += " -lm "
-  cmd += defs + " -c -o %s -fpic %s"
-  if sys.platform != "darwin": cmd += " -lpthread "
+  # if sys.platform != "darwin": cmd += " -lm "
+  # cmd += defs + " -c -o %s"
+  cmd += defs + " -o %s"
+  if sys.platform != "win32": cmd += " -fpic"
+  cmd += " %s"
+  if sys.platform not in ("darwin", "win32"): cmd += " -lpthread "
 
   # temporary files for compilation
   src_fn = libpath
   obj_fn = tmpdir + "/tmplib." + libname + ".o"
   lib_fn = tmpdir + "/tmplib." + libname + ".so"
- 
+
   # command to link to shared library
-  cmd = cmd % (obj_fn,src_fn)
-  cmd += " && " + base_cmd + " -shared -o %s %s" % (lib_fn, obj_fn)
+  # cmd = cmd % (obj_fn,src_fn)
+  # cmd += " && " + base_cmd + " -shared -o %s %s" % (lib_fn, obj_fn)
+  cmd = cmd % (lib_fn,src_fn)
 
   # execute compilation/linking, exception if compiler returns nonzero
-  assert os.system(cmd) == 0, "Compilation failure"
+  if False:
+    assert os.system(cmd) == 0, "Compilation failure"
+  else:
+    try:
+      subprocess.check_output(args=cmd.split(), stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError as e:
+      print(e.stdout.decode('utf8'))
+      raise
+    # assert os.system(cmd) == 0, "Compilation failure"
 
   # build the shim layer
   shim_fn = tmpdir + "/shim.c"
@@ -153,7 +168,7 @@ def file (libpath, **args):
 
   lib = Clib()
   lib.lib = ctypes.CDLL(lib_fn)
- 
+
   # === ok, code is correct and compiled, load up the interface
 
   # find all function signatures
@@ -162,16 +177,16 @@ def file (libpath, **args):
   for ret, fn, arg_types in funs:
     setattr(lib,fn,getattr(lib.lib,fn))
     fp = getattr(lib,fn)
-    if ret != "void": 
+    if ret != "void":
       fp.restype = amap[ret]
     else:
       fp.restype = None
     fp.argtypes = [amap[x] for x in arg_types]
   return lib
 
-  # preprocess to get the macro definitions 
+  # preprocess to get the macro definitions
   cmd = base_cmd + " -E -dM -nostdinc "
-  cmd += defs  
+  cmd += defs
   src_fn = libpath
   out_fn = tmpdir + "/macros_" + libname + ".txt"
   cmd += "-o %s %s 2>/dev/null" % (out_fn, src_fn)
