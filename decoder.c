@@ -1,4 +1,6 @@
-#include <string.h>
+#include <math.h> //expf
+#include <string.h> //memcpy
+#include <stdlib.h> //malloc, free
 
 __declspec(dllexport)
 void convolve_muladd (float *arr, int count, float kernel, float *arr_out)
@@ -71,4 +73,111 @@ void relu_inplace (float *arr, int array_count)
             arr[i] = 0.0f;
         }
     }
+}
+
+__declspec(dllexport)
+float mean (float *arr, int arr_count)
+{
+    float result = 0.0f;
+    float divisor = arr_count;
+    for (int i = 0; i < arr_count; ++i)
+    {
+        result += arr[i];
+    }
+
+    return result / divisor;
+}
+
+
+inline void *vadc_malloc (size_t size_in_bytes)
+{
+    return malloc(size_in_bytes);
+}
+inline void vadc_free (void *address)
+{
+    return free(address);
+}
+
+// return self.conv1d(x.relu()).mean(axis=2, keepdim=True).sigmoid()
+// input [N, 64, 7]
+// weight [2, 64, 1]
+// bias [2]
+__declspec(dllexport)
+int decoder (float *input, int *input_dims, int input_ndims, float *weights, int *weights_dims, int weights_ndims, float *biases, int *biases_dims, int biases_ndims, float *output, int *output_dims, int output_ndims)
+{
+    int result_ok = 1;
+    if (input_ndims != 3)
+    {
+        result_ok = 0;
+    }
+
+    if (weights_ndims != 3)
+    {
+        result_ok = 0;
+    }
+
+    if (biases_ndims != 1)
+    {
+        result_ok = 0;
+    }
+
+    if (output_ndims != 3)
+    {
+        result_ok = 0;
+    }
+
+
+    if (result_ok)
+    {
+        int input_count = 1;
+        for (int i = 0; i < input_ndims; ++i)
+        {
+            input_count *= input_dims[i];
+        }
+
+        int input_size = input_count * sizeof(float);
+
+        float *relu_result = vadc_malloc(input_size);
+        memcpy(relu_result, input, input_size);
+        relu_inplace(relu_result, input_count);
+
+        int batch_count = input_dims[0];
+
+        // [N, 2, 7]
+        int convolve_result_count = 1;
+        convolve_result_count *= batch_count;
+        convolve_result_count *= weights_dims[0];
+        convolve_result_count *= input_dims[2];
+
+        // if (convolve_result_count != 14)
+        // {
+        //     return 0;
+        // }
+
+
+        float *convolve_result = vadc_malloc(convolve_result_count * sizeof(float));
+        convolve_mc_mf_batch_bias(batch_count, relu_result, input_dims[1], input_dims[2], weights, weights_dims[0], convolve_result, biases);
+
+        // return __LINE__;
+        // [N, 2, 1]
+        int mean_output_count = 1;
+        mean_output_count *= batch_count;
+        mean_output_count *= weights_dims[0];
+
+        // float *mean_result = vadc_malloc(mean_output_count * sizeof(float));
+        float *mean_result = output;
+
+        int input_offset = 0;
+        int output_offset = 0;
+        for (int b = 0; b < batch_count; ++b)
+        {
+            for (int f = 0; f < weights_dims[0]; ++f)
+            {
+                float mean_value = mean(convolve_result + input_offset, input_dims[2]);
+                mean_result[output_offset++] = 1.0f / (1.0f + expf(-mean_value));
+                input_offset += input_dims[2];
+            }
+        }
+    }
+    return result_ok;
 }
