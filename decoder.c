@@ -1,6 +1,7 @@
 #include <math.h> //expf
 #include <string.h> //memcpy
 #include <stdlib.h> //malloc, free
+#include <assert.h> //assert
 
 __declspec(dllexport)
 void convolve_muladd (float *arr, int count, float kernel, float *arr_out)
@@ -106,26 +107,11 @@ __declspec(dllexport)
 int decoder (float *input, int *input_dims, int input_ndims, float *weights, int *weights_dims, int weights_ndims, float *biases, int *biases_dims, int biases_ndims, float *output, int *output_dims, int output_ndims)
 {
     int result_ok = 1;
-    if (input_ndims != 3)
-    {
-        result_ok = 0;
-    }
 
-    if (weights_ndims != 3)
-    {
-        result_ok = 0;
-    }
-
-    if (biases_ndims != 1)
-    {
-        result_ok = 0;
-    }
-
-    if (output_ndims != 3)
-    {
-        result_ok = 0;
-    }
-
+    assert(input_ndims == 3);
+    assert(weights_ndims == 3);
+    assert(biases_ndims == 1);
+    assert(output_ndims == 3);
 
     if (result_ok)
     {
