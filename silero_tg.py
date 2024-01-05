@@ -376,7 +376,7 @@ class LSTMCell:
     self.weights_hh = Tensor.uniform(hidden_size * 4, hidden_size)
     self.bias_hh = Tensor.uniform(hidden_size * 4)
 
-  def __call__(self, x, hc):
+  def __call__(self, x: Tensor, hc: Tensor) -> Tensor:
     gates = x.linear(self.weights_ih.T, self.bias_ih) + hc[:x.shape[0]].linear(self.weights_hh.T, self.bias_hh)
 
     i, f, g, o = gates.chunk(4, 1)
@@ -414,9 +414,9 @@ class LSTM:
 
 
     # @TinyJit
-    def __call__(self, x, hc):
+    def __call__(self, x: Tensor, hc: Tensor) -> tuple[Tensor, Tensor]:
         # @TinyJit
-        def _do_step(x_, hc_):
+        def _do_step(x_: Tensor, hc_: Tensor) -> Tensor:
             return self.do_step(x_, hc_)
 
         if hc is None:
@@ -433,7 +433,7 @@ class LSTM:
 
         return output.realize(), hc.realize()
 
-    def do_step(self, x, hc):
+    def do_step(self, x: Tensor, hc: Tensor) -> Tensor:
         new_hc = [x]
         for i, cell in enumerate(self.cells):
             new_hc.append(cell(new_hc[i][:x.shape[0]], hc[i]))
