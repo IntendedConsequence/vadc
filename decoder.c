@@ -2,34 +2,17 @@
 #include <string.h> //memcpy
 // #include <stdlib.h> //malloc, free
 #include <assert.h> //assert
-#include <stdint.h>
 
-// TODO(irwin): utils.h
-typedef int8_t s8;
-typedef uint8_t u8;
+#include "utils.h"
 
-typedef int16_t s16;
-typedef uint16_t u16;
-
-typedef int32_t s32;
-typedef uint32_t u32;
-
-typedef int64_t s64;
-typedef uint64_t u64;
-
-typedef float f32;
-typedef double f64;
-
-typedef s32 b32;
-
-static u8 debug_arena_buffer[16 * 1024 * 1024];
+static u8 debug_arena_buffer[Megabytes(16)];
 
 typedef struct Arena
 {
     u8 *base;
     u64 used;
     u64 size;
-};
+} Arena;
 
 static struct Arena debug_arena = {.base = &debug_arena_buffer[0], .size=sizeof(debug_arena_buffer)};
 
@@ -149,7 +132,7 @@ __declspec(dllexport)
 float mean (float *arr, int arr_count)
 {
     float result = 0.0f;
-    float divisor = arr_count;
+    float divisor = (float)arr_count;
     for (int i = 0; i < arr_count; ++i)
     {
         result += arr[i];
@@ -157,7 +140,6 @@ float mean (float *arr, int arr_count)
 
     return result / divisor;
 }
-
 
 // return self.conv1d(x.relu()).mean(axis=2, keepdim=True).sigmoid()
 // input [N, 64, 7]

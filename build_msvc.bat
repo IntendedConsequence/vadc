@@ -38,4 +38,5 @@ set LINK=/INCREMENTAL:NO /SUBSYSTEM:CONSOLE kernel32.lib Shlwapi.lib
 
 cl.exe /nologo vadc.c /link lib\onnxruntime.lib
 cl.exe /nologo filter_script.c /link
+cl.exe /nologo /MD decoder.c /link /DLL /OUT:decoder.dll
 del *.obj *.res >nul

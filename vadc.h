@@ -29,8 +29,6 @@ const float chunks_per_second = (float)SILERO_SAMPLE_RATE / SILERO_WINDOW_SIZE_S
 const float chunk_duration_ms = SILERO_WINDOW_SIZE_SAMPLES / (float)SILERO_SAMPLE_RATE * 1000.0f;
 
 
-#define ArrayCount(x) (sizeof(x) / sizeof((x)[0]))
-
 #define ORT_ABORT_ON_ERROR(expr)                             \
   do {                                                       \
     OrtStatus* onnx_status = (expr);                         \
