@@ -1,59 +1,13 @@
 #include <math.h> //expf
-#include <string.h> //memcpy
 // #include <stdlib.h> //malloc, free
-#include <assert.h> //assert
 
 #include "utils.h"
 
-static u8 debug_arena_buffer[Megabytes(16)];
-
-typedef struct Arena
+static inline float sigmoid_one(value)
 {
-    u8 *base;
-    u64 used;
-    u64 size;
-} Arena;
-
-static struct Arena debug_arena = {.base = &debug_arena_buffer[0], .size=sizeof(debug_arena_buffer)};
-
-static void *arena_push (struct Arena *arena, u64 size)
-{
-    assert(arena->base);
-    assert(size <= arena->size - arena->used);
-
-    u8 *address = arena->base + arena->used;
-    arena->used += size;
-
-    return address;
+    return 1.0f / (1.0f + expf(-value));
 }
 
-static void *arena_pushz (struct Arena *arena, u64 size)
-{
-    void *address = arena_push(arena, size);
-    memset(address, 0, size);
-
-    return address;
-}
-
-static void arena_pop (struct Arena *arena, u64 size)
-{
-    assert(arena->base);
-    if (size <= arena->used)
-    {
-        arena->used -= size;
-    }
-    else
-    {
-        arena->used = 0;
-    }
-
-}
-
-static void arena_reset (struct Arena *arena)
-{
-    assert(arena->base);
-    arena->used = 0;
-}
 
 __declspec(dllexport)
 void convolve_muladd (float *arr, int count, float kernel, float *arr_out)
@@ -148,6 +102,9 @@ float mean (float *arr, int arr_count)
 __declspec(dllexport)
 int decoder (float *input, int *input_dims, int input_ndims, float *weights, int *weights_dims, int weights_ndims, float *biases, int *biases_dims, int biases_ndims, float *output, int *output_dims, int output_ndims)
 {
+    VAR_UNUSED(biases_dims);
+    VAR_UNUSED(output_dims);
+
     int result_ok = 1;
 
     assert(input_ndims == 3);
