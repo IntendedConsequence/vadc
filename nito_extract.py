@@ -86,13 +86,13 @@ def tokenize(x):
       p = i
   return toks
 
-def code (code_src: str, **kargs) -> Clib:
+def code (code_src: str, extra_includes=None, **kargs) -> Clib:
   suff = "_nito"
   tmpdir = tempfile.mkdtemp(suffix="_" + suff)
   open(tmpdir + "/nito_inline.c","wb").write(code_src.encode("utf8"))
   libpath = tmpdir + "/nito_inline.c"
-  kargs["__nito_inline__tmpdir"] = tmpdir
-  return file(libpath, **kargs)
+  # kargs["__nito_inline__tmpdir"] = tmpdir
+  return file(libpath, tmpdir, extra_includes, **kargs)
 
 compiler_cands = [
   ("clang", "clang --version"),
@@ -105,7 +105,7 @@ shim_src = """
 #
 """
 
-def file (libpath: str, **args):
+def file (libpath: str, inline_tmpdir=None, extra_includes: list[str] = None, **args):
   # look for the compiler
   base_cmd = None
   for opt,test in compiler_cands:
@@ -117,9 +117,9 @@ def file (libpath: str, **args):
   assert base_cmd != None, "Couldn't find any match in compiler list"
 
   # determine path and name for the library
-  tmpdir = args.get("__nito_inline_tmpdir",None)
+  tmpdir = inline_tmpdir
   suff = "_nito_inline"
-  if tmpdir == None:
+  if tmpdir is None:
     tmpdir = tempfile.mkdtemp(suffix="_" + suff)
   libname = os.path.split(libpath)[-1]
 
@@ -129,15 +129,23 @@ def file (libpath: str, **args):
     defs.append("-D%s=%s" % (k,v))
   defs = " ".join(defs)
 
+  includes = []
+  if extra_includes is not None:
+    for path in extra_includes:
+      path_stripped = path.strip("\"'")
+      includes.append(f'-I{path_stripped}')
+  includes = " ".join(includes)
+
   # flags = ["std=c99","O2","march=native","ffast-math"]
   flags = ["v", "shared", "std=c99","O2","march=native"]
+  # flags = ["v", "shared", "std=c99","O1","fsanitize=address","march=native"]
 
   # compile to object code
   cmd = base_cmd + " "
   cmd += " ".join(["-" + x for x in flags]) + " "
   # if sys.platform != "darwin": cmd += " -lm "
   # cmd += defs + " -c -o %s"
-  cmd += defs + " -o %s"
+  cmd += includes + defs + " -o %s"
   if sys.platform != "win32": cmd += " -fpic"
   cmd += " %s"
   if sys.platform not in ("darwin", "win32"): cmd += " -lpthread "
