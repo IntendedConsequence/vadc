@@ -169,3 +169,30 @@ void lstm (const float *input_x, int input_x_count, const float *hidden_state_pr
 
     debug_arena.used = mark;
 }
+
+// [seq, input_x_count], h0,h1, c0,c1
+__declspec(dllexport)
+void lstm_seq (const float *input_x, int input_x_seq_count, int input_x_count, const float *hidden_state_previous, const float *cell_state_previous, const float *weights_transposed, const float *biases, float *output)
+{
+    int input_size = input_x_count;
+    int hidden_size = input_x_count;
+
+    u64 mark = debug_arena.used;
+    float *input_hc  = arena_push(&debug_arena, (input_size + hidden_size) * 2 * sizeof(float));
+    float *input_h = input_hc;
+    float *input_c = input_hc + (hidden_size) * 2;
+    memcpy(input_h, hidden_state_previous, (hidden_size) * 2 * sizeof(float));
+    memcpy(input_c, cell_state_previous, (hidden_size) * 2 * sizeof(float));
+
+    float *output_hc = arena_push(&debug_arena, (input_size + hidden_size) * 2 * sizeof(float));
+    for (int i = 0; i < input_x_seq_count; ++i)
+    {
+        lstm(input_x + i * input_x_count, input_x_count, input_h, input_c, weights_transposed, biases, output_hc);
+
+        memcpy(input_hc, output_hc, (input_size + hidden_size) * 2 * sizeof(float));
+        memcpy(output + i * input_x_count, output_hc + hidden_size, hidden_size * sizeof(float));
+    }
+    memcpy(output + input_x_seq_count * input_x_count, output_hc, (input_size + hidden_size) * 2 * sizeof(float));
+
+    debug_arena.used = mark;
+}
