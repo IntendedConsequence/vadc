@@ -3,7 +3,7 @@
 
 #include "utils.h"
 
-static inline float sigmoid_one(value)
+static inline float sigmoid_one(float value)
 {
     return 1.0f / (1.0f + expf(-value));
 }
