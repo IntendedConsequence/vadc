@@ -18,12 +18,13 @@
 #endif
 
 #if DEBUG_WRITE_STATE_TO_FILE
-typedef struct DEBUG_Silero_State
+typedef struct DEBUG_Silero_State DEBUG_Silero_State;
+struct DEBUG_Silero_State
 {
    float samples[1536];
    float state_h[128];
    float state_c[128];
-} DEBUG_Silero_State;
+};
 
 static FILE *getDebugFile()
 {
@@ -531,11 +532,12 @@ int run_inference(OrtSession* session,
 }
 
 
-typedef struct ArgOption
+typedef struct ArgOption ArgOption;
+struct ArgOption
 {
    const char *name;
    float value;
-} ArgOption;
+};
 
 enum ArgOptionIndex
 {

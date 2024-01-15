@@ -53,18 +53,19 @@ typedef int32_t b32;
 
 #define ArrayCount(array) (sizeof(array) / sizeof((array)[0]))
 
-typedef struct Arena
+typedef struct Arena Arena;
+struct Arena
 {
     u8 *base;
     u64 used;
     u64 size;
-} Arena;
+};
 
 static u8 debug_arena_buffer[Megabytes(16)];
 
-static struct Arena debug_arena = {.base = &debug_arena_buffer[0], .size=sizeof(debug_arena_buffer)};
+static Arena debug_arena = {.base = &debug_arena_buffer[0], .size=sizeof(debug_arena_buffer)};
 
-static void *arena_push (struct Arena *arena, u64 size)
+static void *arena_push (Arena *arena, u64 size)
 {
     assert(arena->base);
     assert(size <= arena->size - arena->used);
@@ -75,7 +76,7 @@ static void *arena_push (struct Arena *arena, u64 size)
     return address;
 }
 
-static void *arena_pushz (struct Arena *arena, u64 size)
+static void *arena_pushz (Arena *arena, u64 size)
 {
     void *address = arena_push(arena, size);
     memset(address, 0, size);
@@ -83,7 +84,7 @@ static void *arena_pushz (struct Arena *arena, u64 size)
     return address;
 }
 
-static void arena_pop (struct Arena *arena, u64 size)
+static void arena_pop (Arena *arena, u64 size)
 {
     assert(arena->base);
     if (size <= arena->used)
@@ -97,17 +98,18 @@ static void arena_pop (struct Arena *arena, u64 size)
 
 }
 
-static void arena_reset (struct Arena *arena)
+static void arena_reset (Arena *arena)
 {
     assert(arena->base);
     arena->used = 0;
 }
 
-typedef struct TestTensor_Header
+typedef struct TestTensor_Header TestTensor_Header;
+struct TestTensor_Header
 {
     int version;
     int tensor_count;
-} TestTensor_Header;
+};
 
 typedef struct TestTensor
 {
@@ -121,13 +123,14 @@ typedef struct TestTensor
 
 // static_assert(sizeof(TestTensor) == 64, "Wrong size");
 
-typedef struct LoadTesttensorResult
+typedef struct LoadTesttensorResult LoadTesttensorResult;
+struct LoadTesttensorResult
 {
     int tensor_count;
     TestTensor *tensor_array;
-} LoadTesttensorResult;
+};
 
-struct LoadTesttensorResult load_testtensor(const char *path)
+LoadTesttensorResult load_testtensor(const char *path)
 {
     LoadTesttensorResult result = {0};
 
