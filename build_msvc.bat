@@ -32,7 +32,7 @@ if "%VSCMD_ARG_TGT_ARCH%" neq "x64" (
   exit /b 1
 )
 
-set CL=/W4 /WX /Zi /O1 /diagnostics:caret /options:strict /DWIN32 /D_CRT_SECURE_NO_WARNINGS
+set CL=/W4 /WX /Zi /Od /Gm- /diagnostics:caret /options:strict /DWIN32 /D_CRT_SECURE_NO_WARNINGS
 @rem set CL=%CL% /fsanitize=address
 set LINK=/INCREMENTAL:NO /SUBSYSTEM:CONSOLE kernel32.lib Shlwapi.lib
 
