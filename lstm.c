@@ -1,4 +1,5 @@
 #include "utils.h"
+#include "memory.h"
 #include <math.h>
 
 #if !defined(DEBUG_PRINT)
@@ -94,16 +95,19 @@ void lstm_cell (const float *input_x, int input_x_count, const float *hidden_sta
     FILE* debugout = fopen("lstm_debug.txt", "w");
 #endif // DEBUG_PRINT
 
+    MemoryArena *debug_arena = DEBUG_getDebugArena();
+    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+
     int combined_count = input_x_count * 2;
-    u64 mark = debug_arena.used;
-    float *input_and_hidden_state = arena_pushz(&debug_arena, combined_count * sizeof(float));
+    
+    float *input_and_hidden_state = pushArray(debug_arena, combined_count, float);
 
     // NOTE(irwin): concatenate arrays
     memcpy(input_and_hidden_state, input_x, input_x_count * sizeof(float));
     memcpy(input_and_hidden_state + input_x_count, hidden_state_previous, input_x_count * sizeof(float));
     // DEBUG_ARR_OUT(input_and_hidden_state, combined_count, debugout);
 
-    float *output_array = arena_pushz(&debug_arena, combined_count * 2 * sizeof(float));
+    float *output_array = pushArray(debug_arena, combined_count * 2, float);
     mydot_arrarr(input_and_hidden_state, combined_count, weights_transposed, combined_count * 2, output_array);
     add_arrays_inplace(output_array, combined_count * 2, biases);
     // DEBUG_ARR_OUT(output_array, combined_count * 2, debugout);
@@ -133,7 +137,7 @@ void lstm_cell (const float *input_x, int input_x_count, const float *hidden_sta
         h[j] *= output_gates[j];
     }
 
-    debug_arena.used = mark;
+    endTemporaryMemory( mark );
 
 #if DEBUG_PRINT
     fclose(debugout);
@@ -149,8 +153,10 @@ void lstm (const float *input_x, int input_x_count, const float *hidden_state_pr
     int weights_stride = (input_x_count * 2) * (input_x_count * 4);
     int biases_stride = (input_x_count * 4);
 
-    u64 mark = debug_arena.used;
-    float *output_hc_unordered = arena_pushz(&debug_arena, (hidden_state_stride + cell_state_stride) * 2 * sizeof(float));
+    MemoryArena *debug_arena = DEBUG_getDebugArena();
+    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+    
+    float *output_hc_unordered = pushArray(debug_arena, (hidden_state_stride + cell_state_stride) * 2, float);
 
     lstm_cell(input_x, input_x_count, hidden_state_previous, cell_state_previous, weights_transposed, biases, output_hc_unordered);
     lstm_cell(output_hc_unordered, input_x_count, hidden_state_previous + hidden_state_stride, cell_state_previous + cell_state_stride, weights_transposed + weights_stride, biases + biases_stride, output_hc_unordered + hidden_state_stride + cell_state_stride);
@@ -167,7 +173,7 @@ void lstm (const float *input_x, int input_x_count, const float *hidden_state_pr
     // c1
     memcpy(output_hc + hidden_state_stride + cell_state_stride + hidden_state_stride, output_hc_unordered + hidden_state_stride + cell_state_stride + hidden_state_stride, cell_state_stride * sizeof(float));
 
-    debug_arena.used = mark;
+    endTemporaryMemory( mark );
 }
 
 // [seq, input_x_count], h0,h1, c0,c1
@@ -177,14 +183,16 @@ void lstm_seq (const float *input_x, int input_x_seq_count, int input_x_count, c
     int input_size = input_x_count;
     int hidden_size = input_x_count;
 
-    u64 mark = debug_arena.used;
-    float *input_hc  = arena_push(&debug_arena, (input_size + hidden_size) * 2 * sizeof(float));
+    MemoryArena *debug_arena = DEBUG_getDebugArena();
+    TemporaryMemory mark = beginTemporaryMemory(debug_arena);
+
+    float *input_hc  = pushArray(debug_arena, (input_size + hidden_size) * 2, float);
     float *input_h = input_hc;
     float *input_c = input_hc + (hidden_size) * 2;
     memcpy(input_h, hidden_state_previous, (hidden_size) * 2 * sizeof(float));
     memcpy(input_c, cell_state_previous, (hidden_size) * 2 * sizeof(float));
 
-    float *output_hc = arena_push(&debug_arena, (input_size + hidden_size) * 2 * sizeof(float));
+    float *output_hc = pushArray(debug_arena, (input_size + hidden_size) * 2, float);
     for (int i = 0; i < input_x_seq_count; ++i)
     {
         lstm(input_x + i * input_x_count, input_x_count, input_h, input_c, weights_transposed, biases, output_hc);
@@ -194,5 +202,5 @@ void lstm_seq (const float *input_x, int input_x_seq_count, int input_x_count, c
     }
     memcpy(output + input_x_seq_count * input_x_count, output_hc, (input_size + hidden_size) * 2 * sizeof(float));
 
-    debug_arena.used = mark;
+    endTemporaryMemory( mark );
 }
