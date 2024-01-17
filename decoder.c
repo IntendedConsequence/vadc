@@ -2,6 +2,8 @@
 // #include <stdlib.h> //malloc, free
 
 #include "utils.h"
+#include "memory.h"
+
 
 static inline float sigmoid_one(float value)
 {
@@ -106,7 +108,10 @@ int decoder (float *input, int *input_dims, int input_ndims, float *weights, int
     VAR_UNUSED(output_dims);
 
     int result_ok = 1;
-    u64 mark = debug_arena.used;
+
+    MemoryArena *debug_arena = DEBUG_getDebugArena();
+
+    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
     assert(input_ndims == 3);
     assert(weights_ndims == 3);
@@ -123,7 +128,7 @@ int decoder (float *input, int *input_dims, int input_ndims, float *weights, int
 
         int input_size = input_count * sizeof(float);
 
-        float *relu_result = arena_pushz(&debug_arena, input_size);
+        float *relu_result = pushArray( debug_arena, input_count, float );
         memcpy(relu_result, input, input_size);
         relu_inplace(relu_result, input_count);
 
@@ -141,7 +146,7 @@ int decoder (float *input, int *input_dims, int input_ndims, float *weights, int
         // }
 
 
-        float *convolve_result = arena_pushz(&debug_arena, convolve_result_count * sizeof(float));
+        float *convolve_result = pushArray(debug_arena, convolve_result_count, float);
         convolve_mc_mf_batch_bias(batch_count, relu_result, input_dims[1], input_dims[2], weights, weights_dims[0], convolve_result, biases);
 
         // return __LINE__;
@@ -166,8 +171,7 @@ int decoder (float *input, int *input_dims, int input_ndims, float *weights, int
         }
     }
 
-    //arena_reset(&debug_arena);
-    debug_arena.used = mark;
+    endTemporaryMemory( mark );
 
     return result_ok;
 }
