@@ -67,16 +67,39 @@ const char *copyStringToArena( MemoryArena *arena, const char *stringData, size_
 MemoryArena *DEBUG_getDebugArena();
 
 #ifdef MEMORY_IMPLEMENTATION
-#include "memory.h"
 #include <string.h> // memset, strlen, memmove
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
+//#pragma comment(lib, "clang_rt.asan-x86_64.lib")
+
+#include <sanitizer/asan_interface.h>
 
 static u8 debug_arena_buffer_2[Megabytes( 16 )];
 
-static MemoryArena DEBUG_debug_arena_2 = { .base = &debug_arena_buffer_2[0], .size = sizeof( debug_arena_buffer_2 ) };
+static MemoryArena DEBUG_debug_arena_2 = { 0 };
 
 MemoryArena *DEBUG_getDebugArena()
 {
-   return &DEBUG_debug_arena_2;
+   if ( DEBUG_debug_arena_2.base )
+   {
+      // NOTE(irwin): initialized
+      return &DEBUG_debug_arena_2;
+   } else
+   {
+      // NOTE(irwin): not initialized
+      //__asan_get_shadow_mapping( &shadow_memory_scale, &shadow_memory_offset );
+#if 0
+      u64 size = Megabytes( 16 );
+      void *address = VirtualAlloc( 0, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE );
+      initializeMemoryArena( &DEBUG_debug_arena_2, address, size );
+#else
+      initializeMemoryArena( &DEBUG_debug_arena_2, &debug_arena_buffer_2[0], sizeof( debug_arena_buffer_2 ) );
+#endif
+
+      return &DEBUG_debug_arena_2;
+   }
 }
 
 void initializeMemoryArena( MemoryArena *arena, u8 *base, size_t size )
@@ -86,6 +109,8 @@ void initializeMemoryArena( MemoryArena *arena, u8 *base, size_t size )
    arena->previous_used = 0;
    arena->used = 0;
    arena->temporaryMemoryCount = 0;
+
+   ASAN_POISON_MEMORY_REGION( base, size );
 }
 
 void resetMemoryArena( MemoryArena *arena )
@@ -93,6 +118,7 @@ void resetMemoryArena( MemoryArena *arena )
    arena->previous_used = 0;
    arena->used = 0;
    arena->temporaryMemoryCount = 0;
+   ASAN_POISON_MEMORY_REGION( arena->base, arena->size );
 }
 
 b32 addressIsInsideArena( MemoryArena *arena, void *address )
@@ -133,6 +159,8 @@ void *pushSize( MemoryArena *arena, size_t size, size_t alignment )
       void *address = arena->base + arena->used + alignmentOffset;
       arena->previous_used = arena->used + alignmentOffset;
       arena->used += size;
+
+      ASAN_UNPOISON_MEMORY_REGION( address, size );
 
       return address;
    } else
@@ -184,7 +212,11 @@ void *resizeAllocationInArena( MemoryArena *arena, void *oldAddress, size_t oldS
             arena->used = arena->previous_used + newSize;
             if ( oldSize < newSize )
             {
+               ASAN_UNPOISON_MEMORY_REGION( oldAddressChar + oldSize, newSize - oldSize );
                memset( oldAddressChar + oldSize, 0, newSize - oldSize );
+            } else
+            {
+               ASAN_POISON_MEMORY_REGION( oldAddressChar + newSize, oldSize - newSize );
             }
 
             return oldAddress;
@@ -231,6 +263,8 @@ void endTemporaryMemory( TemporaryMemory temporaryMemory )
    Assert( temporaryMemory.arena->temporaryMemoryCount > 0 );
    temporaryMemory.arena->previous_used = temporaryMemory.previous_used;
    temporaryMemory.arena->used = temporaryMemory.used;
+
+   ASAN_POISON_MEMORY_REGION( temporaryMemory.arena->base + temporaryMemory.arena->used, temporaryMemory.arena->size - temporaryMemory.arena->used );
 
    --temporaryMemory.arena->temporaryMemoryCount;
 }
