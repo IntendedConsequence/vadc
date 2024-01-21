@@ -5,7 +5,7 @@
 // ad + be + cf
 
 __declspec(dllexport)
-float dotproduct (float *arr, int count, float *arr2, int count2)
+float dotproduct (const float *arr, int count, const float *arr2, int count2)
 {
     int mincount = count > count2 ? count2 : count;
 
@@ -27,7 +27,7 @@ float dotproduct (float *arr, int count, float *arr2, int count2)
 // [aj+bl+cn ak+bm+co]
 
 __declspec(dllexport)
-void mydot_arrarr (float *arr, int count, float *arr2, int arr2_rows, float *arr_out)
+void mydot_arrarr (const float *arr, int count, const float *arr2, int arr2_rows, float *arr_out)
 {
     for (int i = 0; i < arr2_rows; ++i)
     {
@@ -48,6 +48,7 @@ void mydot_arrarr (float *arr, int count, float *arr2, int arr2_rows, float *arr
 __declspec(dllexport)
 void mymatmul (float *mata, int mata_rows, int mata_cols, float *matb_transposed, int matb_transposed_rows, int matb_transposed_cols, float *out_result)
 {
+    VAR_UNUSED(matb_transposed_cols);
     int mata_stride = mata_cols;
     int out_stride = matb_transposed_rows;
 

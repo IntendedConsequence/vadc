@@ -7,6 +7,7 @@
 #include "memory.h"
 
 #include "decoder.c"
+#include "lstm.c"
 
 typedef struct TestTensor_Header TestTensor_Header;
 struct TestTensor_Header
@@ -141,10 +142,10 @@ static b32 all_close( float *left, float *right, int count, float atol )
    return 1;
 }
 
-// int main(int argc, char *argv[])
-int main()
+b32 decoder_test()
 {
    MemoryArena *debug_arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = { 0 };
    res = load_testtensor( "decoder_test.testtensor" );
@@ -165,17 +166,95 @@ int main()
 
    float atol = 1e-10f;
    b32 pass = all_close( result->data, output, result->size, atol );
-   if ( pass )
+   // if ( pass )
+   // {
+   //    fprintf( stderr, "All tests passed!\n" );
+   // } else
+   // {
+   //    fprintf( stderr, "Failed test!\n" );
+   // }
+
+   endTemporaryMemory( mark );
+
+   return pass;
+}
+
+b32 lstm_test()
+{
+   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+
+   LoadTesttensorResult lstm_res = { 0 };
+   lstm_res = load_testtensor( "lstm_nito_reference_randn.testtensor" );
+
+   // Assert(memcmp(output, result->data, output_size) == 0);
+
+   // print_tensors(lstm_res);
+
+   TestTensor *input_x = lstm_res.tensor_array + 0;
+   TestTensor *input_h = lstm_res.tensor_array + 1;
+   TestTensor *input_c = lstm_res.tensor_array + 2;
+   TestTensor *weights_transposed = lstm_res.tensor_array + 3;
+   TestTensor *lstm_biases = lstm_res.tensor_array + 4;
+   TestTensor *output_combined_reference = lstm_res.tensor_array + 5;
+
+   Assert( input_x->ndim == 2 );
+   int seq_length = input_x->dims[0];
+   int input_size = input_x->dims[1];
+
+   int lstm_output_size = input_size * 4 + input_size * seq_length;
+
+   float *output_combined = pushArray( debug_arena, lstm_output_size, float );
+
+   lstm_seq(input_x->data,
+            seq_length,
+            input_size,
+            input_h->data,
+            input_c->data,
+            weights_transposed->data,
+            lstm_biases->data,
+            output_combined
+   );
+
+   b32 pass_lstm = all_close( output_combined_reference->data, output_combined, lstm_output_size, 1e-04f );
+   // if ( pass_lstm )
+   // {
+   //    fprintf( stderr, "All tests passed!\n" );
+   // } else
+   // {
+   //    fprintf( stderr, "Failed test!\n" );
+   // }
+
+   endTemporaryMemory( mark );
+
+   return pass_lstm;
+}
+
+// int main(int argc, char *argv[])
+int main()
+{
+   b32 decoder_passed = decoder_test();
+
+   // ------
+   //  LSTM
+   // ------
+   b32 lstm_passed = lstm_test();
+
+   if ( decoder_passed && lstm_passed )
    {
       fprintf( stderr, "All tests passed!\n" );
    } else
    {
-      fprintf( stderr, "Failed test!\n" );
+      if (!decoder_passed )
+      {
+         fprintf( stderr, "Failed decoder!\n" );
+      }
+      if (!lstm_passed )
+      {
+         fprintf( stderr, "Failed lstm!\n" );
+      }
    }
 
-   // Assert(memcmp(output, result->data, output_size) == 0);
-
-   // print_tensors(res);
 
    return 0;
 }

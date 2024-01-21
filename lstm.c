@@ -1,6 +1,8 @@
 #include "utils.h"
-#include "memory.h"
 #include <math.h>
+
+// #define MEMORY_IMPLEMENTATION
+#include "memory.h"
 
 #if !defined(DEBUG_PRINT)
 # define DEBUG_PRINT 0
@@ -65,7 +67,7 @@ static void mysigmoid_inplace (float *arr, int count)
 
 // void mydot_arrarr (float *arr, int count, float *arr2, int arr2_rows, float *arr_out);
 
-static void add_arrays_inplace (float *array_a, int count, float *array_b)
+static void add_arrays_inplace (float *array_a, int count, const float *array_b)
 {
     for (int i = 0; i < count; ++i)
     {
@@ -87,7 +89,9 @@ static void debugprint_array(const float *arr, int count, FILE *file_out)
 # define DEBUG_ARR_OUT(arr, count, file) do { (void)(sizeof(0)); } while(0)
 #endif // DEBUG_PRINT
 
-
+// IMPORTANT(irwin): biases are expected to be shared for both input data and hidden state. Since pytorch uses separate biases
+// for input data and hidden state for CUDA compatibility, if the caller comes from PyTorch, the caller must take care of
+// adding the pytorch separate biases before calling this function.
 __declspec(dllexport)
 void lstm_cell (const float *input_x, int input_x_count, const float *hidden_state_previous, const float *cell_state_previous, const float *weights_transposed, const float *biases, float *output_hc)
 {
@@ -99,7 +103,7 @@ void lstm_cell (const float *input_x, int input_x_count, const float *hidden_sta
     TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
     int combined_count = input_x_count * 2;
-    
+
     float *input_and_hidden_state = pushArray(debug_arena, combined_count, float);
 
     // NOTE(irwin): concatenate arrays
@@ -144,6 +148,9 @@ void lstm_cell (const float *input_x, int input_x_count, const float *hidden_sta
 #endif // DEBUG_PRINT
 }
 
+// IMPORTANT(irwin): biases are expected to be shared for both input data and hidden state. Since pytorch uses separate biases
+// for input data and hidden state for CUDA compatibility, if the caller comes from PyTorch, the caller must take care of
+// adding the pytorch separate biases (within each lstm cell) before calling this function.
 __declspec(dllexport)
 void lstm (const float *input_x, int input_x_count, const float *hidden_state_previous, const float *cell_state_previous, const float *weights_transposed, const float *biases, float *output_hc)
 {
@@ -155,7 +162,7 @@ void lstm (const float *input_x, int input_x_count, const float *hidden_state_pr
 
     MemoryArena *debug_arena = DEBUG_getDebugArena();
     TemporaryMemory mark = beginTemporaryMemory( debug_arena );
-    
+
     float *output_hc_unordered = pushArray(debug_arena, (hidden_state_stride + cell_state_stride) * 2, float);
 
     lstm_cell(input_x, input_x_count, hidden_state_previous, cell_state_previous, weights_transposed, biases, output_hc_unordered);
@@ -176,6 +183,10 @@ void lstm (const float *input_x, int input_x_count, const float *hidden_state_pr
     endTemporaryMemory( mark );
 }
 
+// IMPORTANT(irwin): biases are expected to be shared for both input data and hidden state. Since pytorch uses separate biases
+// for input data and hidden state for CUDA compatibility, if the caller comes from PyTorch, the caller must take care of
+// adding the pytorch separate biases (within each lstm cell) before calling this function.
+// output:
 // [seq, input_x_count], h0,h1, c0,c1
 __declspec(dllexport)
 void lstm_seq (const float *input_x, int input_x_seq_count, int input_x_count, const float *hidden_state_previous, const float *cell_state_previous, const float *weights_transposed, const float *biases, float *output)

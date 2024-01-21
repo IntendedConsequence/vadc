@@ -377,6 +377,7 @@ class LSTMCell:
     self.bias_hh = Tensor.uniform(hidden_size * 4)
 
   def __call__(self, x: Tensor, hc: Tensor) -> Tensor:
+    # print(x.shape)
     gates = x.linear(self.weights_ih.T, self.bias_ih) + hc[:x.shape[0]].linear(self.weights_hh.T, self.bias_hh)
 
     i, f, g, o = gates.chunk(4, 1)
@@ -384,8 +385,10 @@ class LSTMCell:
 
     c = (f * hc[x.shape[0]:]) + (i * g)
     h = (o * c.tanh()).dropout(self.dropout)
-
-    return Tensor.cat(h, c)
+    # print(c.shape, h.shape)
+    newhc = Tensor.cat(h, c)
+    # print(newhc.shape)
+    return newhc
 
 
 class LSTM:
@@ -430,14 +433,18 @@ class LSTM:
                 output = hc[-1:, :x.shape[1]]
             else:
                 output = output.cat(hc[-1:, :x.shape[1]], dim=0)
-
+        print(output.shape)
         return output.realize(), hc.realize()
 
     def do_step(self, x: Tensor, hc: Tensor) -> Tensor:
+        print(x.shape)
         new_hc = [x]
         for i, cell in enumerate(self.cells):
             new_hc.append(cell(new_hc[i][:x.shape[0]], hc[i]))
-        return Tensor.stack(new_hc[1:])
+
+        stacked = Tensor.stack(new_hc[1:])
+        # print(stacked.shape)
+        return stacked
 
 class Decoder:
     def __init__(self):
@@ -569,6 +576,7 @@ class Silero:
 
         with Timing("not lstm: "):
             x = not_lstm(x)
+            # print(x.shape)
 
         # with Timing("adaptive_normalization: "):
         # with Timing("first_layer: "):
@@ -585,15 +593,34 @@ class Silero:
 
         with Timing("lstm: "):
             if batch_size > 1:
-                # NOTE(irwin): batch support for sequential chunks, unbatches lstm processing (untested with batch_size > 1 yet)
-                res = []
-                batches = x
-                for batch in range(batch_size):
-                    x = self.lstm(batches[batch].unsqueeze(0).permute([2, 0, 1]), hctg)
+                if True:
+                    # NOTE(irwin): batch support for sequential chunks, unbatches lstm processing (untested with batch_size > 1 yet)
+                    res = []
+                    batches = x
+                    for batch in range(batch_size):
+                        permx = batches[batch].unsqueeze(0).permute([2, 0, 1])
+                        # print(permx.shape)
+                        x = self.lstm(permx, hctg)
+                        x, hc = x[0], x[1]
+                        res.append(x)
+                        hctg = hc
+                    x = Tensor.cat(*res, dim=1)
+                else:
+                    # res = []
+                    print(f"x.shape: {x.shape}")
+                    batches = x.reshape(1, 64, -1) # [B, 64, 7]
+                    print(f"batches.shape: {batches.shape}")
+                    print(f"hctg.shape: {hctg.shape}")
+                    x = self.lstm(x.permute([2, 0, 1]), hctg)
                     x, hc = x[0], x[1]
-                    res.append(x)
-                    hctg = hc
-                x = Tensor.cat(*res, dim=1)
+                    # for batch in range(batch_size):
+                    #     permx = batches[batch].unsqueeze(0).permute([2, 0, 1])
+                    #     # print(permx.shape)
+                    #     x = self.lstm(permx, hctg)
+                    #     x, hc = x[0], x[1]
+                    #     res.append(x)
+                    #     hctg = hc
+                    # x = Tensor.cat(*res, dim=1)
             else:
                 x = self.lstm(x.permute([2, 0, 1]), hctg)
                 x, hc = x[0], x[1]
