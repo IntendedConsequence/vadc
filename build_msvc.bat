@@ -32,12 +32,25 @@ if "%VSCMD_ARG_TGT_ARCH%" neq "x64" (
   exit /b 1
 )
 
+rem for getting date and time to stamp the pdb files so that we can ensure that debuggers won't load the wrong one if it was overwritten
+rem due to how debuggers locate pdb by blindly loading up an absolute path stored in the PE header. This may
+rem no longer be necessary since we may be able to specify a relative path instead using the link.exe /PDBALTPATH option.
+
+rem for /f "delims=" %%i in ('powershell -nologo -Command "[System.DateTime]::Now.ToString(\"yyyy-MM-dd_HH-mm-ss_fff\")"') do (
+rem     set "datetime_stamp=%%i"
+rem )
+
 set CL=/W4 /WX /Zi /Od /Gm- /diagnostics:caret /options:strict /DWIN32 /D_CRT_SECURE_NO_WARNINGS
-@rem set CL=%CL% /fsanitize=address
+rem set CL=%CL% /fsanitize=address
 set LINK=/INCREMENTAL:NO /SUBSYSTEM:CONSOLE kernel32.lib Shlwapi.lib
 
-cl.exe /nologo vadc.c /link lib\onnxruntime.lib
-cl.exe /nologo filter_script.c /link
-cl.exe /nologo test.c /link
-cl.exe /nologo /MD decoder.c /link /DLL /OUT:decoder.dll
+del vadc.pdb >nul & cl.exe /nologo /DFROM_STDIN=0 vadc.c /link lib\onnxruntime.lib
+del filter_script.pdb >nul & cl.exe /nologo filter_script.c /link
+
+rem cl.exe /nologo test.c /Fdtest_%datetime_stamp%d.pdb /link /PDB:test_%datetime_stamp%.pdb
+rem cl.exe /nologo test.c /link /PDB:test_%datetime_stamp%.pdb
+del test.pdb >nul & cl.exe /nologo /fsanitize=address test.c /link
+
+@REM cl.exe /nologo /MD decoder.c /link /DLL /OUT:decoder.dll
+
 del *.obj *.res >nul
