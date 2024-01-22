@@ -128,21 +128,107 @@ static void print_tensors( LoadTesttensorResult res )
    }
 }
 
-static b32 all_close( float *left, float *right, int count, float atol )
+typedef enum TestErrorMagnitude
 {
-   for ( int i = 0; i < count; ++i )
+   TestErrorMagnitude_Zero,
+   TestErrorMagnitude_1E_minus10,
+   TestErrorMagnitude_1E_minus9,
+   TestErrorMagnitude_1E_minus8,
+   TestErrorMagnitude_1E_minus7,
+   TestErrorMagnitude_1E_minus6,
+   TestErrorMagnitude_1E_minus5,
+   TestErrorMagnitude_1E_minus4,
+   TestErrorMagnitude_1E_minus3,
+   TestErrorMagnitude_1E_minus2,
+   TestErrorMagnitude_1E_minus1,
+   TestErrorMagnitude_1,
+   TestErrorMagnitude_Above_1,
+
+   TestErrorMagnitude_COUNT
+} TestErrorMagnitude;
+
+typedef struct TestResult TestResult;
+struct TestResult
+{
+   b32 pass;
+   float atol;
+   float max_error;
+   int error_magnitude;
+};
+
+static float test_error_magnitudes[TestErrorMagnitude_COUNT] =
+{
+   0.0f,
+   1e-10f,
+   1e-9f,
+   1e-8f,
+   1e-7f,
+   1e-6f,
+   1e-5f,
+   1e-4f,
+   1e-3f,
+   1e-2f,
+   1e-1f,
+   1.0f,
+   1e1f
+};
+
+static const char *test_error_magnitude_names[TestErrorMagnitude_COUNT] =
+{
+   "zero",
+   "1e-10",
+   "1e-9",
+   "1e-8",
+   "1e-7",
+   "1e-6",
+   "1e-5",
+   "1e-4",
+   "1e-3",
+   "1e-2",
+   "1e-1",
+   "1",
+   "above 1"
+};
+
+
+int get_test_error_magnitude( float value )
+{
+   for ( int i = 0; i < TestErrorMagnitude_Above_1; ++i )
    {
-      float adiff = fabsf( left[i] - right[i] );
-      if ( adiff > atol )
+      if ( value <= test_error_magnitudes[i] )
       {
-         return 0;
+         return i;
       }
    }
 
-   return 1;
+   return TestErrorMagnitude_Above_1;
 }
 
-b32 decoder_test()
+
+
+static TestResult all_close( float *left, float *right, int count, float atol )
+{
+   TestResult result = { 0 };
+   result.atol = atol;
+
+   float max_error = 0.0f;
+   for ( int i = 0; i < count; ++i )
+   {
+      float adiff = fabsf( left[i] - right[i] );
+      if ( adiff > max_error )
+      {
+         max_error = adiff;
+      }
+   }
+
+   result.max_error = max_error;
+   result.pass = max_error < atol;
+   result.error_magnitude = get_test_error_magnitude( max_error );
+
+   return result;
+}
+
+TestResult decoder_test()
 {
    MemoryArena *debug_arena = DEBUG_getDebugArena();
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
@@ -165,21 +251,15 @@ b32 decoder_test()
    Assert( result_ok );
 
    float atol = 1e-10f;
-   b32 pass = all_close( result->data, output, result->size, atol );
-   // if ( pass )
-   // {
-   //    fprintf( stderr, "All tests passed!\n" );
-   // } else
-   // {
-   //    fprintf( stderr, "Failed test!\n" );
-   // }
+
+   TestResult test_result = all_close( result->data, output, result->size, atol );
 
    endTemporaryMemory( mark );
 
-   return pass;
+   return test_result;
 }
 
-b32 lstm_test()
+TestResult lstm_test()
 {
    MemoryArena *debug_arena = DEBUG_getDebugArena();
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
@@ -216,43 +296,66 @@ b32 lstm_test()
             output_combined
    );
 
-   b32 pass_lstm = all_close( output_combined_reference->data, output_combined, lstm_output_size, 1e-04f );
-   // if ( pass_lstm )
-   // {
-   //    fprintf( stderr, "All tests passed!\n" );
-   // } else
-   // {
-   //    fprintf( stderr, "Failed test!\n" );
-   // }
+   TestResult pass_lstm = all_close( output_combined_reference->data, output_combined, lstm_output_size, 1e-04f );
 
    endTemporaryMemory( mark );
 
    return pass_lstm;
 }
 
+static const char *result_strings[] =
+{
+   "FAIL",
+   "PASS"
+};
+
+typedef TestResult (*TestFunction)();
+
+typedef struct TestFunctionDescription TestFunctionDescription;
+
+struct TestFunctionDescription
+{
+   TestFunction function_pointer;
+   const char *test_name;
+   float acceptable_error_magnitude;
+};
+
+TestFunctionDescription test_function_descriptions[] =
+{
+   { decoder_test, "Decoder", 1e-10f },
+   { lstm_test, "LSTM", 1e-04f }
+};
+
 // int main(int argc, char *argv[])
 int main()
 {
-   b32 decoder_passed = decoder_test();
+   b32 all_pass = 1;
+   int failed_count = 0;
+   int passed_count = 0;
 
-   // ------
-   //  LSTM
-   // ------
-   b32 lstm_passed = lstm_test();
+   int test_count = ArrayCount( test_function_descriptions );
+   fprintf( stderr, "Total tests to run: %d\n", test_count );
 
-   if ( decoder_passed && lstm_passed )
+   for ( int i = 0; i < test_count; ++i )
    {
-      fprintf( stderr, "All tests passed!\n" );
+      TestFunctionDescription *desc = test_function_descriptions + i;
+      TestResult result = desc->function_pointer();
+
+      all_pass &= result.pass;
+      passed_count += !!result.pass;
+      failed_count += !result.pass;
+
+      fprintf( stderr, "%s max error magnitude: %s", desc->test_name, test_error_magnitude_names[result.error_magnitude] );
+      fprintf( stderr, " ... %s\n", result_strings[!!result.pass] );
+   }
+
+   fprintf( stderr, "\n---\n" );
+   if ( all_pass )
+   {
+      fprintf( stderr, "All %d tests PASSED!\n", test_count );
    } else
    {
-      if (!decoder_passed )
-      {
-         fprintf( stderr, "Failed decoder!\n" );
-      }
-      if (!lstm_passed )
-      {
-         fprintf( stderr, "Failed lstm!\n" );
-      }
+      fprintf( stderr, "%d out of %d tests FAILED!\n", failed_count, test_count );
    }
 
 
