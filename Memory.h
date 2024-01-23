@@ -57,7 +57,7 @@ struct TemporaryMemoryScoped
 
 // #define pushStruct(arena, type) (type *) pushSizeZeroed( arena, sizeof(type), alignof(type) )
 // #define pushArray(arena, count, type) (type *) pushSizeZeroed( arena, sizeof(type) * (count), alignof(type) )
-// TODO(irwin): 
+// TODO(irwin):
 #define TEMP_DEFAULT_ALIGNMENT 8
 #define pushStruct(arena, type) (type *) pushSizeZeroed( arena, sizeof(type), TEMP_DEFAULT_ALIGNMENT )
 #define pushArray(arena, count, type) (type *) pushSizeZeroed( arena, sizeof(type) * (count), TEMP_DEFAULT_ALIGNMENT )
@@ -90,8 +90,8 @@ MemoryArena *DEBUG_getDebugArena()
    {
       // NOTE(irwin): not initialized
       //__asan_get_shadow_mapping( &shadow_memory_scale, &shadow_memory_offset );
-#if 0
-      u64 size = Megabytes( 16 );
+#if 1
+      u64 size = Megabytes( 128 );
       void *address = VirtualAlloc( 0, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE );
       initializeMemoryArena( &DEBUG_debug_arena_2, address, size );
 #else

@@ -303,6 +303,66 @@ TestResult lstm_test()
    return pass_lstm;
 }
 
+TestResult lstm_test_RED()
+{
+   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+
+   LoadTesttensorResult lstm_input = { 0 };
+   LoadTesttensorResult lstm_weights = { 0 };
+   LoadTesttensorResult lstm_output = { 0 };
+   lstm_input = load_testtensor( "RED600_all_before_lstm.testtensor" );
+   lstm_weights = load_testtensor( "lstm_silero_3.1_16k_for_c.testtensor" );
+   lstm_output = load_testtensor( "RED600_all_lstm_output_lite.testtensor" );
+
+   TestTensor *input = lstm_input.tensor_array + 0;
+
+   TestTensor *weights = lstm_weights.tensor_array + 0;
+   TestTensor *biases = lstm_weights.tensor_array + 1;
+
+   TestTensor *output_reference = lstm_output.tensor_array + 0;
+
+   /*
+   - [x] switch to bigger debug default arena since 16Mb won't be enough for 3x11Mb (lstm in, ref out, and our out)
+   - [x] alloc input_h, input_c
+   - [x] fill it with zeros
+   - [x] alloc output_combined for all iterations
+   - [ ] alloc output_combined_one for one iteration (or offset into output_combined)
+   */
+   Assert( input->ndim == 3 );
+   int batches = input->dims[0];
+   int seq_length = input->dims[1];
+   int input_size = input->dims[2];
+   int layer_count = weights->dims[0];
+
+   int batch_stride = seq_length * input_size;
+   int lstm_output_size = batch_stride * batches + (input_size * layer_count * 2);
+   // Assert(lstm_output_size == output_reference->size);
+
+   int hc_size = input_size * layer_count;
+   float *input_h_array = pushArray( debug_arena, hc_size, float );
+   float *input_c_array = pushArray( debug_arena, hc_size, float );
+   float *output_single_batch = pushArray( debug_arena, lstm_output_size, float );
+   // float *output_combined = pushArray( debug_arena, batches * seq_length * input_size, float );
+
+   lstm_seq(input->data,
+            seq_length * batches,
+            input_size,
+            input_h_array,
+            input_c_array,
+            weights->data,
+            biases->data,
+            output_single_batch
+   );
+   // print_array(output_single_batch, lstm_output_size);
+
+   TestResult pass_lstm = all_close( output_reference->data, output_single_batch, batch_stride * batches, 1e-04f );
+
+   endTemporaryMemory( mark );
+
+   return pass_lstm;
+}
+
 static const char *result_strings[] =
 {
    "FAIL",
@@ -323,7 +383,8 @@ struct TestFunctionDescription
 TestFunctionDescription test_function_descriptions[] =
 {
    { decoder_test, "Decoder", 1e-10f },
-   { lstm_test, "LSTM", 1e-04f }
+   { lstm_test, "LSTM", 1e-04f },
+   { lstm_test_RED, "LSTM RED", 1e-04f }
 };
 
 // int main(int argc, char *argv[])
