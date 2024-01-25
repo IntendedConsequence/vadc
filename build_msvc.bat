@@ -49,7 +49,10 @@ del filter_script.pdb >nul & cl.exe /nologo filter_script.c /link
 
 rem cl.exe /nologo test.c /Fdtest_%datetime_stamp%d.pdb /link /PDB:test_%datetime_stamp%.pdb
 rem cl.exe /nologo test.c /link /PDB:test_%datetime_stamp%.pdb
-del test.pdb >nul & cl.exe /nologo /fsanitize=address test.c /link
+
+rem set CL=%CL% /fsanitize=address
+rem set CL=%CL% /O2 /arch:AVX2
+del test.pdb >nul & cl.exe /nologo test.c /link
 
 @REM cl.exe /nologo /MD decoder.c /link /DLL /OUT:decoder.dll
 

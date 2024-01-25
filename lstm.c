@@ -171,6 +171,7 @@ void lstm (const float *input_x, int input_x_count, const float *hidden_state_pr
     // h0,c0 -> h0,h1
     // h1,c1 -> c0,c1
 
+    // TODO(irwin): memmove?
     // h0
     memcpy(output_hc, output_hc_unordered, hidden_state_stride * sizeof(float));
     // h1
@@ -200,6 +201,7 @@ void lstm_seq (const float *input_x, int input_x_seq_count, int input_x_count, c
     float *input_hc  = pushArray(debug_arena, (input_size + hidden_size) * 2, float);
     float *input_h = input_hc;
     float *input_c = input_hc + (hidden_size) * 2;
+    // TODO(irwin): memmove?
     memcpy(input_h, hidden_state_previous, (hidden_size) * 2 * sizeof(float));
     memcpy(input_c, cell_state_previous, (hidden_size) * 2 * sizeof(float));
 
@@ -208,9 +210,11 @@ void lstm_seq (const float *input_x, int input_x_seq_count, int input_x_count, c
     {
         lstm(input_x + i * input_x_count, input_x_count, input_h, input_c, weights_transposed, biases, output_hc);
 
+        // TODO(irwin): memmove?
         memcpy(input_hc, output_hc, (input_size + hidden_size) * 2 * sizeof(float));
         memcpy(output + i * input_x_count, output_hc + hidden_size, hidden_size * sizeof(float));
     }
+    // TODO(irwin): memmove?
     memcpy(output + input_x_seq_count * input_x_count, output_hc, (input_size + hidden_size) * 2 * sizeof(float));
 
     endTemporaryMemory( mark );

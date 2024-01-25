@@ -3,13 +3,53 @@
 
 #include "utils.h"
 #include "memory.h"
-
+#include "matmul.h"
 
 static inline float sigmoid_one(float value)
 {
     return 1.0f / (1.0f + expf(-value));
 }
 
+
+// NOTE(irwin): specialized for kernel_size = 5, padding = 2 (with zeros)
+__declspec(dllexport)
+void convolve_k5_pad2 (const float *arr, int count, const float *kernel_flipped, float *arr_out)
+{
+    int kernel_size = 5;
+    int padding = 2;
+    // NOTE(irwin): for kernel_size = 5, padding = 2, out_array_count equals count
+    int out_array_count = count - kernel_size + 1 + padding + padding;
+
+    // NOTE(irwin): since we know that padding is 2 zeros, we can compute first two elements as if we had a kernel
+    // of size 4 and 3 for elements at index 0 and 1, respectively, because the padded zeroes effectively mask out
+    // the first elements of the kernel.
+    arr_out[0] = dotproduct(arr, kernel_size - 2, kernel_flipped + 2, kernel_size - 2);
+    arr_out[1] = dotproduct(arr, kernel_size - 1, kernel_flipped + 1, kernel_size - 1);
+
+    for (int i = 0; i < count - kernel_size + 1; ++i)
+    {
+        float value = dotproduct(arr + i, kernel_size, kernel_flipped, kernel_size);
+        arr_out[padding + i] = value;
+    }
+
+    // NOTE(irwin): we repeat the same thing for the last two elements as we did for the first two. However,
+    // this would mean we need to get the pointer to the last 4 and 3 elements of the input array. This would
+    // mean `arr + count - 4` and `arr + count - 3`, or `arr + count - kernel_size + 1`. BUT!
+    // If we did that, the calls to dotproduct would look like:
+    //
+    // ... = dotproduct(arr_pad + 0, kernel_size - 1, kernel_flipped, kernel_size - 1);
+    // ... = dotproduct(arr_pad + 1, kernel_size - 2, kernel_flipped, kernel_size - 2);
+    // which is harder to read and understand, which offsets do what, from which end etc
+    // So to make it more uniform, we instead compute the pointer to the last kernel_size elements of the array,
+    // so the offsets are matched now.
+    // We do the same thing with arr_out_one_before_two_last_elements following the same principle, with the only
+    // difference being we get the pointer to one output array element BEFORE the last two output elements,
+    // which we can then offset by the same amount.
+    const float *arr_pad = arr + count - kernel_size;
+    float *arr_out_one_before_two_last_elements = arr_out + out_array_count - 2 - 1;
+    arr_out_one_before_two_last_elements[1] = dotproduct(arr_pad + 1, kernel_size - 1, kernel_flipped, kernel_size - 1);
+    arr_out_one_before_two_last_elements[2] = dotproduct(arr_pad + 2, kernel_size - 2, kernel_flipped, kernel_size - 2);
+}
 
 __declspec(dllexport)
 void convolve_muladd (float *arr, int count, float kernel, float *arr_out)
@@ -129,7 +169,7 @@ int decoder (float *input, int *input_dims, int input_ndims, float *weights, int
         int input_size = input_count * sizeof(float);
 
         float *relu_result = pushArray( debug_arena, input_count, float );
-        memcpy(relu_result, input, input_size);
+        memcpy(relu_result, input, input_size); // TODO(irwin): memmove?
         relu_inplace(relu_result, input_count);
 
         int batch_count = input_dims[0];
