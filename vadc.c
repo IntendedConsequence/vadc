@@ -107,23 +107,75 @@ void process_chunks( VADC_Context context,
                     const float *samples_buffer_float32,
                     float *probabilities_buffer)
 {
-   for (size_t offset = 0;
-        offset < buffered_samples_count;
-        offset += context.window_size_samples)
+   if (context.batch_size == 1)
    {
-      // NOTE(irwin): copy a slice of the buffered samples
-      size_t samples_count_left = buffered_samples_count - offset;
-      size_t window_size = samples_count_left > context.window_size_samples ? context.window_size_samples : samples_count_left;
+      for (size_t offset = 0;
+         offset < buffered_samples_count;
+         offset += context.window_size_samples)
+      {
+         // NOTE(irwin): copy a slice of the buffered samples
+         size_t samples_count_left = buffered_samples_count - offset;
+         size_t window_size = samples_count_left > context.window_size_samples ? context.window_size_samples : samples_count_left;
 
-      // IMPORTANT(irwin): hardcoded to use state from previous inference, assumed to be in output tensor memory
-      // TODO(irwin): dehardcode
-      VADC_Chunk_Result result = run_inference_on_single_chunk( context,
-                                                                window_size,
-                                                                samples_buffer_float32 + offset,
-                                                                context.output_tensor_state_h,
-                                                                context.output_tensor_state_c );
+         // IMPORTANT(irwin): hardcoded to use state from previous inference, assumed to be in output tensor memory
+         // TODO(irwin): dehardcode
+         VADC_Chunk_Result result = run_inference_on_single_chunk( context,
+                                                                  window_size,
+                                                                  samples_buffer_float32 + offset,
+                                                                  context.output_tensor_state_h,
+                                                                  context.output_tensor_state_c );
 
-      *probabilities_buffer++ = result.probability;
+         *probabilities_buffer++ = result.probability;
+      }
+   }
+   else
+   {
+      assert(!context.is_silero_v4);
+      int stride = (int)context.window_size_samples * context.batch_size;
+      for (size_t offset = 0;
+         offset < buffered_samples_count;
+         offset += stride)
+      {
+         // NOTE(irwin): copy a slice of the buffered samples
+         size_t samples_count_left = buffered_samples_count - offset;
+         size_t samples_count = samples_count_left > stride ? stride : samples_count_left;
+
+         // TODO(irwin): memset to 0 the entire tensor for simplicity, to avoid manual error-prone padding offset calculations
+         memset( context.input_tensor_samples, 0, stride * sizeof( context.input_tensor_samples[0] ) );
+         memmove( context.input_tensor_samples, samples_buffer_float32 + offset, samples_count * sizeof( context.input_tensor_samples[0] ) );
+
+         // NOTE(irwin): pad chunks with not enough samples
+         // for ( size_t pad_index = samples_count; pad_index < stride; ++pad_index )
+         // {
+         //    context.input_tensor_samples[pad_index] = 0.0f;
+         // }
+
+         memmove( context.input_tensor_state_h, context.output_tensor_state_h, context.state_count * sizeof( context.input_tensor_state_h[0] ) );
+         memmove( context.input_tensor_state_c, context.output_tensor_state_c, context.state_count * sizeof( context.input_tensor_state_c[0] ) );
+
+         ORT_ABORT_ON_ERROR( g_ort->Run( context.session,
+                                         NULL,
+                                         context.input_names,
+                                         context.input_tensors,
+                                         context.inputs_count,
+                                         context.output_names,
+                                         context.outputs_count,
+                                         context.output_tensors )
+         );
+
+         assert( context.output_tensors[0] != NULL );
+
+         int is_tensor;
+         ORT_ABORT_ON_ERROR( g_ort->IsTensor( context.output_tensors[0], &is_tensor ) );
+         assert( is_tensor );
+
+         int output_stride = context.is_silero_v4 ? 1 : 2;
+         for (int i = 0; i < context.batch_size; ++i)
+         {
+            float result_probability = context.output_tensor_prob[i * output_stride + context.silero_probability_out_index];
+            *probabilities_buffer++ = result_probability;
+         }
+      }
    }
 }
 
@@ -290,15 +342,16 @@ int run_inference(OrtSession* session,
 
    // NOTE(irwin): create tensors and allocate tensors backing memory buffers
    const size_t input_count = window_size_samples;
-   float *input_tensor_samples = (float *)malloc(input_count * sizeof(float));
-
-   int64_t input_tensor_samples_shape[] = {1, input_count};
+   int batch_size = 32;
+   // int batch_size = 1;
+   float *input_tensor_samples = (float *)malloc(input_count * batch_size * sizeof(float));
+   int64_t input_tensor_samples_shape[] = {batch_size, input_count};
    const size_t input_tensor_samples_shape_count = ArrayCount(input_tensor_samples_shape);
 
    const size_t silero_input_tensor_count = is_silero_v4 ? 4 : 3;
    OrtValue* input_tensors[4];
 
-   create_tensor(memory_info, &input_tensors[0], input_tensor_samples_shape, input_tensor_samples_shape_count, input_tensor_samples, input_count);
+   create_tensor(memory_info, &input_tensors[0], input_tensor_samples_shape, input_tensor_samples_shape_count, input_tensor_samples, input_count * batch_size);
 
    const size_t state_count = 128;
    float *state_h = (float *)malloc(state_count * sizeof(float));
@@ -337,8 +390,8 @@ int run_inference(OrtSession* session,
    VAR_UNUSED( input_names_v4 );
    VAR_UNUSED( input_names_v3 );
 
-   int64_t prob_shape_v4[] = { 1, 1 };
-   int64_t prob_shape_v3[] = { 1, 2, 1 };
+   int64_t prob_shape_v4[] = { batch_size, 1 };
+   int64_t prob_shape_v3[] = { batch_size, 2, 1 };
 
    VAR_UNUSED( prob_shape_v4 );
    VAR_UNUSED( prob_shape_v3 );
@@ -351,15 +404,21 @@ int run_inference(OrtSession* session,
    const char **input_names = is_silero_v4 ? input_names_v4 : input_names_v3;
    int64_t *prob_shape = is_silero_v4 ? prob_shape_v4 : prob_shape_v3;
 
-   float prob[2];
-
-   const char *output_names[] = { "output", "hn", "cn" };
+   // const char *output_names[] = { "output", "hn", "cn" };
+   const char *output_names[] = { "5804", "5732", "5733" };
    OrtValue *output_tensors[3] = { 0 };
    OrtValue **output_prob_tensor = &output_tensors[0];
 
    const size_t prob_shape_count = is_silero_v4 ? prob_shape_count_v4 : prob_shape_count_v3;
+   size_t prob_tensor_element_count = 1;
+   for (int i = 0; i < prob_shape_count; ++i)
+   {
+      prob_tensor_element_count *= prob_shape[i];
+   }
 
-   create_tensor(memory_info, output_prob_tensor, prob_shape, prob_shape_count, &prob[0], prob_shape_count);
+   float *prob = malloc(prob_tensor_element_count * sizeof(float));
+
+   create_tensor(memory_info, output_prob_tensor, prob_shape, prob_shape_count, prob, prob_tensor_element_count);
 
    OrtValue** state_h_out_tensor = &output_tensors[1];
    create_tensor(memory_info, state_h_out_tensor, state_shape, state_shape_count, state_h_out, state_count);
@@ -421,7 +480,8 @@ int run_inference(OrtSession* session,
       .inputs_count = silero_input_tensor_count,
       .outputs_count = 3,
       .is_silero_v4 = is_silero_v4,
-      .silero_probability_out_index = is_silero_v4 ? 0 : 1
+      .silero_probability_out_index = is_silero_v4 ? 0 : 1,
+      .batch_size = batch_size
    };
 
    FeedState state = {0};
@@ -455,6 +515,15 @@ int run_inference(OrtSession* session,
             for (size_t i = 0; i < values_read; ++i)
             {
                samples_buffer_float32[i] /= max_value;
+            }
+         }
+
+         size_t leftover = buffered_samples_count - values_read;
+         if (leftover > 0)
+         {
+            for (size_t i = values_read; i < buffered_samples_count; ++i)
+            {
+               samples_buffer_float32[i] = 0.0f;
             }
          }
       }
