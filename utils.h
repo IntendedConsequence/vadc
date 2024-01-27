@@ -31,6 +31,8 @@ typedef int32_t b32;
 #define VAR_UNUSED(x) do { (void)sizeof(x); } while(0)
 #endif
 
+// TODO(irwin): define that disables asserts
+
 #ifndef ASSERT_HALT
 #define ASSERT_HALT do { __debugbreak(); } while(0)
 #endif

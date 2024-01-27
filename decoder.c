@@ -62,6 +62,9 @@ void convolve_k5_pad2 (const float *arr, int count, const float *kernel_flipped,
     arr_out_one_before_two_last_elements[2] = bias + dotproduct(arr_pad + 2, kernel_size - 2, kernel_flipped, kernel_size - 2);
 }
 
+// TODO(irwin):
+// - [ ] move to tensor source files
+// - [ ] use where applicable
 static inline float *index2d(TestTensor tensor, int index0, int index1)
 {
     Assert(tensor.ndim == 2);
@@ -185,6 +188,14 @@ float mean (float *arr, int arr_count)
 
     return result / divisor;
 }
+// TODO(irwin): simplify according to:
+// inputx = torch.randn(1, 64, 7)
+// weight = torch.randn(2, 64, 1)
+// bias = torch.randn(weight.shape[0])
+
+// torch_decoder = torch.nn.functional.conv1d(inputx.relu(), weight, bias).mean(2, keepdim=True).sigmoid()
+// ttt=inputx.relu().sum(-1).squeeze() @ (weight / 7) // weight / inputx.shape[-1]
+// np.allclose(sigmoid(ttt.squeeze() + bias).numpy(), torch_decoder.reshape(2).numpy()) // TRUE!
 
 // return self.conv1d(x.relu()).mean(axis=2, keepdim=True).sigmoid()
 // input [N, 64, 7]
@@ -254,6 +265,8 @@ int decoder (float *input, int *input_dims, int input_ndims, float *weights, int
             for (int f = 0; f < weights_dims[0]; ++f)
             {
                 float mean_value = mean(convolve_result + input_offset, input_dims[2]);
+
+                // TODO(irwin): sigmoid
                 mean_result[output_offset++] = 1.0f / (1.0f + expf(-mean_value));
                 input_offset += input_dims[2];
             }
