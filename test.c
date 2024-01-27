@@ -2,6 +2,7 @@
 #include <stdlib.h>
 
 #include "utils.h"
+#include "tensor.h"
 
 #define MEMORY_IMPLEMENTATION
 #include "memory.h"
@@ -16,19 +17,6 @@ struct TestTensor_Header
    int tensor_count;
 };
 
-typedef struct TestTensor
-{
-   int dummy_;
-   // int dummy2_;
-   int ndim;
-   int *dims;
-   int size;
-   int nbytes;
-   const char *name;
-   float *data;
-} TestTensor;
-
-// static_assert(sizeof(TestTensor) == 64, "Wrong size");
 
 typedef struct LoadTesttensorResult LoadTesttensorResult;
 struct LoadTesttensorResult

@@ -2,6 +2,7 @@
 // #include <stdlib.h> //malloc, free
 
 #include "utils.h"
+#include "tensor.h"
 #include "memory.h"
 #include "matmul.h"
 
@@ -13,7 +14,7 @@ static inline float sigmoid_one(float value)
 
 // NOTE(irwin): specialized for kernel_size = 5, padding = 2 (with zeros)
 __declspec(dllexport)
-void convolve_k5_pad2 (const float *arr, int count, const float *kernel_flipped, float *arr_out)
+void convolve_k5_pad2 (const float *arr, int count, const float *kernel_flipped, float *arr_out, float bias)
 {
     int kernel_size = 5;
     int padding = 2;
@@ -23,13 +24,13 @@ void convolve_k5_pad2 (const float *arr, int count, const float *kernel_flipped,
     // NOTE(irwin): since we know that padding is 2 zeros, we can compute first two elements as if we had a kernel
     // of size 4 and 3 for elements at index 0 and 1, respectively, because the padded zeroes effectively mask out
     // the first elements of the kernel.
-    arr_out[0] = dotproduct(arr, kernel_size - 2, kernel_flipped + 2, kernel_size - 2);
-    arr_out[1] = dotproduct(arr, kernel_size - 1, kernel_flipped + 1, kernel_size - 1);
+    arr_out[0] = bias + dotproduct(arr, kernel_size - 2, kernel_flipped + 2, kernel_size - 2);
+    arr_out[1] = bias + dotproduct(arr, kernel_size - 1, kernel_flipped + 1, kernel_size - 1);
 
     for (int i = 0; i < count - kernel_size + 1; ++i)
     {
         float value = dotproduct(arr + i, kernel_size, kernel_flipped, kernel_size);
-        arr_out[padding + i] = value;
+        arr_out[padding + i] = bias + value;
     }
 
     // NOTE(irwin): we repeat the same thing for the last two elements as we did for the first two. However,
@@ -47,8 +48,8 @@ void convolve_k5_pad2 (const float *arr, int count, const float *kernel_flipped,
     // which we can then offset by the same amount.
     const float *arr_pad = arr + count - kernel_size;
     float *arr_out_one_before_two_last_elements = arr_out + out_array_count - 2 - 1;
-    arr_out_one_before_two_last_elements[1] = dotproduct(arr_pad + 1, kernel_size - 1, kernel_flipped, kernel_size - 1);
-    arr_out_one_before_two_last_elements[2] = dotproduct(arr_pad + 2, kernel_size - 2, kernel_flipped, kernel_size - 2);
+    arr_out_one_before_two_last_elements[1] = bias + dotproduct(arr_pad + 1, kernel_size - 1, kernel_flipped, kernel_size - 1);
+    arr_out_one_before_two_last_elements[2] = bias + dotproduct(arr_pad + 2, kernel_size - 2, kernel_flipped, kernel_size - 2);
 }
 
 __declspec(dllexport)
