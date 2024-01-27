@@ -351,6 +351,56 @@ TestResult lstm_test_RED()
    return pass_lstm;
 }
 
+// TODO(irwin):
+// - [ ] move to tensor source files
+// - [ ] use where applicable
+TestTensor *tensor_zeros_like(MemoryArena *arena, TestTensor *reference)
+{
+   TestTensor *result = pushStruct(arena, TestTensor);
+   result->ndim = reference->ndim;
+
+   static_assert(sizeof(result->dims[0]) == sizeof(int), "ERROR");
+   result->dims = pushArray(arena, result->ndim, int);
+   for (int i = 0; i < result->ndim; ++i)
+   {
+      result->dims[i] = reference->dims[i];
+   }
+   result->nbytes = reference->nbytes;
+   result->size = reference->size;
+   result->data = pushArray(arena, result->size, float);
+
+   return result;
+}
+
+TestResult dw_conv_129_test()
+{
+   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+
+   LoadTesttensorResult res = { 0 };
+   res = load_testtensor( "dw_conv_129.testtensor" );
+   TestTensor *input = res.tensor_array + 0;
+   TestTensor *weights = res.tensor_array + 1;
+   TestTensor *biases = res.tensor_array + 2;
+   TestTensor *result = res.tensor_array + 3;
+
+   size_t output_size = input->dims[0] * input->dims[1] * sizeof( float );
+   Assert( output_size == result->nbytes );
+
+   TestTensor *output_tensor = tensor_zeros_like(debug_arena, result);
+
+   // TODO(irwin): dehardcode 129, put assert instead
+   dw_conv_tensor(*input, 129, *weights, *biases, *output_tensor);
+
+   float atol = 1e-4f;
+
+   TestResult test_result = all_close( result->data, output_tensor->data, result->size, atol );
+
+   endTemporaryMemory( mark );
+
+   return test_result;
+}
+
 static const char *result_strings[] =
 {
    "FAIL",
@@ -365,14 +415,16 @@ struct TestFunctionDescription
 {
    TestFunction function_pointer;
    const char *test_name;
+   // TODO(irwin): this seems to duplicate the hardcoded atol parameter in each test function's call to all_close
    float acceptable_error_magnitude;
 };
 
 TestFunctionDescription test_function_descriptions[] =
 {
+   { dw_conv_129_test, "dw_conv_129_test", 1e-04f },
    { decoder_test, "Decoder", 1e-10f },
    { lstm_test, "LSTM", 1e-04f },
-   { lstm_test_RED, "LSTM RED", 1e-04f }
+   { lstm_test_RED, "LSTM RED", 1e-04f },
 };
 
 // int main(int argc, char *argv[])

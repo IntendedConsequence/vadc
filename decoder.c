@@ -13,6 +13,16 @@ static inline float sigmoid_one(float value)
 
 
 // NOTE(irwin): specialized for kernel_size = 5, padding = 2 (with zeros)
+// IMPORTANT(irwin): apparently, expecting weights with flipped kernels
+// coincidentally matches PyTorch conv1d implementation, where conv1d is
+// implemented actually as cross-correlation. Since convolution is
+// cross correlation with weight kernels flipped, PyTorch convolution really
+// is cross correlation. Numpy's np.convolve however does flip the kernels,
+// so watch out for that.
+// It seems that the reason for PyTorch conv1d being this way is just because
+// when training a CNN, convolution and cross correlation don't have effect
+// on training, but the extra step of flipping the kernels just slows down
+// the process unnecessarily.
 __declspec(dllexport)
 void convolve_k5_pad2 (const float *arr, int count, const float *kernel_flipped, float *arr_out, float bias)
 {
@@ -51,6 +61,44 @@ void convolve_k5_pad2 (const float *arr, int count, const float *kernel_flipped,
     arr_out_one_before_two_last_elements[1] = bias + dotproduct(arr_pad + 1, kernel_size - 1, kernel_flipped, kernel_size - 1);
     arr_out_one_before_two_last_elements[2] = bias + dotproduct(arr_pad + 2, kernel_size - 2, kernel_flipped, kernel_size - 2);
 }
+
+static inline float *index2d(TestTensor tensor, int index0, int index1)
+{
+    Assert(tensor.ndim == 2);
+    int dim0_stride = tensor.dims[tensor.ndim - 1];
+    return tensor.data + index0 * dim0_stride + index1;
+}
+
+static inline float *index3d(TestTensor tensor, int index0, int index1, int index2)
+{
+    Assert(tensor.ndim == 3);
+    int dim0_stride = tensor.dims[tensor.ndim - 1] * tensor.dims[tensor.ndim - 2];
+    int dim1_stride = tensor.dims[tensor.ndim - 1];
+    return tensor.data + index0 * dim0_stride + index1 * dim1_stride + index2;
+}
+
+static void dw_conv_tensor (TestTensor input, int in_out_channels_groups, TestTensor filters, TestTensor biases, TestTensor output)
+{
+    Assert(input.ndim == 2);
+    Assert(filters.ndim == 2);
+    Assert(biases.ndim == 1);
+    Assert(output.ndim == 2);
+
+    Assert(input.dims[0] == in_out_channels_groups);
+    Assert(filters.dims[0] == in_out_channels_groups);
+    Assert(biases.dims[0] == in_out_channels_groups);
+    Assert(output.dims[0] == in_out_channels_groups);
+
+    for (int i = 0; i < in_out_channels_groups; ++i)
+    {
+        float *arr_out = index2d(output, i, 0);
+        float *arr_in = index2d(input, i, 0);
+        float *arr_filters = index2d(filters, i, 0);
+        float bias = biases.data[i];
+        convolve_k5_pad2(arr_in, input.dims[1], arr_filters, arr_out, bias);
+    }
+}
+
 
 __declspec(dllexport)
 void convolve_muladd (float *arr, int count, float kernel, float *arr_out)
