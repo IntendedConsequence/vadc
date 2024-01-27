@@ -257,6 +257,18 @@ int run_inference(OrtSession* session,
 
    OrtMemoryInfo* memory_info;
    ORT_ABORT_ON_ERROR(g_ort->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &memory_info));
+   OrtAllocator* ort_allocator;
+   ORT_ABORT_ON_ERROR(g_ort->CreateAllocator(session, memory_info, &ort_allocator));
+
+   size_t model_output_count = 0;
+   ORT_ABORT_ON_ERROR(g_ort->SessionGetOutputCount( session, &model_output_count ));
+
+   // for (int i = 0; i < model_output_count; ++i)
+   // {
+   //    char *output_name = 0;
+   //    ORT_ABORT_ON_ERROR(g_ort->SessionGetOutputName(session, i, ort_allocator, &output_name));
+   //    fprintf(stderr, "output name: %s\n", output_name);
+   // }
 
    // const float threshold               = 0.5f;
    // const float neg_threshold           = threshold - 0.15f;
