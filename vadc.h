@@ -40,7 +40,9 @@ const float chunk_duration_ms = SILERO_WINDOW_SIZE_SAMPLES / (float)SILERO_SAMPL
     }                                                        \
   } while (0);
 
-typedef struct VADC_Context
+typedef struct VADC_Context VADC_Context;
+
+struct VADC_Context
 {
    const OrtValue *const *input_tensors;
    OrtValue **output_tensors;
@@ -62,7 +64,7 @@ typedef struct VADC_Context
    float *input_tensor_state_c;
    b32 is_silero_v4;
    s32 silero_probability_out_index;
-} VADC_Context;
+};
 
 typedef struct VADC_Chunk_Result
 {
