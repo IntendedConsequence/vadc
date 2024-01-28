@@ -401,6 +401,34 @@ TestResult dw_conv_129_test()
    return test_result;
 }
 
+TestResult pw_conv_129_16_test()
+{
+   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+
+   LoadTesttensorResult res = { 0 };
+   res = load_testtensor( "pw_conv_129_16.testtensor" );
+   TestTensor *input = res.tensor_array + 0;
+   TestTensor *weights = res.tensor_array + 1;
+   TestTensor *biases = res.tensor_array + 2;
+   TestTensor *result = res.tensor_array + 3;
+
+   size_t output_size = weights->dims[0] * input->dims[1] * sizeof( float );
+   Assert( output_size == result->nbytes );
+
+   TestTensor *output_tensor = tensor_zeros_like(debug_arena, result);
+
+   pw_conv_tensor(*input, *weights, *biases, *output_tensor);
+
+   float atol = 1e-4f;
+
+   TestResult test_result = all_close( result->data, output_tensor->data, result->size, atol );
+
+   endTemporaryMemory( mark );
+
+   return test_result;
+}
+
 static const char *result_strings[] =
 {
    "FAIL",
@@ -422,6 +450,7 @@ struct TestFunctionDescription
 TestFunctionDescription test_function_descriptions[] =
 {
    { dw_conv_129_test, "dw_conv_129_test", 1e-04f },
+   { pw_conv_129_16_test, "pw_conv_129_16_test", 1e-04f },
    { decoder_test, "Decoder", 1e-10f },
    { lstm_test, "LSTM", 1e-04f },
    { lstm_test_RED, "LSTM RED", 1e-04f },

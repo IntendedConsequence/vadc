@@ -62,30 +62,6 @@ void convolve_k5_pad2 (const float *arr, int count, const float *kernel_flipped,
     arr_out_one_before_two_last_elements[2] = bias + dotproduct(arr_pad + 2, kernel_size - 2, kernel_flipped, kernel_size - 2);
 }
 
-// TODO(irwin):
-// - [ ] move to tensor source files
-// - [ ] use where applicable
-static inline float *index2d(TestTensor tensor, int index0, int index1)
-{
-    Assert(tensor.ndim == 2);
-    int dim0_stride = tensor.dims[tensor.ndim - 1];
-    return tensor.data + index0 * dim0_stride + index1;
-}
-
-static inline float *index3d(TestTensor tensor, int index0, int index1, int index2)
-{
-    Assert(tensor.ndim == 3);
-    int dim0_stride = tensor.dims[tensor.ndim - 1] * tensor.dims[tensor.ndim - 2];
-    int dim1_stride = tensor.dims[tensor.ndim - 1];
-    return tensor.data + index0 * dim0_stride + index1 * dim1_stride + index2;
-}
-
-static inline b32 tensor_is_valid(TestTensor tensor)
-{
-    return (!!tensor.data) & (!!tensor.nbytes) & (!!tensor.size) & (!!tensor.ndim) & (!!tensor.dims);
-}
-
-
 static void dw_conv_tensor (TestTensor input, int in_out_channels_groups, TestTensor filters, TestTensor biases, TestTensor output)
 {
     Assert(tensor_is_valid(input));
@@ -113,56 +89,52 @@ static void dw_conv_tensor (TestTensor input, int in_out_channels_groups, TestTe
     }
 }
 
-// NOTE(irwin): contiguous only
-TestTensor tensor_slice_first_dim(TestTensor tensor_to_slice, int at_index)
+static void pw_conv_tensor (TestTensor input, TestTensor filters, TestTensor biases, TestTensor output)
 {
-    Assert(tensor_is_valid(tensor_to_slice));
-    Assert(at_index >= 0);
+    Assert(tensor_is_valid(input));
+    Assert(tensor_is_valid(filters));
+    Assert(tensor_is_valid(biases));
+    Assert(tensor_is_valid(output));
 
-    int first_dimension_stride = 1;
-    for (int dimension_index = 1; dimension_index < tensor_to_slice.ndim; ++dimension_index)
+    Assert(input.ndim == 2);
+    Assert(filters.ndim == 3);
+    Assert(biases.ndim == 1);
+    Assert(output.ndim == 2);
+
+    int in_channels = input.dims[0];
+    int array_count = input.dims[1];
+    int out_channels = filters.dims[0];
+    int filter_count = out_channels;
+    int kernel_size = filters.dims[2];
+    int output_array_count = array_count - kernel_size + 1;
+
+    Assert(filters.dims[1] == in_channels);
+    Assert(output.dims[0] == filter_count);
+    Assert(output.dims[1] == output_array_count);
+    Assert(biases.dims[0] == filter_count);
+
+    for (int filter_index = 0; filter_index < filter_count; ++filter_index)
     {
-        first_dimension_stride *= tensor_to_slice.dims[dimension_index];
-    }
 
-    TestTensor result = {0};
+        TestTensor output_filter = tensor_slice_first_dim(output, filter_index);
+        broadcast_value_to_tensor(output_filter, biases.data[filter_index]);
+        // zero_tensor(output_filter);
+        // float *output_arr = index2d(output, filter_index, 0);
 
-    int offset = first_dimension_stride * at_index;
-    if (offset < tensor_to_slice.size)
-    {
-        result.data = tensor_to_slice.data + offset;
-        if (tensor_to_slice.ndim == 1)
+        // memset(output_arr, 0, output_array_count * sizeof(float));
+        for (int channel_index = 0; channel_index < in_channels; ++channel_index)
         {
-            result.ndim = 1;
-            result.dims = tensor_to_slice.dims;
+            float *kernel = index3d(filters, filter_index, channel_index, 0);
+
+            float *channel = index2d(input, channel_index, 0);
+            for (int index = 0; index < array_count; ++index)
+            {
+                output_filter.data[index] += dotproduct(channel + index, kernel_size, kernel, kernel_size);
+            }
         }
-        else
-        {
-            result.ndim = tensor_to_slice.ndim - 1;
-            result.dims = tensor_to_slice.dims + 1;
-        }
-
-        result.size = tensor_to_slice.size - offset;
-        result.nbytes = tensor_to_slice.nbytes - (tensor_to_slice.nbytes / tensor_to_slice.size) * offset;
-    }
-
-    return result;
-}
-
-static void zero_tensor(TestTensor tensor_to_zero)
-{
-    memset(tensor_to_zero.data, 0, tensor_to_zero.nbytes);
-}
-
-static void broadcast_value_to_tensor(TestTensor tensor, float value)
-{
-    Assert(tensor_is_valid(tensor));
-
-    for (int data_index = 0; data_index < tensor.size; ++data_index)
-    {
-        tensor.data[data_index] = value;
     }
 }
+
 
 __declspec(dllexport)
 void convolve_muladd (float *arr, int count, float kernel, float *arr_out)
