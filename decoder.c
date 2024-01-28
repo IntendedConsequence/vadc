@@ -80,10 +80,6 @@ static inline float *index3d(TestTensor tensor, int index0, int index1, int inde
     return tensor.data + index0 * dim0_stride + index1 * dim1_stride + index2;
 }
 
-
-#define mymin(val_a, val_b) ((val_a) < (val_b) ? (val_a) : (val_b))
-#define mymax(val_a, val_b) ((val_a) > (val_b) ? (val_a) : (val_b))
-
 static inline b32 tensor_is_valid(TestTensor tensor)
 {
     return (!!tensor.data) & (!!tensor.nbytes) & (!!tensor.size) & (!!tensor.ndim) & (!!tensor.dims);

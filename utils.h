@@ -21,6 +21,8 @@ typedef double f64;
 
 typedef int32_t b32;
 
+#define mymin(val_a, val_b) ((val_a) < (val_b) ? (val_a) : (val_b))
+#define mymax(val_a, val_b) ((val_a) > (val_b) ? (val_a) : (val_b))
 
 #define Kilobytes(value) ((value) * 1024LL)
 #define Megabytes(value) (Kilobytes(value) * 1024LL)
