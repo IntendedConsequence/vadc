@@ -1,79 +1,15 @@
 #include "utils.h"
-#include <math.h>
 
 // #define MEMORY_IMPLEMENTATION
 #include "memory.h"
+
+#include "maths.h"
 
 #if !defined(DEBUG_PRINT)
 # define DEBUG_PRINT 0
 #endif // DEBUG_PRINT
 
-__declspec(dllexport)
-void mytanh (const float *arr, int count, float *out)
-{
-    for (int i = 0; i < count; ++i)
-    {
-        out[i] = tanhf(arr[i]);
-    }
-}
 
-static void mytanh_inplace (float *arr, int count)
-{
-    for (int i = 0; i < count; ++i)
-    {
-        float value = arr[i];
-        arr[i] = tanhf(value);
-    }
-}
-
-__declspec(dllexport)
-void mysigmoid (const float *arr, int count, float *out)
-{
-    for (int i = 0; i < count; ++i)
-    {
-        out[i] = 1.0f / (1.0f + expf(-arr[i]));
-    }
-}
-
-static void mysigmoid_inplace (float *arr, int count)
-{
-    for (int i = 0; i < count; ++i)
-    {
-        float value = arr[i];
-        arr[i] = 1.0f / (1.0f + expf(-value));
-    }
-}
-
-#include "matmul.c"
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/*
-
-*/
-
-//#error ##__nito_inline__tmpdir
-
-// void mydot_arrarr (float *arr, int count, float *arr2, int arr2_rows, float *arr_out);
-
-static void add_arrays_inplace (float *array_a, int count, const float *array_b)
-{
-    for (int i = 0; i < count; ++i)
-    {
-        array_a[i] += array_b[i];
-    }
-}
 
 static void debugprint_array(const float *arr, int count, FILE *file_out)
 {
@@ -92,7 +28,7 @@ static void debugprint_array(const float *arr, int count, FILE *file_out)
 // IMPORTANT(irwin): biases are expected to be shared for both input data and hidden state. Since pytorch uses separate biases
 // for input data and hidden state for CUDA compatibility, if the caller comes from PyTorch, the caller must take care of
 // adding the pytorch separate biases before calling this function.
-__declspec(dllexport)
+VADC_API
 void lstm_cell (const float *input_x, int input_x_count, const float *hidden_state_previous, const float *cell_state_previous, const float *weights_transposed, const float *biases, float *output_hc)
 {
 #if DEBUG_PRINT
@@ -151,7 +87,7 @@ void lstm_cell (const float *input_x, int input_x_count, const float *hidden_sta
 // IMPORTANT(irwin): biases are expected to be shared for both input data and hidden state. Since pytorch uses separate biases
 // for input data and hidden state for CUDA compatibility, if the caller comes from PyTorch, the caller must take care of
 // adding the pytorch separate biases (within each lstm cell) before calling this function.
-__declspec(dllexport)
+VADC_API
 void lstm (const float *input_x, int input_x_count, const float *hidden_state_previous, const float *cell_state_previous, const float *weights_transposed, const float *biases, float *output_hc)
 {
     // int combined_count = input_x_count * 2;

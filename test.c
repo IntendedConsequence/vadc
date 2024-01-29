@@ -10,6 +10,9 @@
 #include "decoder.c"
 #include "lstm.c"
 
+#define MATHS_IMPLEMENTATION
+#include "maths.h"
+
 typedef struct TestTensor_Header TestTensor_Header;
 struct TestTensor_Header
 {

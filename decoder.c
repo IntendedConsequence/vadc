@@ -1,15 +1,9 @@
-#include <math.h> //expf
 // #include <stdlib.h> //malloc, free
 
 #include "utils.h"
 #include "tensor.h"
 #include "memory.h"
-#include "matmul.h"
-
-static inline float sigmoid_one(float value)
-{
-    return 1.0f / (1.0f + expf(-value));
-}
+#include "maths.h"
 
 
 // NOTE(irwin): specialized for kernel_size = 5, padding = 2 (with zeros)
@@ -23,7 +17,7 @@ static inline float sigmoid_one(float value)
 // when training a CNN, convolution and cross correlation don't have effect
 // on training, but the extra step of flipping the kernels just slows down
 // the process unnecessarily.
-__declspec(dllexport)
+VADC_API
 void convolve_k5_pad2 (const float *arr, int count, const float *kernel_flipped, float *arr_out, float bias)
 {
     int kernel_size = 5;
@@ -136,7 +130,7 @@ static void pw_conv_tensor (TestTensor input, TestTensor filters, TestTensor bia
 }
 
 
-__declspec(dllexport)
+VADC_API
 void convolve_muladd (float *arr, int count, float kernel, float *arr_out)
 {
     for (int i = 0; i < count; ++i)
@@ -145,7 +139,7 @@ void convolve_muladd (float *arr, int count, float kernel, float *arr_out)
     }
 }
 
-__declspec(dllexport)
+VADC_API
 void convolve_mc (float *arr, int in_channel_count, int array_count, float *kernels, float *arr_out, float bias)
 {
     memset(arr_out, 0, array_count * sizeof(float));
@@ -162,7 +156,7 @@ void convolve_mc (float *arr, int in_channel_count, int array_count, float *kern
     }
 }
 
-__declspec(dllexport)
+VADC_API
 void convolve_mc_mf_bias (float *arr, int in_channel_count, int array_count, float *kernels, int filter_count, float *arr_out, float *bias)
 {
     for (int i = 0; i < filter_count; ++i)
@@ -172,7 +166,7 @@ void convolve_mc_mf_bias (float *arr, int in_channel_count, int array_count, flo
     }
 }
 
-__declspec(dllexport)
+VADC_API
 void convolve_mc_mf (float *arr, int in_channel_count, int array_count, float *kernels, int filter_count, float *arr_out)
 {
     convolve_mc_mf_bias(arr, in_channel_count, array_count, kernels, filter_count, arr_out, 0);
@@ -180,7 +174,7 @@ void convolve_mc_mf (float *arr, int in_channel_count, int array_count, float *k
 
 
 
-__declspec(dllexport)
+VADC_API
 void convolve_mc_mf_batch_bias (int batch, float *arr, int in_channel_count, int array_count, float *kernels, int filter_count, float *arr_out, float *bias)
 {
     for (int i = 0; i < batch; ++i)
@@ -191,36 +185,12 @@ void convolve_mc_mf_batch_bias (int batch, float *arr, int in_channel_count, int
     }
 }
 
-__declspec(dllexport)
+VADC_API
 void convolve_mc_mf_batch (int batch, float *arr, int in_channel_count, int array_count, float *kernels, int filter_count, float *arr_out)
 {
     convolve_mc_mf_batch_bias(batch, arr, in_channel_count, array_count, kernels, filter_count, arr_out, 0);
 }
 
-__declspec(dllexport)
-void relu_inplace (float *arr, int array_count)
-{
-    for (int i = 0; i < array_count; ++i)
-    {
-        if (arr[i] < 0.0f)
-        {
-            arr[i] = 0.0f;
-        }
-    }
-}
-
-__declspec(dllexport)
-float mean (float *arr, int arr_count)
-{
-    float result = 0.0f;
-    float divisor = (float)arr_count;
-    for (int i = 0; i < arr_count; ++i)
-    {
-        result += arr[i];
-    }
-
-    return result / divisor;
-}
 // TODO(irwin): simplify according to:
 // inputx = torch.randn(1, 64, 7)
 // weight = torch.randn(2, 64, 1)
@@ -234,7 +204,7 @@ float mean (float *arr, int arr_count)
 // input [N, 64, 7]
 // weight [2, 64, 1]
 // bias [2]
-__declspec(dllexport)
+VADC_API
 int decoder (float *input, int *input_dims, int input_ndims, float *weights, int *weights_dims, int weights_ndims, float *biases, int *biases_dims, int biases_ndims, float *output, int *output_dims, int output_ndims)
 {
     VAR_UNUSED(biases_dims);

@@ -56,3 +56,7 @@ typedef int32_t b32;
 #define AssertMessage(truth, message) Assert((truth) && message)
 
 #define ArrayCount(arr) (sizeof(arr) / sizeof((arr)[0]))
+
+#ifndef VADC_API
+#define VADC_API __declspec(dllexport)
+#endif // VADC_API
