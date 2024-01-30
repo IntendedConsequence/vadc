@@ -4,14 +4,15 @@
 #include "utils.h"
 #include "tensor.h"
 
-#define MEMORY_IMPLEMENTATION
-#include "memory.h"
 
 #include "decoder.c"
 #include "lstm.c"
 
 #define MATHS_IMPLEMENTATION
 #include "maths.h"
+
+#define MEMORY_IMPLEMENTATION
+#include "memory.h"
 
 typedef struct TestTensor_Header TestTensor_Header;
 struct TestTensor_Header

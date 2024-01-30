@@ -1,4 +1,6 @@
-#pragma once
+#ifndef MEMORY_INCLUDE_H
+#define MEMORY_INCLUDE_H
+
 #include <stdint.h>
 #include "utils.h"
 
@@ -65,6 +67,8 @@ struct TemporaryMemoryScoped
 
 const char *copyStringToArena( MemoryArena *arena, const char *stringData, size_t stringLength );
 MemoryArena *DEBUG_getDebugArena();
+#endif // MEMORY_INCLUDE_H
+
 
 #ifdef MEMORY_IMPLEMENTATION
 #include <string.h> // memset, strlen, memmove
