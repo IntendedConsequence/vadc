@@ -1,4 +1,6 @@
 #pragma once
+#include "maths.h"
+#include "memory.h"
 
 typedef struct TestTensor TestTensor;
 
@@ -88,4 +90,32 @@ static inline void broadcast_value_to_tensor(TestTensor tensor, float value)
    {
       tensor.data[data_index] = value;
    }
+}
+
+static inline void tensor_relu_inplace(TestTensor tensor)
+{
+   Assert(tensor_is_valid(tensor));
+
+   relu_inplace(tensor.data, tensor.size);
+}
+
+// TODO(irwin):
+// - [x] move to tensor source files
+// - [ ] use where applicable
+static inline TestTensor *tensor_zeros_like(MemoryArena *arena, TestTensor *reference)
+{
+   TestTensor *result = pushStruct(arena, TestTensor);
+   result->ndim = reference->ndim;
+
+   static_assert(sizeof(result->dims[0]) == sizeof(int), "ERROR");
+   result->dims = pushArray(arena, result->ndim, int);
+   for (int i = 0; i < result->ndim; ++i)
+   {
+      result->dims[i] = reference->dims[i];
+   }
+   result->nbytes = reference->nbytes;
+   result->size = reference->size;
+   result->data = pushArray(arena, result->size, float);
+
+   return result;
 }

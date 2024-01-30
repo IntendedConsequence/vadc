@@ -6,6 +6,7 @@
 
 
 #include "decoder.c"
+#include "first_layer.c"
 #include "lstm.c"
 
 #define MATHS_IMPLEMENTATION
@@ -355,26 +356,6 @@ TestResult lstm_test_RED()
    return pass_lstm;
 }
 
-// TODO(irwin):
-// - [ ] move to tensor source files
-// - [ ] use where applicable
-TestTensor *tensor_zeros_like(MemoryArena *arena, TestTensor *reference)
-{
-   TestTensor *result = pushStruct(arena, TestTensor);
-   result->ndim = reference->ndim;
-
-   static_assert(sizeof(result->dims[0]) == sizeof(int), "ERROR");
-   result->dims = pushArray(arena, result->ndim, int);
-   for (int i = 0; i < result->ndim; ++i)
-   {
-      result->dims[i] = reference->dims[i];
-   }
-   result->nbytes = reference->nbytes;
-   result->size = reference->size;
-   result->data = pushArray(arena, result->size, float);
-
-   return result;
-}
 
 TestResult dw_conv_129_test()
 {
@@ -433,6 +414,41 @@ TestResult pw_conv_129_16_test()
    return test_result;
 }
 
+TestResult first_layer_conv_block_test()
+{
+   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+
+   LoadTesttensorResult res = { 0 };
+   res = load_testtensor( "first_layer_conv_block.testtensor" );
+
+   int test_data_index = 0;
+   TestTensor *dw_conv_weights = res.tensor_array + test_data_index++;
+   TestTensor *dw_conv_biases = res.tensor_array + test_data_index++;
+   TestTensor *pw_conv_weights = res.tensor_array + test_data_index++;
+   TestTensor *pw_conv_biases = res.tensor_array + test_data_index++;
+   TestTensor *proj_weights = res.tensor_array + test_data_index++;
+   TestTensor *proj_biases = res.tensor_array + test_data_index++;
+   TestTensor *input = res.tensor_array + test_data_index++;
+   TestTensor *result = res.tensor_array + test_data_index++;
+
+   TestTensor *output_tensor = tensor_zeros_like(debug_arena, result);
+
+   conv_block(*input, 129, 16, 1,
+    *dw_conv_weights, *dw_conv_biases,
+    *pw_conv_weights, *pw_conv_biases,
+    *proj_weights, *proj_biases,
+    *output_tensor);
+
+   float atol = 1e-4f;
+
+   TestResult test_result = all_close( result->data, output_tensor->data, result->size, atol );
+
+   endTemporaryMemory( mark );
+
+   return test_result;
+}
+
 static const char *result_strings[] =
 {
    "FAIL",
@@ -455,6 +471,7 @@ TestFunctionDescription test_function_descriptions[] =
 {
    { dw_conv_129_test, "dw_conv_129_test", 1e-04f },
    { pw_conv_129_16_test, "pw_conv_129_16_test", 1e-04f },
+   { first_layer_conv_block_test, "first_layer_conv_block_test", 1e-04f },
    { decoder_test, "Decoder", 1e-10f },
    { lstm_test, "LSTM", 1e-04f },
    { lstm_test_RED, "LSTM RED", 1e-04f },
