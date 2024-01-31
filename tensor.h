@@ -82,6 +82,33 @@ static inline void zero_tensor(TestTensor tensor_to_zero)
    memset(tensor_to_zero.data, 0, tensor_to_zero.nbytes);
 }
 
+
+static inline TestTensor *tensor_zeros(MemoryArena *arena, int ndim, int dims[])
+{
+   TestTensor *result = pushStruct(arena, TestTensor);
+   result->ndim = ndim;
+
+   static_assert(sizeof(result->dims[0]) == sizeof(int), "ERROR");
+   result->dims = pushArray(arena, result->ndim, int);
+   int size = 1;
+   for (int i = 0; i < result->ndim; ++i)
+   {
+      size *= dims[i];
+      result->dims[i] = dims[i];
+   }
+   result->size = size;
+   result->nbytes = size * sizeof(float);
+   result->data = pushArray(arena, result->size, float);
+
+   return result;
+}
+
+static inline TestTensor *tensor_zeros_2d(MemoryArena *arena, int dim0, int dim1)
+{
+   int dims[2] = { dim0, dim1 };
+   return tensor_zeros(arena, 2, dims);
+}
+
 static inline void broadcast_value_to_tensor(TestTensor tensor, float value)
 {
    Assert(tensor_is_valid(tensor));

@@ -126,31 +126,6 @@ static void pw_conv_tensor (TestTensor input, TestTensor filters, TestTensor bia
     }
 }
 
-TestTensor *tensor_zeros(MemoryArena *arena, int ndim, int dims[])
-{
-    TestTensor *result = pushStruct(arena, TestTensor);
-    result->ndim = ndim;
-
-    static_assert(sizeof(result->dims[0]) == sizeof(int), "ERROR");
-    result->dims = pushArray(arena, result->ndim, int);
-    int size = 1;
-    for (int i = 0; i < result->ndim; ++i)
-    {
-        size *= dims[i];
-        result->dims[i] = dims[i];
-    }
-    result->size = size;
-    result->nbytes = size * sizeof(float);
-    result->data = pushArray(arena, result->size, float);
-
-    return result;
-}
-
-TestTensor *tensor_zeros_2d(MemoryArena *arena, int dim0, int dim1)
-{
-    int dims[2] = {dim0, dim1};
-    return tensor_zeros(arena, 2, dims);
-}
 
 
 static void conv_block(TestTensor input, int in_channels, int out_channels_pw_proj, b32 has_out_proj,
