@@ -34,7 +34,7 @@ LoadTesttensorResult load_testtensor( const char *path )
 {
    MemoryArena *debug_arena = DEBUG_getDebugArena();
 
-   LoadTesttensorResult result = { 0 };
+   LoadTesttensorResult result = {0};
 
    // Assert(tensor);
    // memset(tensor, 0, sizeof(*tensor));
@@ -42,7 +42,7 @@ LoadTesttensorResult load_testtensor( const char *path )
    FILE *f = fopen( path, "rb" );
    AssertMessage( f, "Couldn't open file" );
 
-   TestTensor_Header header = { 0 };
+   TestTensor_Header header = {0};
    Assert( fread( &header, sizeof( header ), 1, f ) );
    Assert( header.version == 1 );
 
@@ -201,7 +201,7 @@ int get_test_error_magnitude( float value )
 
 static TestResult all_close( float *left, float *right, int count, float atol )
 {
-   TestResult result = { 0 };
+   TestResult result = {0};
    result.atol = atol;
 
    float max_error = 0.0f;
@@ -226,7 +226,7 @@ TestResult decoder_test()
    MemoryArena *debug_arena = DEBUG_getDebugArena();
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
-   LoadTesttensorResult res = { 0 };
+   LoadTesttensorResult res = {0};
    res = load_testtensor( "decoder_test.testtensor" );
    TestTensor *input = res.tensor_array + 0;
    TestTensor *weights = res.tensor_array + 1;
@@ -257,7 +257,7 @@ TestResult lstm_test()
    MemoryArena *debug_arena = DEBUG_getDebugArena();
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
-   LoadTesttensorResult lstm_res = { 0 };
+   LoadTesttensorResult lstm_res = {0};
    lstm_res = load_testtensor( "lstm_nito_reference_randn.testtensor" );
 
    // Assert(memcmp(output, result->data, output_size) == 0);
@@ -279,14 +279,14 @@ TestResult lstm_test()
 
    float *output_combined = pushArray( debug_arena, lstm_output_size, float );
 
-   lstm_seq(input_x->data,
-            seq_length,
-            input_size,
-            input_h->data,
-            input_c->data,
-            weights_transposed->data,
-            lstm_biases->data,
-            output_combined
+   lstm_seq( input_x->data,
+             seq_length,
+             input_size,
+             input_h->data,
+             input_c->data,
+             weights_transposed->data,
+             lstm_biases->data,
+             output_combined
    );
 
    TestResult pass_lstm = all_close( output_combined_reference->data, output_combined, lstm_output_size, 1e-04f );
@@ -301,9 +301,9 @@ TestResult lstm_test_RED()
    MemoryArena *debug_arena = DEBUG_getDebugArena();
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
-   LoadTesttensorResult lstm_input = { 0 };
-   LoadTesttensorResult lstm_weights = { 0 };
-   LoadTesttensorResult lstm_output = { 0 };
+   LoadTesttensorResult lstm_input = {0};
+   LoadTesttensorResult lstm_weights = {0};
+   LoadTesttensorResult lstm_output = {0};
    lstm_input = load_testtensor( "RED600_all_before_lstm.testtensor" );
    lstm_weights = load_testtensor( "lstm_silero_3.1_16k_for_c.testtensor" );
    lstm_output = load_testtensor( "RED600_all_lstm_output_lite.testtensor" );
@@ -338,14 +338,14 @@ TestResult lstm_test_RED()
    float *output_single_batch = pushArray( debug_arena, lstm_output_size, float );
    // float *output_combined = pushArray( debug_arena, batches * seq_length * input_size, float );
 
-   lstm_seq(input->data,
-            seq_length * batches,
-            input_size,
-            input_h_array,
-            input_c_array,
-            weights->data,
-            biases->data,
-            output_single_batch
+   lstm_seq( input->data,
+             seq_length * batches,
+             input_size,
+             input_h_array,
+             input_c_array,
+             weights->data,
+             biases->data,
+             output_single_batch
    );
    // print_array(output_single_batch, lstm_output_size);
 
@@ -362,7 +362,7 @@ TestResult dw_conv_129_test()
    MemoryArena *debug_arena = DEBUG_getDebugArena();
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
-   LoadTesttensorResult res = { 0 };
+   LoadTesttensorResult res = {0};
    res = load_testtensor( "dw_conv_129.testtensor" );
    TestTensor *input = res.tensor_array + 0;
    TestTensor *weights = res.tensor_array + 1;
@@ -372,10 +372,10 @@ TestResult dw_conv_129_test()
    size_t output_size = input->dims[0] * input->dims[1] * sizeof( float );
    Assert( output_size == result->nbytes );
 
-   TestTensor *output_tensor = tensor_zeros_like(debug_arena, result);
+   TestTensor *output_tensor = tensor_zeros_like( debug_arena, result );
 
    // TODO(irwin): dehardcode 129, put assert instead
-   dw_conv_tensor(*input, 129, *weights, *biases, *output_tensor);
+   dw_conv_tensor( *input, 129, *weights, *biases, *output_tensor );
 
    float atol = 1e-4f;
 
@@ -391,7 +391,7 @@ TestResult pw_conv_129_16_test()
    MemoryArena *debug_arena = DEBUG_getDebugArena();
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
-   LoadTesttensorResult res = { 0 };
+   LoadTesttensorResult res = {0};
    res = load_testtensor( "pw_conv_129_16.testtensor" );
    TestTensor *input = res.tensor_array + 0;
    TestTensor *weights = res.tensor_array + 1;
@@ -401,9 +401,9 @@ TestResult pw_conv_129_16_test()
    size_t output_size = weights->dims[0] * input->dims[1] * sizeof( float );
    Assert( output_size == result->nbytes );
 
-   TestTensor *output_tensor = tensor_zeros_like(debug_arena, result);
+   TestTensor *output_tensor = tensor_zeros_like( debug_arena, result );
 
-   pw_conv_tensor(*input, *weights, *biases, *output_tensor);
+   pw_conv_tensor( *input, *weights, *biases, *output_tensor );
 
    float atol = 1e-4f;
 
@@ -419,7 +419,7 @@ TestResult first_layer_conv_block_test()
    MemoryArena *debug_arena = DEBUG_getDebugArena();
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
-   LoadTesttensorResult res = { 0 };
+   LoadTesttensorResult res = {0};
    res = load_testtensor( "first_layer_conv_block.testtensor" );
 
    int test_data_index = 0;
@@ -432,13 +432,13 @@ TestResult first_layer_conv_block_test()
    TestTensor *input = res.tensor_array + test_data_index++;
    TestTensor *result = res.tensor_array + test_data_index++;
 
-   TestTensor *output_tensor = tensor_zeros_like(debug_arena, result);
+   TestTensor *output_tensor = tensor_zeros_like( debug_arena, result );
 
-   conv_block(*input, 129, 16, 1,
-    *dw_conv_weights, *dw_conv_biases,
-    *pw_conv_weights, *pw_conv_biases,
-    *proj_weights, *proj_biases,
-    *output_tensor);
+   conv_block( *input, 129, 16, 1,
+               *dw_conv_weights, *dw_conv_biases,
+               *pw_conv_weights, *pw_conv_biases,
+               *proj_weights, *proj_biases,
+               *output_tensor );
 
    float atol = 1e-4f;
 
@@ -455,7 +455,7 @@ static const char *result_strings[] =
    "PASS"
 };
 
-typedef TestResult (*TestFunction)();
+typedef TestResult ( *TestFunction )();
 
 typedef struct TestFunctionDescription TestFunctionDescription;
 
@@ -504,7 +504,8 @@ int main()
    if ( all_pass )
    {
       fprintf( stderr, "All %d tests PASSED!\n", test_count );
-   } else
+   }
+   else
    {
       fprintf( stderr, "%d out of %d tests FAILED!\n", failed_count, test_count );
    }

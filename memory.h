@@ -82,7 +82,7 @@ MemoryArena *DEBUG_getDebugArena();
 
 static u8 debug_arena_buffer_2[Megabytes( 16 )];
 
-static MemoryArena DEBUG_debug_arena_2 = { 0 };
+static MemoryArena DEBUG_debug_arena_2 = {0};
 
 MemoryArena *DEBUG_getDebugArena()
 {
@@ -90,7 +90,8 @@ MemoryArena *DEBUG_getDebugArena()
    {
       // NOTE(irwin): initialized
       return &DEBUG_debug_arena_2;
-   } else
+   }
+   else
    {
       // NOTE(irwin): not initialized
       //__asan_get_shadow_mapping( &shadow_memory_scale, &shadow_memory_offset );
@@ -167,7 +168,8 @@ void *pushSize( MemoryArena *arena, size_t size, size_t alignment )
       ASAN_UNPOISON_MEMORY_REGION( address, size );
 
       return address;
-   } else
+   }
+   else
    {
       AssertFail( "Requested chunk size exceeds arena capacity!" );
 
@@ -204,7 +206,8 @@ void *resizeAllocationInArena( MemoryArena *arena, void *oldAddress, size_t oldS
    {
       return pushSizeZeroed( arena, newSize, alignment );
 
-   } else if ( addressIsInsideArena( arena, oldAddress ) )
+   }
+   else if ( addressIsInsideArena( arena, oldAddress ) )
    {
       // NOTE(irwin): if oldAddress was the last allocation we can extend it
       if ( arena->base + arena->previous_used == oldAddressChar )
@@ -218,13 +221,15 @@ void *resizeAllocationInArena( MemoryArena *arena, void *oldAddress, size_t oldS
             {
                ASAN_UNPOISON_MEMORY_REGION( oldAddressChar + oldSize, newSize - oldSize );
                memset( oldAddressChar + oldSize, 0, newSize - oldSize );
-            } else
+            }
+            else
             {
                ASAN_POISON_MEMORY_REGION( oldAddressChar + newSize, oldSize - newSize );
             }
 
             return oldAddress;
-         } else
+         }
+         else
          {
             AssertFail( "ERROR: new size exceeds arena capacity!" );
 
@@ -233,7 +238,8 @@ void *resizeAllocationInArena( MemoryArena *arena, void *oldAddress, size_t oldS
 
          // NOTE(irwin): there are allocations after oldAddress, so we can't extend it.
          // Reallocate and copy instead.
-      } else
+      }
+      else
       {
          void *newAddress = pushSizeZeroed( arena, newSize, alignment );
          if ( newAddress != 0 )
@@ -242,7 +248,8 @@ void *resizeAllocationInArena( MemoryArena *arena, void *oldAddress, size_t oldS
          }
          return newAddress;
       }
-   } else
+   }
+   else
    {
       AssertFail( "ERROR: address lies outside the arena chunk!" );
 
@@ -252,7 +259,7 @@ void *resizeAllocationInArena( MemoryArena *arena, void *oldAddress, size_t oldS
 
 TemporaryMemory beginTemporaryMemory( MemoryArena *arena )
 {
-   TemporaryMemory temporaryMemory = { 0 };
+   TemporaryMemory temporaryMemory = {0};
    temporaryMemory.arena = arena;
    temporaryMemory.previous_used = arena->previous_used;
    temporaryMemory.used = arena->used;
