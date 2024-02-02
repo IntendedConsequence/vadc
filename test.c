@@ -7,6 +7,7 @@
 
 #include "decoder.c"
 #include "first_layer.c"
+#include "transformer.c"
 #include "lstm.c"
 
 #define MATHS_IMPLEMENTATION
