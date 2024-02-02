@@ -53,62 +53,62 @@ void convolve_k5_pad2 ( const float *arr, int count, const float *kernel_flipped
    arr_out_one_before_two_last_elements[2] = bias + dotproduct( arr_pad + 2, kernel_size - 2, kernel_flipped, kernel_size - 2 );
 }
 
-static void dw_conv_tensor ( TestTensor input, int in_out_channels_groups, TestTensor filters, TestTensor biases, TestTensor output )
+static void dw_conv_tensor ( TestTensor *input, int in_out_channels_groups, TestTensor *filters, TestTensor *biases, TestTensor *output )
 {
    Assert( tensor_is_valid( input ) );
    Assert( tensor_is_valid( filters ) );
    Assert( tensor_is_valid( biases ) );
    Assert( tensor_is_valid( output ) );
 
-   Assert( input.ndim == 2 );
-   Assert( filters.ndim == 2 );
-   Assert( biases.ndim == 1 );
-   Assert( output.ndim == 2 );
+   Assert( input->ndim == 2 );
+   Assert( filters->ndim == 2 );
+   Assert( biases->ndim == 1 );
+   Assert( output->ndim == 2 );
 
-   Assert( input.dims[0] == in_out_channels_groups );
-   Assert( filters.dims[0] == in_out_channels_groups );
-   Assert( biases.dims[0] == in_out_channels_groups );
-   Assert( output.dims[0] == in_out_channels_groups );
+   Assert( input->dims[0] == in_out_channels_groups );
+   Assert( filters->dims[0] == in_out_channels_groups );
+   Assert( biases->dims[0] == in_out_channels_groups );
+   Assert( output->dims[0] == in_out_channels_groups );
 
    for ( int i = 0; i < in_out_channels_groups; ++i )
    {
       float *arr_out = index2d( output, i, 0 );
       float *arr_in = index2d( input, i, 0 );
       float *arr_filters = index2d( filters, i, 0 );
-      float bias = biases.data[i];
-      convolve_k5_pad2( arr_in, input.dims[1], arr_filters, arr_out, bias );
+      float bias = biases->data[i];
+      convolve_k5_pad2( arr_in, input->dims[1], arr_filters, arr_out, bias );
    }
 }
 
-static void pw_conv_tensor ( TestTensor input, TestTensor filters, TestTensor biases, TestTensor output )
+static void pw_conv_tensor ( TestTensor *input, TestTensor *filters, TestTensor *biases, TestTensor *output )
 {
    Assert( tensor_is_valid( input ) );
-   Assert( tensor_is_valid( filters ) );
+   Assert( tensor_is_valid(filters ) );
    Assert( tensor_is_valid( biases ) );
    Assert( tensor_is_valid( output ) );
 
-   Assert( input.ndim == 2 );
-   Assert( filters.ndim == 3 );
-   Assert( biases.ndim == 1 );
-   Assert( output.ndim == 2 );
+   Assert( input->ndim == 2 );
+   Assert( filters->ndim == 3 );
+   Assert( biases->ndim == 1 );
+   Assert( output->ndim == 2 );
 
-   int in_channels = input.dims[0];
-   int array_count = input.dims[1];
-   int out_channels = filters.dims[0];
+   int in_channels = input->dims[0];
+   int array_count = input->dims[1];
+   int out_channels = filters->dims[0];
    int filter_count = out_channels;
-   int kernel_size = filters.dims[2];
+   int kernel_size = filters->dims[2];
    int output_array_count = array_count - kernel_size + 1;
 
-   Assert( filters.dims[1] == in_channels );
-   Assert( output.dims[0] == filter_count );
-   Assert( output.dims[1] == output_array_count );
-   Assert( biases.dims[0] == filter_count );
+   Assert( filters->dims[1] == in_channels );
+   Assert( output->dims[0] == filter_count );
+   Assert( output->dims[1] == output_array_count );
+   Assert( biases->dims[0] == filter_count );
 
    for ( int filter_index = 0; filter_index < filter_count; ++filter_index )
    {
 
       TestTensor output_filter = tensor_slice_first_dim( output, filter_index );
-      broadcast_value_to_tensor( output_filter, biases.data[filter_index] );
+      broadcast_value_to_tensor( &output_filter, biases->data[filter_index] );
       // zero_tensor(output_filter);
       // float *output_arr = index2d(output, filter_index, 0);
 
@@ -128,11 +128,11 @@ static void pw_conv_tensor ( TestTensor input, TestTensor filters, TestTensor bi
 
 
 
-static void conv_block( TestTensor input, int in_channels, int out_channels_pw_proj, b32 has_out_proj,
-                        TestTensor dw_weights, TestTensor dw_biases,
-                        TestTensor pw_weights, TestTensor pw_biases,
-                        TestTensor proj_weights, TestTensor proj_biases,
-                        TestTensor output )
+static void conv_block( TestTensor *input, int in_channels, int out_channels_pw_proj, b32 has_out_proj,
+                        TestTensor *dw_weights, TestTensor *dw_biases,
+                        TestTensor *pw_weights, TestTensor *pw_biases,
+                        TestTensor *proj_weights, TestTensor *proj_biases,
+                        TestTensor *output )
 {
    VAR_UNUSED( out_channels_pw_proj );
 
@@ -151,32 +151,32 @@ static void conv_block( TestTensor input, int in_channels, int out_channels_pw_p
    MemoryArena *debug_arena = DEBUG_getDebugArena();
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
-   TestTensor *dw_output = tensor_zeros_2d( debug_arena, input.dims[0], input.dims[1] );
+   TestTensor *dw_output = tensor_zeros_2d( debug_arena, input->dims[0], input->dims[1] );
 
-   dw_conv_tensor( input, in_channels, dw_weights, dw_biases, *dw_output );
-   tensor_relu_inplace( *dw_output );
+   dw_conv_tensor( input, in_channels, dw_weights, dw_biases, dw_output );
+   tensor_relu_inplace( dw_output );
 
    // NOTE(irwin): pw_output size calc
    int pw_output_dims[] = {0, 0};
    {
       int array_count = dw_output->dims[1];
-      int out_channels = pw_weights.dims[0];
+      int out_channels = pw_weights->dims[0];
       int filter_count = out_channels;
-      int kernel_size = pw_weights.dims[2];
+      int kernel_size = pw_weights->dims[2];
       int output_array_count = array_count - kernel_size + 1;
 
       pw_output_dims[0] = filter_count;
       pw_output_dims[1] = output_array_count;
    }
 
-   TestTensor *pw_output = &output;
+   TestTensor *pw_output = output;
    // TestTensor *pw_output = tensor_zeros_2d(debug_arena, pw_output_dims[0], pw_output_dims[1]);
-   pw_conv_tensor( *dw_output, pw_weights, pw_biases, *pw_output );
+   pw_conv_tensor( dw_output, pw_weights, pw_biases, pw_output );
 
    if ( has_out_proj )
    {
       TestTensor *out_proj = tensor_zeros_like( debug_arena, pw_output );
-      pw_conv_tensor( input, proj_weights, proj_biases, *out_proj );
+      pw_conv_tensor( input, proj_weights, proj_biases, out_proj );
 
       add_arrays_inplace( pw_output->data, pw_output->size, out_proj->data );
    }

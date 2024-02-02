@@ -375,7 +375,7 @@ TestResult dw_conv_129_test()
    TestTensor *output_tensor = tensor_zeros_like( debug_arena, result );
 
    // TODO(irwin): dehardcode 129, put assert instead
-   dw_conv_tensor( *input, 129, *weights, *biases, *output_tensor );
+   dw_conv_tensor( input, 129, weights, biases, output_tensor );
 
    float atol = 1e-4f;
 
@@ -403,7 +403,7 @@ TestResult pw_conv_129_16_test()
 
    TestTensor *output_tensor = tensor_zeros_like( debug_arena, result );
 
-   pw_conv_tensor( *input, *weights, *biases, *output_tensor );
+   pw_conv_tensor( input, weights, biases, output_tensor );
 
    float atol = 1e-4f;
 
@@ -434,11 +434,11 @@ TestResult first_layer_conv_block_test()
 
    TestTensor *output_tensor = tensor_zeros_like( debug_arena, result );
 
-   conv_block( *input, 129, 16, 1,
-               *dw_conv_weights, *dw_conv_biases,
-               *pw_conv_weights, *pw_conv_biases,
-               *proj_weights, *proj_biases,
-               *output_tensor );
+   conv_block( input, 129, 16, 1,
+               dw_conv_weights, dw_conv_biases,
+               pw_conv_weights, pw_conv_biases,
+               proj_weights, proj_biases,
+               output_tensor );
 
    float atol = 1e-4f;
 
