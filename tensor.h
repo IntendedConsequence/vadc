@@ -159,3 +159,127 @@ static inline TestTensor *tensor_copy( MemoryArena *arena, TestTensor *reference
 
    return result;
 }
+
+static inline void tensor_add_inplace( TestTensor *lhs, TestTensor *rhs )
+{
+   Assert( lhs->size == rhs->size );
+   Assert( lhs->ndim == rhs->ndim );
+   Assert( 0 == memcmp( lhs->dims, rhs->dims, lhs->ndim ) );
+
+   add_arrays_inplace( lhs->data, lhs->size, rhs->data );
+}
+
+static inline TestTensor *tensor_transpose_2d( MemoryArena *arena, TestTensor *source )
+{
+   TestTensor *output = tensor_zeros_like( arena, source );
+   float *data = output->data;
+   for ( int x = 0; x < source->dims[1]; ++x )
+   {
+      for ( int y = 0; y < source->dims[0]; ++y )
+      {
+         float value = *index2d( source, y, x );
+         *data++ = value;
+      }
+   }
+
+   Assert( data - output->data == output->size );
+
+   output->dims[0] = source->dims[1];
+   output->dims[1] = source->dims[0];
+
+   return output;
+}
+
+static inline void tensor_linear( TestTensor *input,
+                                  TestTensor *weights, TestTensor *biases,
+                                  TestTensor *output )
+{
+   Assert( input->ndim == 2 );
+   int mata_rows = input->dims[input->ndim - 2];
+   int mata_cols = input->dims[input->ndim - 1];
+
+   Assert( weights->ndim == 2 );
+   int matb_rows = weights->dims[weights->ndim - 2];
+   int matb_cols = weights->dims[weights->ndim - 1];
+   mymatmul( input->data, mata_rows, mata_cols, weights->data, matb_rows, matb_cols, output->data );
+
+   Assert( output->ndim == 2 );
+   Assert( output->dims[0] == mata_rows && output->dims[1] == matb_rows );
+   if ( biases )
+   {
+      Assert( matb_rows == output->dims[1] && matb_rows == biases->size );
+      for ( int i = 0; i < mata_rows; ++i )
+      {
+         add_arrays_inplace( index2d( output, i, 0 ), biases->size, biases->data );
+      }
+   }
+}
+
+static inline int tdimindex( TestTensor *tensor, int idx )
+{
+   Assert( tensor->ndim > 0 );
+   Assert( -tensor->ndim <= idx && idx < tensor->ndim );
+   // ndim idx dim
+   // 1     0   0
+   // 1    -1   0
+   // 2     0   0
+   // 2     1   1
+   // 2    -1   1
+   // 2    -2   0
+   // 3     0   0
+   // 3     1   1
+   // 3     2   2
+   // 3    -1   2
+   // 3    -2   1
+   // 3    -3   0
+   return idx < 0 ? tensor->ndim + idx : idx;
+}
+
+static inline int tdim( TestTensor *tensor, int idx )
+{
+   return tensor->dims[tdimindex( tensor, idx )];
+}
+
+
+static inline void softmax_inplace_stable( MemoryArena *arena, TestTensor *input )
+{
+   TemporaryMemory mark = beginTemporaryMemory( arena );
+
+   TestTensor *exped = tensor_zeros_like( arena, input );
+   int stride = tdim( input, -1 );
+   int batch_size = input->size / stride;
+   for ( int batch_index = 0; batch_index < batch_size; ++batch_index )
+   {
+      float max_value = input->data[batch_index * stride];
+      float sumexp = 0.0f;
+      for ( int i = 0; i < stride; ++i )
+      {
+         float value = input->data[batch_index * stride + i];
+         if ( value > max_value )
+         {
+            max_value = value;
+         }
+      }
+      for ( int i = 0; i < stride; ++i )
+      {
+         float value = input->data[batch_index * stride + i];
+         float e_value = expf( value - max_value );
+         exped->data[batch_index * stride + i] = e_value;
+         sumexp += e_value;
+      }
+      float sumexp_inv = 1.0f / sumexp;
+      for ( int i = 0; i < stride; ++i )
+      {
+         input->data[batch_index * stride + i] = exped->data[batch_index * stride + i] * sumexp_inv;
+      }
+   }
+   endTemporaryMemory( mark );
+}
+
+static inline void tensor_mul_inplace( TestTensor *input, float value )
+{
+   for ( int i = 0; i < input->size; ++i )
+   {
+      input->data[i] *= value;
+   }
+}

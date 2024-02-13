@@ -508,7 +508,7 @@ TestResult softmax_test()
 
    TestTensor *input_copy = tensor_copy( debug_arena, input );
 
-   softmax_inplace( debug_arena, input_copy );
+   softmax_inplace_stable( debug_arena, input_copy );
 
    float atol = 1e-4f;
 
