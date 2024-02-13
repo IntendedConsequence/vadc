@@ -7,7 +7,7 @@
 //       self.QKV = torch.nn.Linear(in_features=qkv_in_features, out_features=qkv_out_features)
 //       self.out_proj = torch.nn.Linear(in_features=qkv_in_features, out_features=qkv_in_features)
 
-static void tensor_add_inplace( TestTensor *lhs, TestTensor *rhs )
+static inline void tensor_add_inplace( TestTensor *lhs, TestTensor *rhs )
 {
    Assert( lhs->size == rhs->size );
    Assert( lhs->ndim == rhs->ndim );
@@ -16,7 +16,7 @@ static void tensor_add_inplace( TestTensor *lhs, TestTensor *rhs )
    add_arrays_inplace( lhs->data, lhs->size, rhs->data );
 }
 
-TestTensor *tensor_transpose_2d( MemoryArena *arena, TestTensor *source )
+static inline TestTensor *tensor_transpose_2d( MemoryArena *arena, TestTensor *source )
 {
    TestTensor *output = tensor_zeros_like( arena, source );
    float *data = output->data;
@@ -37,9 +37,9 @@ TestTensor *tensor_transpose_2d( MemoryArena *arena, TestTensor *source )
    return output;
 }
 
-static void tensor_linear( TestTensor *input,
-                           TestTensor *weights, TestTensor *biases,
-                           TestTensor *output )
+static inline void tensor_linear( TestTensor *input,
+                                  TestTensor *weights, TestTensor *biases,
+                                  TestTensor *output )
 {
    Assert( input->ndim == 2 );
    int mata_rows = input->dims[input->ndim - 2];
