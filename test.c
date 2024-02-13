@@ -602,7 +602,7 @@ int main()
       passed_count += !!result.pass;
       failed_count += !result.pass;
 
-      fprintf( stderr, "%s max error magnitude: %s", desc->test_name, test_error_magnitude_names[result.error_magnitude] );
+      fprintf( stderr, "%-30s max error magnitude: %-6s", desc->test_name, test_error_magnitude_names[result.error_magnitude] );
       fprintf( stderr, " ... %s\n", result_strings[!!result.pass] );
    }
 
