@@ -87,32 +87,8 @@ static inline int tdim( TestTensor *tensor, int idx )
    return tensor->dims[tdimindex( tensor, idx )];
 }
 
-static inline void softmax_inplace( MemoryArena *arena, TestTensor *input )
-{
-   TemporaryMemory mark = beginTemporaryMemory( arena );
 
-   TestTensor *exped = tensor_zeros_like( arena, input );
-   int stride = tdim( input, -1 );
-   int batch_size = input->size / stride;
-   for ( int batch_index = 0; batch_index < batch_size; ++batch_index )
-   {
-      float sumexp = 0.0f;
-      for ( int i = 0; i < stride; ++i )
-      {
-         float value = input->data[batch_index * stride + i];
-         float e_value = (float)exp( value );
-         exped->data[batch_index * stride + i] = e_value;
-         sumexp += e_value;
-      }
-      for ( int i = 0; i < stride; ++i )
-      {
-         input->data[batch_index * stride + i] = exped->data[batch_index * stride + i] / sumexp;
-      }
-   }
-   endTemporaryMemory( mark );
-}
-
-static inline void softmax_inplace_2( MemoryArena *arena, TestTensor *input )
+static inline void softmax_inplace_stable( MemoryArena *arena, TestTensor *input )
 {
    TemporaryMemory mark = beginTemporaryMemory( arena );
 
@@ -237,8 +213,8 @@ static void dual_head_attention( TestTensor *input,
    tensor_mul_inplace( a1, scale );
    tensor_mul_inplace( a2, scale );
 
-   softmax_inplace_2( debug_arena, a1 );
-   softmax_inplace_2( debug_arena, a2 );
+   softmax_inplace_stable( debug_arena, a1 );
+   softmax_inplace_stable( debug_arena, a2 );
 
    // [25, 25] x [8, 25] = [25, 8]
    TestTensor *attn1 = tensor_zeros_2d( debug_arena, tdim( a1, -2 ), tdim( v1, -2 ) );
@@ -255,6 +231,7 @@ static void dual_head_attention( TestTensor *input,
    TestTensor *attn2_t = tensor_transpose_2d( debug_arena, attn2 );
 
    // [16, 25]
+   // TODO(irwin): tensor_concat routine
    TestTensor *attn12_t = tensor_zeros_2d( debug_arena, tdim( attn1_t, -2 ) * 2, tdim( attn1_t, -1 ) );
    memmove( attn12_t->data, attn1_t->data, attn1_t->nbytes );
    memmove( attn12_t->data + attn1_t->size, attn2_t->data, attn2_t->nbytes );
