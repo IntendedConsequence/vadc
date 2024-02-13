@@ -146,3 +146,16 @@ static inline TestTensor *tensor_zeros_like( MemoryArena *arena, TestTensor *ref
 
    return result;
 }
+
+static inline TestTensor *tensor_copy( MemoryArena *arena, TestTensor *reference )
+{
+   TestTensor *result = tensor_zeros_like( arena, reference );
+   memmove(result->data, reference->data, reference->nbytes);
+
+   if (result->name != 0)
+   {
+      result->name = copyStringToArena( arena, reference->name, 0 );
+   }
+
+   return result;
+}

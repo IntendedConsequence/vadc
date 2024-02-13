@@ -91,6 +91,31 @@ LoadTesttensorResult load_testtensor( const char *path )
    return result;
 }
 
+static void print_single_tensor( TestTensor *t )
+{
+   fprintf( stderr, "%s:\n", t->name );
+
+   fprintf( stderr, "ndim %d\n", t->ndim );
+   if ( t->ndim )
+   {
+      fprintf( stderr, "dims" );
+      for ( int ndim = 0; ndim < t->ndim; ++ndim )
+      {
+         fprintf( stderr, " %d", t->dims[ndim] );
+      }
+      fprintf( stderr, "\n" );
+   }
+   fprintf( stderr, "size %d\n", t->size );
+   fprintf( stderr, "nbytes %d\n", t->nbytes );
+   const int max_print = 10;
+   int cutoff = t->size <= max_print ? t->size : max_print;
+   for ( int j = 0; j < cutoff; ++j )
+   {
+      fprintf( stderr, "%f\n", t->data[j] );
+   }
+
+   fprintf( stderr, "\n" );
+}
 
 static void print_tensors( LoadTesttensorResult res )
 {
@@ -98,27 +123,7 @@ static void print_tensors( LoadTesttensorResult res )
    for ( int i = 0; i < res.tensor_count; ++i )
    {
       TestTensor *t = res.tensor_array + i;
-      fprintf( stderr, "%s:\n", t->name );
-
-      fprintf( stderr, "ndim %d\n", t->ndim );
-      if ( t->ndim )
-      {
-         fprintf( stderr, "dims" );
-         for ( int ndim = 0; ndim < t->ndim; ++ndim )
-         {
-            fprintf( stderr, " %d", t->dims[ndim] );
-         }
-         fprintf( stderr, "\n" );
-      }
-      fprintf( stderr, "size %d\n", t->size );
-      fprintf( stderr, "nbytes %d\n", t->nbytes );
-      int cutoff = t->size <= 10 ? t->size : 10;
-      for ( int j = 0; j < cutoff; ++j )
-      {
-         fprintf( stderr, "%f\n", t->data[j] );
-      }
-
-      fprintf( stderr, "\n" );
+      print_single_tensor( t );
    }
 }
 
@@ -450,6 +455,103 @@ TestResult first_layer_conv_block_test()
    return test_result;
 }
 
+
+TestResult transpose2d_test()
+{
+   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+
+   // [1, 2, 3]
+   // [4, 5, 6]
+   TestTensor *source = tensor_zeros_2d( debug_arena, 2, 3 );
+   source->data[0] = 1.0f;
+   source->data[1] = 2.0f;
+   source->data[2] = 3.0f;
+   source->data[3] = 4.0f;
+   source->data[4] = 5.0f;
+   source->data[5] = 6.0f;
+
+   // [1, 4]
+   // [2, 5]
+   // [3, 6]
+   TestTensor *reference = tensor_zeros_2d( debug_arena, 3, 2 );
+   reference->data[0] = 1.0f;
+   reference->data[1] = 4.0f;
+   reference->data[2] = 2.0f;
+   reference->data[3] = 5.0f;
+   reference->data[4] = 3.0f;
+   reference->data[5] = 6.0f;
+
+   TestTensor *output_tensor = tensor_transpose_2d( debug_arena, source );
+
+   float atol = 1e-4f;
+
+   TestResult test_result = all_close( reference->data, output_tensor->data, reference->size, atol );
+
+   endTemporaryMemory( mark );
+
+   return test_result;
+}
+
+
+TestResult softmax_test()
+{
+   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+
+   LoadTesttensorResult res = {0};
+   res = load_testtensor( "softmax_test.testtensor" );
+
+   int test_data_index = 0;
+   TestTensor *input = res.tensor_array + test_data_index++;
+   TestTensor *result = res.tensor_array + test_data_index++;
+
+   TestTensor *input_copy = tensor_copy( debug_arena, input );
+
+   softmax_inplace( debug_arena, input_copy );
+
+   float atol = 1e-4f;
+
+   TestResult test_result = all_close( result->data, input_copy->data, result->size, atol );
+
+   endTemporaryMemory( mark );
+
+   return test_result;
+}
+
+
+TestResult dual_head_attention_test()
+{
+   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+
+   LoadTesttensorResult res = {0};
+   res = load_testtensor( "dual_head_attention_test.testtensor" );
+
+   int test_data_index = 0;
+   TestTensor *input = res.tensor_array + test_data_index++;
+   TestTensor *weights = res.tensor_array + test_data_index++;
+   TestTensor *biases = res.tensor_array + test_data_index++;
+   TestTensor *proj_weights = res.tensor_array + test_data_index++;
+   TestTensor *proj_biases = res.tensor_array + test_data_index++;
+   TestTensor *result = res.tensor_array + test_data_index++;
+
+   TestTensor *output_tensor = tensor_zeros_like( debug_arena, result );
+
+   dual_head_attention( input,
+                        weights, biases,
+                        proj_weights, proj_biases,
+                        output_tensor );
+
+   float atol = 1e-4f;
+
+   TestResult test_result = all_close( result->data, output_tensor->data, result->size, atol );
+
+   endTemporaryMemory( mark );
+
+   return test_result;
+}
+
 static const char *result_strings[] =
 {
    "FAIL",
@@ -474,6 +576,9 @@ TestFunctionDescription test_function_descriptions[] =
    { pw_conv_129_16_test, "pw_conv_129_16_test", 1e-04f },
    { first_layer_conv_block_test, "first_layer_conv_block_test", 1e-04f },
    { decoder_test, "Decoder", 1e-10f },
+   { transpose2d_test, "transpose2d_test", 0.0f },
+   { softmax_test, "softmax_test", 1e-04f },
+   { dual_head_attention_test, "dual_head_attention_test", 1e-04f },
    { lstm_test, "LSTM", 1e-04f },
    { lstm_test_RED, "LSTM RED", 1e-04f },
 };
