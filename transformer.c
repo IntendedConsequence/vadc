@@ -52,10 +52,13 @@ static void tensor_linear( TestTensor *input,
 
    Assert( output->ndim == 2 );
    Assert( output->dims[0] == mata_rows && output->dims[1] == matb_rows );
-   Assert( matb_rows == output->dims[1] && matb_rows == biases->size );
-   for ( int i = 0; i < matb_rows; ++i )
+   if ( biases )
    {
-      add_arrays_inplace(index2d(output, i, 0), biases->size, biases->data);
+      Assert( matb_rows == output->dims[1] && matb_rows == biases->size );
+      for ( int i = 0; i < mata_rows; ++i )
+      {
+         add_arrays_inplace( index2d( output, i, 0 ), biases->size, biases->data );
+      }
    }
 }
 
