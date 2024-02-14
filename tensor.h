@@ -160,7 +160,7 @@ static inline TestTensor *tensor_copy( MemoryArena *arena, TestTensor *reference
    return result;
 }
 
-static inline void tensor_add_inplace( TestTensor *lhs, TestTensor *rhs )
+static inline void tensor_add_inplace_nd( TestTensor *lhs, TestTensor *rhs )
 {
    Assert( lhs->size == rhs->size );
    Assert( lhs->ndim == rhs->ndim );

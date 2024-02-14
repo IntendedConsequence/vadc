@@ -189,3 +189,56 @@ static void dual_head_attention( TestTensor *input,
 
    endTemporaryMemory( mark );
 }
+
+
+// TODO(irwin):
+// - [ ] add test
+// - [ ] generate test data
+static void transformer_block( MemoryArena *arena, TestTensor *input, int shape, int att_in, int att_out,
+                               TestTensor *attention_weights, TestTensor *attention_biases,
+                               TestTensor *attention_proj_weights, TestTensor *attention_proj_biases,
+                               TestTensor *norm1_weights, TestTensor *norm1_biases,
+                               TestTensor *linear1_weights, TestTensor *linear1_biases,
+                               TestTensor *linear2_weights, TestTensor *linear2_biases,
+                               TestTensor *norm2_weights, TestTensor *norm2_biases,
+                               TestTensor *output )
+{
+   VAR_UNUSED(att_in);
+   VAR_UNUSED(att_out);
+
+   Assert( input->ndim == 2 );
+   Assert( output->ndim == 2 );
+
+   TemporaryMemory mark = beginTemporaryMemory( arena );
+
+   TestTensor *input_transposed = tensor_transpose_2d( arena, input );
+   TestTensor *attention_output = tensor_zeros_like( arena, input_transposed );
+
+   dual_head_attention( input_transposed,
+                        attention_weights, attention_biases,
+                        attention_proj_weights, attention_proj_biases,
+                        attention_output );
+
+   tensor_add_inplace_nd( input_transposed, attention_output );
+
+   // TODO(irwin): can zero and reuse attention_output?
+   TestTensor *norm1_output = tensor_zeros_like( arena, input_transposed );
+   layer_norm( input_transposed, norm1_weights, norm1_biases, norm1_output );
+
+   Assert(tdim( norm1_output, -1 ) == shape);
+   TestTensor *linear1_output = tensor_zeros_2d( arena, tdim( norm1_output, -2 ), shape );
+   tensor_linear( norm1_output, linear1_weights, linear1_biases, linear1_output );
+   tensor_relu_inplace( linear1_output );
+   TestTensor *linear2_output = tensor_zeros_2d( arena, tdim( linear1_output, -2 ), shape );
+   tensor_linear( linear1_output, linear2_weights, linear2_biases, linear2_output );
+   tensor_add_inplace_nd( norm1_output, linear2_output );
+
+   TestTensor *norm2_output = tensor_zeros_like( arena, norm1_output );
+   layer_norm( norm1_output, norm2_weights, norm2_biases, norm2_output );
+
+   TestTensor *output_copy_source = tensor_transpose_2d( arena, norm2_output );
+   Assert(output->nbytes == output_copy_source->nbytes);
+   memmove( output->data, output_copy_source->data, output->nbytes );
+
+   endTemporaryMemory( mark );
+}
