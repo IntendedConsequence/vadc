@@ -7,6 +7,74 @@
 //       self.QKV = torch.nn.Linear(in_features=qkv_in_features, out_features=qkv_out_features)
 //       self.out_proj = torch.nn.Linear(in_features=qkv_in_features, out_features=qkv_in_features)
 
+static void layer_norm( TestTensor *input, TestTensor *weight, TestTensor *bias, TestTensor *output )
+{
+   const float eps = 1e-5f;
+
+   Assert( input->ndim == 2 );
+   Assert( output->ndim == 2 );
+   Assert( weight->ndim == 1 );
+   Assert( bias->ndim == 1 );
+
+   int batches = tdim( input, 0 );
+   int features = tdim( input, 1 );
+   Assert( features > 0 );
+   float inv_features = 1.0f / features;
+
+   Assert( batches == tdim( output, 0 ) );
+   Assert( features == tdim( output, 1 ) );
+
+   Assert( features == tdim( weight, 0 ) );
+   Assert( features == tdim( bias, 0 ) );
+
+   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+
+   float *mean = pushArray( debug_arena, batches, float );
+   float *variance = pushArray( debug_arena, batches, float );
+
+   for ( int batch = 0; batch < batches; ++batch )
+   {
+      float sum = 0.0f;
+      for ( int index = 0; index < features; ++index )
+      {
+         sum += input->data[batch * features + index];
+      }
+      mean[batch] = sum * inv_features;
+   }
+
+   for ( int batch = 0; batch < batches; ++batch )
+   {
+      float sum = 0.0f;
+      for ( int index = 0; index < features; ++index )
+      {
+         float diff = input->data[batch * features + index] - mean[batch];
+         sum += diff * diff;
+      }
+      variance[batch] = sum * inv_features;
+   }
+
+   for ( int batch = 0; batch < batches; ++batch )
+   {
+      float std_dev = sqrtf( variance[batch] + eps );
+      float std_dev_reciprocal = 1.0f / std_dev;
+      float mean_over_std_dev = mean[batch] * std_dev_reciprocal;
+
+      for ( int index = 0; index < features; ++index )
+      {
+         int array_index = batch * features + index;
+         float input_value = input->data[array_index];
+#if 0
+         float diff = input_value - mean[batch];
+         output->data[array_index] = diff * std_dev_reciprocal * weight->data[index] + bias->data[index];
+#else
+         output->data[array_index] = (input_value * std_dev_reciprocal - mean_over_std_dev) * weight->data[index] + bias->data[index];
+#endif
+      }
+   }
+
+   endTemporaryMemory( mark );
+}
 
 static void dual_head_attention( TestTensor *input,
                                  TestTensor *QKV_weights, TestTensor *QKV_biases,
