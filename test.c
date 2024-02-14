@@ -519,6 +519,35 @@ TestResult softmax_test()
    return test_result;
 }
 
+TestResult layer_norm_test()
+{
+   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+
+   LoadTesttensorResult res = {0};
+   res = load_testtensor( "layernorm_test.testtensor" );
+
+   // TODO(irwin): validate loaded tensor count helpers
+   Assert(res.tensor_count == 4);
+
+   int test_data_index = 0;
+   TestTensor *input = res.tensor_array + test_data_index++;
+   TestTensor *weight = res.tensor_array + test_data_index++;
+   TestTensor *bias = res.tensor_array + test_data_index++;
+   TestTensor *result = res.tensor_array + test_data_index++;
+
+   TestTensor *output = tensor_zeros_like( debug_arena, result );
+
+   layer_norm( input, weight, bias, output );
+
+   float atol = 1e-4f;
+   TestResult test_result = all_close( result->data, output->data, result->size, atol );
+
+   endTemporaryMemory( mark );
+
+   return test_result;
+}
+
 
 TestResult dual_head_attention_test()
 {
@@ -578,6 +607,7 @@ TestFunctionDescription test_function_descriptions[] =
    { decoder_test, "Decoder", 1e-10f },
    { transpose2d_test, "transpose2d_test", 0.0f },
    { softmax_test, "softmax_test", 1e-04f },
+   { layer_norm_test, "layer_norm_test", 1e-04f },
    { dual_head_attention_test, "dual_head_attention_test", 1e-04f },
    { lstm_test, "LSTM", 1e-04f },
    { lstm_test_RED, "LSTM RED", 1e-04f },
