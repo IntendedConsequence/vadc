@@ -528,7 +528,7 @@ TestResult layer_norm_test()
    res = load_testtensor( "layernorm_test.testtensor" );
 
    // TODO(irwin): validate loaded tensor count helpers
-   Assert(res.tensor_count == 4);
+   Assert( res.tensor_count == 4 );
 
    int test_data_index = 0;
    TestTensor *input = res.tensor_array + test_data_index++;
@@ -581,6 +581,51 @@ TestResult dual_head_attention_test()
    return test_result;
 }
 
+TestResult transformer_block_16_16_48_test()
+{
+   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+
+   LoadTesttensorResult res = {0};
+   res = load_testtensor( "transformer_block_test_16_16_48.testtensor" );
+
+   int test_data_index = 0;
+   TestTensor *attention_weights = res.tensor_array + test_data_index++;
+   TestTensor *attention_biases = res.tensor_array + test_data_index++;
+   TestTensor *attention_proj_weights = res.tensor_array + test_data_index++;
+   TestTensor *attention_proj_biases = res.tensor_array + test_data_index++;
+   TestTensor *norm1_weights = res.tensor_array + test_data_index++;
+   TestTensor *norm1_biases = res.tensor_array + test_data_index++;
+   TestTensor *norm2_weights = res.tensor_array + test_data_index++;
+   TestTensor *norm2_biases = res.tensor_array + test_data_index++;
+   TestTensor *linear1_weights = res.tensor_array + test_data_index++;
+   TestTensor *linear1_biases = res.tensor_array + test_data_index++;
+   TestTensor *linear2_weights = res.tensor_array + test_data_index++;
+   TestTensor *linear2_biases = res.tensor_array + test_data_index++;
+
+   TestTensor *input = res.tensor_array + test_data_index++;
+   TestTensor *result = res.tensor_array + test_data_index++;
+
+   TestTensor *output = tensor_zeros_like( debug_arena, result );
+
+   transformer_block( debug_arena, input, 16, 16, 48,
+                      attention_weights, attention_biases,
+                      attention_proj_weights, attention_proj_biases,
+                      norm1_weights, norm1_biases,
+                      linear1_weights, linear1_biases,
+                      linear2_weights, linear2_biases,
+                      norm2_weights, norm2_biases,
+                      output );
+
+   float atol = 1e-4f;
+
+   TestResult test_result = all_close( result->data, output->data, result->size, atol );
+
+   endTemporaryMemory( mark );
+
+   return test_result;
+}
+
 static const char *result_strings[] =
 {
    "FAIL",
@@ -609,6 +654,7 @@ TestFunctionDescription test_function_descriptions[] =
    { softmax_test, "softmax_test", 1e-04f },
    { layer_norm_test, "layer_norm_test", 1e-04f },
    { dual_head_attention_test, "dual_head_attention_test", 1e-04f },
+   { transformer_block_16_16_48_test, "transformer_block_16_16_48_test", 1e-04f },
    { lstm_test, "LSTM", 1e-04f },
    { lstm_test_RED, "LSTM RED", 1e-04f },
 };
@@ -632,7 +678,7 @@ int main()
       passed_count += !!result.pass;
       failed_count += !result.pass;
 
-      fprintf( stderr, "%-30s max error magnitude: %-6s", desc->test_name, test_error_magnitude_names[result.error_magnitude] );
+      fprintf( stderr, "%-32s max error magnitude: %-6s", desc->test_name, test_error_magnitude_names[result.error_magnitude] );
       fprintf( stderr, " ... %s\n", result_strings[!!result.pass] );
    }
 
