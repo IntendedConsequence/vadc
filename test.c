@@ -640,23 +640,24 @@ struct TestFunctionDescription
 {
    TestFunction function_pointer;
    const char *test_name;
-   // TODO(irwin): this seems to duplicate the hardcoded atol parameter in each test function's call to all_close
-   float acceptable_error_magnitude;
 };
+
+#define TEST_FUNCTION_DESCRIPTION( test_function ) \
+   { test_function, VADC_TOSTRING( test_function ) }
 
 TestFunctionDescription test_function_descriptions[] =
 {
-   { dw_conv_129_test, "dw_conv_129_test", 1e-04f },
-   { pw_conv_129_16_test, "pw_conv_129_16_test", 1e-04f },
-   { first_layer_conv_block_test, "first_layer_conv_block_test", 1e-04f },
-   { decoder_test, "Decoder", 1e-10f },
-   { transpose2d_test, "transpose2d_test", 0.0f },
-   { softmax_test, "softmax_test", 1e-04f },
-   { layer_norm_test, "layer_norm_test", 1e-04f },
-   { dual_head_attention_test, "dual_head_attention_test", 1e-04f },
-   { transformer_block_16_16_48_test, "transformer_block_16_16_48_test", 1e-04f },
-   { lstm_test, "LSTM", 1e-04f },
-   { lstm_test_RED, "LSTM RED", 1e-04f },
+   TEST_FUNCTION_DESCRIPTION(dw_conv_129_test),
+   TEST_FUNCTION_DESCRIPTION(pw_conv_129_16_test),
+   TEST_FUNCTION_DESCRIPTION(first_layer_conv_block_test),
+   TEST_FUNCTION_DESCRIPTION(decoder_test),
+   TEST_FUNCTION_DESCRIPTION(transpose2d_test),
+   TEST_FUNCTION_DESCRIPTION(softmax_test),
+   TEST_FUNCTION_DESCRIPTION(layer_norm_test),
+   TEST_FUNCTION_DESCRIPTION(dual_head_attention_test),
+   TEST_FUNCTION_DESCRIPTION(transformer_block_16_16_48_test),
+   TEST_FUNCTION_DESCRIPTION(lstm_test),
+   TEST_FUNCTION_DESCRIPTION(lstm_test_RED),
 };
 
 // int main(int argc, char *argv[])

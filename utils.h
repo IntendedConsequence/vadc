@@ -33,6 +33,13 @@ typedef int32_t b32;
 #define VAR_UNUSED(x) do { (void)sizeof(x); } while(0)
 #endif
 
+#define VADC_STRINGIFY_(x) #x
+#define VADC_TOSTRING(x) VADC_STRINGIFY_(x)
+
+#define VADC_CAT__(a, b) a ## b
+#define VADC_CAT_(a, b) VADC_CAT__(a, b)
+#define VADC_CAT(a, b) VADC_CAT_(a, b)
+
 // TODO(irwin): define that disables asserts
 
 #ifndef ASSERT_HALT
