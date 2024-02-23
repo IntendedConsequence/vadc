@@ -90,15 +90,23 @@ typedef struct FeedProbabilityResult
    b32 is_valid;
 } FeedProbabilityResult;
 
+typedef enum Segment_Output_Format Segment_Output_Format;
+enum Segment_Output_Format
+{
+   Segment_Output_Format_Seconds = 0,
+   Segment_Output_Format_CentiSeconds, // NOTE(irwin): hundreths of seconds, 500 -> 5 seconds
+
+   Segment_Output_Format_COUNT
+};
 
 
-int run_inference( OrtSession *session, float min_silence_duration_ms, float min_speech_duration_ms, float threshold, float neg_threshold, float speech_pad_ms, b32 raw_probabilities );
+int run_inference( OrtSession *session, float min_silence_duration_ms, float min_speech_duration_ms, float threshold, float neg_threshold, float speech_pad_ms, b32 raw_probabilities, Segment_Output_Format output_format );
 void process_chunks( VADC_Context context, const size_t buffered_samples_count, const float *samples_buffer_float32, float *probabilities_buffer );
 VADC_Chunk_Result run_inference_on_single_chunk( VADC_Context context, const size_t samples_count, const float *samples_buffer_float32, float *state_h_in, float *state_c_in );
 
 FeedProbabilityResult feed_probability( FeedState *state, int min_silence_duration_chunks, int min_speech_duration_chunks, float probability, float threshold, float neg_threshold, int global_chunk_index );
-void emit_speech_segment( FeedProbabilityResult segment, float speech_pad_ms );
-FeedProbabilityResult combine_or_emit_speech_segment( FeedProbabilityResult buffered, FeedProbabilityResult feed_result, float speech_pad_ms );
+void emit_speech_segment( FeedProbabilityResult segment, float speech_pad_ms, Segment_Output_Format output_format );
+FeedProbabilityResult combine_or_emit_speech_segment( FeedProbabilityResult buffered, FeedProbabilityResult feed_result, float speech_pad_ms, Segment_Output_Format output_format );
 
 // NOTE(irwin): onnx helper routines
 void verify_input_output_count( OrtSession *session );
