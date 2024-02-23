@@ -4,6 +4,8 @@
 #include <io.h>
 #include <fcntl.h>
 
+#include <inttypes.h>
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <Shlwapi.h>
@@ -191,7 +193,7 @@ static inline float to_s(int in_chunks)
    return in_chunks / chunks_per_second;
 }
 
-void emit_speech_segment(FeedProbabilityResult segment, float speech_pad_ms)
+void emit_speech_segment(FeedProbabilityResult segment, float speech_pad_ms, Segment_Output_Format output_format)
 {
    const float speech_pad_s = speech_pad_ms / 1000.0f;
 
@@ -204,12 +206,25 @@ void emit_speech_segment(FeedProbabilityResult segment, float speech_pad_ms)
       speech_start_padded = 0.0f;
    }
 
-   fprintf(stdout, "%.2f,%.2f\n", speech_start_padded, speech_end_padded);
+   switch (output_format)
+   {
+      case Segment_Output_Format_Seconds:
+      {
+         fprintf(stdout, "%.2f,%.2f\n", speech_start_padded, speech_end_padded);
+      } break;
+
+      case Segment_Output_Format_CentiSeconds:
+      {
+         s64 start_centi = (s64)((double)speech_start_padded * 100.0 + 0.5);
+         s64 end_centi = (s64)((double)speech_end_padded * 100.0 + 0.5);
+         fprintf(stdout, "%" PRId64 "," "%" PRId64 "\n", start_centi, end_centi);
+      } break;
+   }
    fflush(stdout);
 }
 
 FeedProbabilityResult combine_or_emit_speech_segment(FeedProbabilityResult buffered, FeedProbabilityResult feed_result,
-                                                     float speech_pad_ms)
+                                                     float speech_pad_ms, Segment_Output_Format output_format)
 {
    FeedProbabilityResult result = buffered;
 
@@ -230,7 +245,7 @@ FeedProbabilityResult combine_or_emit_speech_segment(FeedProbabilityResult buffe
       }
       else
       {
-         emit_speech_segment(result, speech_pad_ms);
+         emit_speech_segment(result, speech_pad_ms, output_format);
 
          result = feed_result;
       }
@@ -249,7 +264,8 @@ int run_inference(OrtSession* session,
                   float threshold,
                   float neg_threshold,
                   float speech_pad_ms,
-                  b32 raw_probabilities) {
+                  b32 raw_probabilities,
+                  Segment_Output_Format output_format) {
    size_t model_input_count = 0;
    ORT_ABORT_ON_ERROR(g_ort->SessionGetInputCount( session, &model_input_count ));
    Assert( model_input_count == 3 || model_input_count == 4 );
@@ -494,7 +510,7 @@ int run_inference(OrtSession* session,
          if (feed_result.is_valid)
          {
             buffered = combine_or_emit_speech_segment(buffered, feed_result,
-                                                      speech_pad_ms);
+                                                      speech_pad_ms, output_format);
          }
 
             // printf("%f\n", probability);
@@ -518,22 +534,22 @@ int run_inference(OrtSession* session,
       // NOTE(irwin): snap last speech segment to actual audio length
       if (state.triggered)
       {
-      int audio_length_samples = (int)((global_chunk_index - 1) * window_size_samples);
-      if (audio_length_samples - (state.current_speech_start * window_size_samples) > (min_speech_duration_chunks * window_size_samples))
-      {
-         FeedProbabilityResult final_segment;
-         final_segment.is_valid = 1;
-         final_segment.speech_start = state.current_speech_start;
-         final_segment.speech_end = (int)(audio_length_samples / window_size_samples);
+         int audio_length_samples = (int)((global_chunk_index - 1) * window_size_samples);
+         if (audio_length_samples - (state.current_speech_start * window_size_samples) > (min_speech_duration_chunks * window_size_samples))
+         {
+            FeedProbabilityResult final_segment;
+            final_segment.is_valid = 1;
+            final_segment.speech_start = state.current_speech_start;
+            final_segment.speech_end = (int)(audio_length_samples / window_size_samples);
 
-         buffered = combine_or_emit_speech_segment(buffered, final_segment,
-                                                      speech_pad_ms);
+            buffered = combine_or_emit_speech_segment(buffered, final_segment,
+                                                         speech_pad_ms, output_format);
+         }
       }
-   }
 
-   if (buffered.is_valid)
+      if (buffered.is_valid)
       {
-         emit_speech_segment(buffered, speech_pad_ms);
+         emit_speech_segment(buffered, speech_pad_ms, output_format);
       }
    }
 
@@ -559,6 +575,7 @@ enum ArgOptionIndex
    ArgOptionIndex_NegThresholdRelative,
    ArgOptionIndex_SpeechPad,
    ArgOptionIndex_RawProbabilities,
+   ArgOptionIndex_OutputFormatCentiSeconds,
    ArgOptionIndex_Model,
 
    ArgOptionIndex_COUNT
@@ -571,6 +588,7 @@ ArgOption options[] = {
    {"--neg_threshold_relative", 0.15f},
    {"--speech_pad", 30.0f},
    {"--raw_probabilities", 0.0f},
+   {"--output_centi_seconds", 0.0f},
    {"--model", 0.0f},
 };
 
@@ -582,6 +600,8 @@ int main(int arg_count, char **arg_array)
    float neg_threshold_relative;
    float neg_threshold;
    float speech_pad_ms;
+
+   Segment_Output_Format output_format = Segment_Output_Format_Seconds;
 
    wchar_t *model_path_arg = NULL;
 
@@ -597,6 +617,11 @@ int main(int arg_count, char **arg_array)
          if (strcmp(arg_string, option->name) == 0)
          {
             if (arg_option_index == ArgOptionIndex_RawProbabilities)
+            {
+               // TODO(irwin): bool options
+               option->value = 1.0f;
+            }
+            else if (arg_option_index == ArgOptionIndex_OutputFormatCentiSeconds)
             {
                // TODO(irwin): bool options
                option->value = 1.0f;
@@ -655,6 +680,10 @@ int main(int arg_count, char **arg_array)
    neg_threshold_relative  = options[ArgOptionIndex_NegThresholdRelative].value;
    speech_pad_ms           = options[ArgOptionIndex_SpeechPad].value;
    raw_probabilities       = (options[ArgOptionIndex_RawProbabilities].value != 0.0f);
+   if (options[ArgOptionIndex_OutputFormatCentiSeconds].value != 0.0f)
+   {
+      output_format = Segment_Output_Format_CentiSeconds;
+   }
 
    neg_threshold           = threshold - neg_threshold_relative;
 
@@ -699,7 +728,8 @@ int main(int arg_count, char **arg_array)
                     threshold,
                     neg_threshold,
                     speech_pad_ms,
-                    raw_probabilities);
+                    raw_probabilities,
+                    output_format);
 
    }
 
