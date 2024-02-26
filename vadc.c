@@ -258,6 +258,106 @@ FeedProbabilityResult combine_or_emit_speech_segment(FeedProbabilityResult buffe
    return result;
 }
 
+
+#if 0
+void read_wav_ffmpeg( const char *fname_inp )
+{
+   const wchar_t ffmpeg_to_s16le[] = L"ffmpeg -hide_banner -loglevel error -stats -i \"%s\" -map 0:a:0 -vn -sn -dn -ac 1 -ar 16k -f s16le -";
+   wchar_t *fname_widechar = nullptr;
+   if ( UTF8_ToWidechar( &fname_widechar, fname_inp, 0 ) )
+   {
+      wchar_t ffmpeg_final[4096];
+      swprintf( ffmpeg_final, 4096, ffmpeg_to_s16le, fname_widechar );
+
+      free( fname_widechar );
+
+      // Create the pipe
+      SECURITY_ATTRIBUTES saAttr = {sizeof( SECURITY_ATTRIBUTES )};
+      saAttr.bInheritHandle = FALSE;
+
+      HANDLE ffmpeg_stdout_read, ffmpeg_stdout_write;
+
+      if ( !CreatePipe( &ffmpeg_stdout_read, &ffmpeg_stdout_write, &saAttr, 0 ) )
+      {
+         fprintf( stderr, "Error creating ffmpeg pipe\n" );
+         return false;
+      }
+
+      // NOTE(irwin): ffmpeg does inherit the write handle to its output
+      SetHandleInformation( ffmpeg_stdout_write, HANDLE_FLAG_INHERIT, 1 );
+
+      // Launch ffmpeg and redirect its output to the pipe
+      STARTUPINFOW startup_info_ffmpeg = {sizeof( STARTUPINFO )};
+      // NOTE(irwin): hStdInput is 0, we don't want ffmpeg to inherit our stdin
+      startup_info_ffmpeg.hStdOutput = ffmpeg_stdout_write;
+      startup_info_ffmpeg.hStdError = GetStdHandle( STD_ERROR_HANDLE );
+      startup_info_ffmpeg.dwFlags |= STARTF_USESTDHANDLES;
+
+      PROCESS_INFORMATION ffmpeg_process_info = {};
+
+      if ( !CreateProcessW( NULL, ffmpeg_final, NULL, NULL, TRUE, 0, NULL, NULL, &startup_info_ffmpeg, &ffmpeg_process_info ) )
+      {
+         fprintf( stderr, "Error launching ffmpeg\n" );
+         return false;
+      }
+
+      // Close the write end of the pipe, as we're not writing to it
+      CloseHandle( ffmpeg_stdout_write );
+
+      // NOTE(irwin): restore non-inheritable status
+      SetHandleInformation( ffmpeg_stdout_write, HANDLE_FLAG_INHERIT, 0 );
+
+      // we can close the handles early if we're not going to use them
+      CloseHandle( ffmpeg_process_info.hProcess );
+      CloseHandle( ffmpeg_process_info.hThread );
+
+
+      if ( ffmpeg_stdout_read != INVALID_HANDLE_VALUE )
+      {
+         const int BUFSIZE = 4096 * 2 * 2;
+         // Read ffmpeg's output
+         unsigned char buffer[BUFSIZE];
+         int leftover = 0;
+
+         DWORD dwRead = 0;
+         unsigned char *buffer_dst = buffer + leftover;
+         auto byte_count_to_read = sizeof( buffer ) - leftover;
+         while ( ReadFile( ffmpeg_stdout_read, buffer_dst, byte_count_to_read, &dwRead, NULL ) )
+         {
+            if ( dwRead == 0 )
+            {
+               // fflush(stdout);
+               // NOTE(irwin): we ignore any leftover bytes in buffer in this case
+               break;
+            }
+
+            DWORD bytes_in_buffer = dwRead + leftover;
+            DWORD remainder = bytes_in_buffer % sizeof( int16_t );
+
+            int16_t *from = (int16_t *)buffer;
+            int16_t *to = (int16_t *)(buffer + (bytes_in_buffer - remainder));
+
+            //-----------------------------------------------------------------------------
+            // got bytes, do something with them here
+            //-----------------------------------------------------------------------------
+            
+            if ( remainder != 0 )
+            {
+               memmove( buffer, to, remainder );
+            }
+            leftover = remainder;
+            //printf( "%.*s", (int)dwRead, buffer );
+            // printf("\n%d\n", (int)dwRead);
+            // fflush(stdout);
+            // WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), buffer, dwRead, NULL, NULL);
+            // FlushFileBuffers(GetStdHandle(STD_OUTPUT_HANDLE));
+            // FlushFileBuffers(GetStdHandle(STD_ERROR_HANDLE));
+         }
+      }
+   }
+}
+#endif
+
 typedef enum BS_Error BS_Error;
 enum BS_Error
 {
