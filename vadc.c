@@ -495,7 +495,8 @@ int run_inference(OrtSession* session,
                   float neg_threshold,
                   float speech_pad_ms,
                   b32 raw_probabilities,
-                  Segment_Output_Format output_format) {
+                  Segment_Output_Format output_format,
+                  const char *filename ) {
    size_t model_input_count = 0;
    ORT_ABORT_ON_ERROR(g_ort->SessionGetInputCount( session, &model_input_count ));
    Assert( model_input_count == 3 || model_input_count == 4 );
@@ -629,22 +630,28 @@ int run_inference(OrtSession* session,
    float *probabilities_buffer = (float *)malloc(chunks_count * sizeof(float));
 
    FILE* read_source;
+   if (filename)
+   {
+      read_source = fopen( filename, "rb" );
+   }
+   else
+   {
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#endif //__clang__
+
+      _setmode( _fileno( stdin ), O_BINARY );
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif //__clang__
+   
+      read_source = stdin;
+   }
+
 #if FROM_STDIN
-
-#ifdef __clang__
-   #pragma clang diagnostic push
-   #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#endif //__clang__
-
-   _setmode(_fileno(stdin), O_BINARY);
-
-#ifdef __clang__
-   #pragma clang diagnostic pop
-#endif //__clang__
-
-   read_source = stdin;
 #else
-   read_source = fopen("RED.s16le", "rb");
 #endif
 
    Buffered_Stream read_stream = {0};
@@ -800,8 +807,13 @@ int run_inference(OrtSession* session,
    }
 
    deinit_buffered_stream_file( &read_stream );
+
+   if (filename)
+   {
+      fclose( read_source );
+   }
+
 #if !FROM_STDIN
-   fclose( read_source );
 #endif
 
    if (!raw_probabilities)
@@ -879,6 +891,7 @@ int main(int arg_count, char **arg_array)
    Segment_Output_Format output_format = Segment_Output_Format_Seconds;
 
    wchar_t *model_path_arg = NULL;
+   //const char *input_filename = "RED.s16le";
    const char *input_filename = NULL;
 
    b32 raw_probabilities = 0;
@@ -1016,7 +1029,7 @@ int main(int arg_count, char **arg_array)
                     neg_threshold,
                     speech_pad_ms,
                     raw_probabilities,
-                    output_format);
+                    output_format, input_filename);
 
    }
 
