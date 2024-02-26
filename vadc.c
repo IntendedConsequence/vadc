@@ -879,18 +879,22 @@ int main(int arg_count, char **arg_array)
    Segment_Output_Format output_format = Segment_Output_Format_Seconds;
 
    wchar_t *model_path_arg = NULL;
+   const char *input_filename = NULL;
 
    b32 raw_probabilities = 0;
 
    for (int arg_index = 1; arg_index < arg_count; ++arg_index)
    {
       const char *arg_string = arg_array[arg_index];
+      b32 found_named_option = 0;
 
       for (int arg_option_index = 0; arg_option_index < ArgOptionIndex_COUNT; ++arg_option_index)
       {
          ArgOption *option = options + arg_option_index;
          if (strcmp(arg_string, option->name) == 0)
          {
+            found_named_option = 1;
+
             if (arg_option_index == ArgOptionIndex_RawProbabilities)
             {
                // TODO(irwin): bool options
@@ -907,6 +911,9 @@ int main(int arg_count, char **arg_array)
                if ( arg_value_index < arg_count )
                {
                   const char *arg_value_string = arg_array[arg_value_index];
+
+                  // TODO(irwin): get command line in UTF16, reencode to utf8.
+                  // Doesn't make sense to assume it's UTF8 here!
                   int buf_char_count_needed = MultiByteToWideChar(
                      CP_UTF8,
                      0,
@@ -946,6 +953,11 @@ int main(int arg_count, char **arg_array)
                }
             }
          }
+      }
+
+      if ( !found_named_option )
+      {
+         input_filename = arg_array[arg_index];
       }
    }
 
