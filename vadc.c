@@ -258,6 +258,136 @@ FeedProbabilityResult combine_or_emit_speech_segment(FeedProbabilityResult buffe
    return result;
 }
 
+typedef enum BS_Error BS_Error;
+enum BS_Error
+{
+   BS_Error_NoError = 0,
+   BS_Error_Error,
+   BS_Error_EndOfFile,
+   BS_Error_Memory,
+   BS_Error_CantOpenFile,
+
+   BS_Error_COUNT
+};
+
+
+typedef struct Buffered_Stream Buffered_Stream;
+typedef BS_Error ( *Refill_Function ) (Buffered_Stream *);
+
+
+struct Buffered_Stream
+{
+   u8 *start;
+   u8 *cursor;
+   u8 *end;
+
+
+   Refill_Function refill;
+
+   BS_Error error_code;
+
+
+   FILE *file_handle_internal;
+   u8 *buffer_internal;
+   size_t buffer_internal_size;
+};
+
+BS_Error refill_zeros(Buffered_Stream *s)
+{
+   static u8 zeros[256] = {0};
+   
+   s->start = zeros;
+   s->cursor = zeros;
+   s->end = zeros + sizeof( zeros );
+   
+   return s->error_code;
+}
+
+static BS_Error fail_buffered_stream(Buffered_Stream *s, BS_Error error_code)
+{
+   s->error_code = error_code;
+   s->refill = refill_zeros;
+   s->refill( s );
+
+   return s->error_code;
+}
+
+BS_Error refill_FILE( Buffered_Stream *s )
+{
+   if (s->cursor == s->end)
+   {
+      size_t values_read = fread( s->buffer_internal, 1, s->buffer_internal_size, s->file_handle_internal );
+      if (values_read == s->buffer_internal_size)
+      {
+         s->start = s->buffer_internal;
+         s->cursor = s->buffer_internal;
+         s->end = s->start + values_read;
+      }
+      else if ( values_read > 0 )
+      {
+         s->start = s->buffer_internal;
+         s->cursor = s->buffer_internal;
+         s->end = s->start + values_read;
+      }
+      else
+      {
+         if (feof(s->file_handle_internal))
+         {
+            return fail_buffered_stream( s, BS_Error_EndOfFile );
+         }
+         else if (ferror(s->file_handle_internal))
+         {
+            return fail_buffered_stream( s, BS_Error_Error );
+         }
+      }
+   }
+
+   return s->error_code;
+}
+
+static void init_buffered_stream_file(Buffered_Stream *s, FILE *f, size_t buffer_size)
+{
+   //*s = {0};
+   memset( s, 0, sizeof( *s ) );
+   if (f)
+   {
+      s->buffer_internal = malloc( buffer_size );
+      if ( s->buffer_internal )
+      {
+         memset( s->buffer_internal, 0, buffer_size );
+         s->file_handle_internal = f;
+         s->refill = refill_FILE;
+         s->buffer_internal_size = buffer_size;
+         s->error_code = BS_Error_NoError;
+         s->refill( s );
+      }
+      else
+      {
+         fail_buffered_stream( s, BS_Error_Memory );
+      }
+   }
+   else
+   {
+      fail_buffered_stream( s, BS_Error_CantOpenFile );
+   }
+}
+
+static void deinit_buffered_stream_file( Buffered_Stream *s )
+{
+   if ( s->file_handle_internal )
+   {
+      s->file_handle_internal = NULL;
+   }
+   
+   if ( s->buffer_internal )
+   {
+      free( s->buffer_internal );
+      s->buffer_internal = NULL;
+      s->buffer_internal_size = 0;
+   }
+}
+
+
 int run_inference(OrtSession* session,
                   float min_silence_duration_ms,
                   float min_speech_duration_ms,
@@ -417,6 +547,9 @@ int run_inference(OrtSession* session,
    read_source = fopen("RED.s16le", "rb");
 #endif
 
+   Buffered_Stream read_stream = {0};
+   init_buffered_stream_file( &read_stream, read_source, sizeof( short ) * buffered_samples_count );
+
 
    VADC_Context context =
    {
@@ -449,11 +582,15 @@ int run_inference(OrtSession* session,
    size_t values_read = 0;
    for(;;)
    {
-      values_read = fread(samples_buffer_s16, sizeof(short), buffered_samples_count, read_source);
+      BS_Error read_error_code = read_stream.refill( &read_stream );
+      values_read = (read_stream.end - read_stream.start) / sizeof(short);
+      // values_read = fread(samples_buffer_s16, sizeof(short), buffered_samples_count, read_source);
       // fprintf(stderr, "%zu\n", values_read);
 
-      if (values_read > 0)
+      //if (values_read > 0)
+      if ( read_error_code == BS_Error_NoError )
       {
+         memmove( samples_buffer_s16, read_stream.start, read_stream.end - read_stream.start );
          float max_value = 0.0f;
          for (size_t i = 0; i < values_read; ++i)
          {
@@ -465,6 +602,7 @@ int run_inference(OrtSession* session,
             }
             samples_buffer_float32[i] = value;
          }
+         read_stream.cursor = read_stream.end;
 
          if (max_value > 0.0f)
          {
@@ -476,13 +614,45 @@ int run_inference(OrtSession* session,
       }
       else
       {
+         switch (read_stream.error_code)
+         {
+            case BS_Error_CantOpenFile:
+            {
+               fprintf( stderr, "Error: BS_Error_CantOpenFile\n" );
+            } break;
+
+            case BS_Error_EndOfFile:
+            {
+               fprintf( stderr, "Error: BS_Error_EndOfFile\n" );
+            } break;
+
+            case BS_Error_Error:
+            {
+               fprintf( stderr, "Error: BS_Error_Error\n" );
+            } break;
+
+            case BS_Error_Memory:
+            {
+               fprintf( stderr, "Error: BS_Error_Memory\n" );
+            } break;
+
+            case BS_Error_NoError:
+            {
+               fprintf( stderr, "Error: BS_Error_NoError\n" );
+            } break;
+
+            default:
+            {
+               fprintf( stderr, "Error: Unreachable switch case\n" );
+            } break;
+         }
          // if (feof(read_source))
          // {
-         //    puts("EOF indicator set");
+         //    fprintf( stderr, "EOF indicator set");
          // }
          // if (ferror(read_source))
          // {
-         //    puts("Error indicator set");
+         //    fprintf( stderr, "Error indicator set");
          // }
          break;
       }
@@ -528,6 +698,11 @@ int run_inference(OrtSession* session,
       }
 
    }
+
+   deinit_buffered_stream_file( &read_stream );
+#if !FROM_STDIN
+   fclose( read_source );
+#endif
 
    if (!raw_probabilities)
    {
