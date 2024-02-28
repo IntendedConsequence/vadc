@@ -2,7 +2,10 @@
 
 #include <stdio.h> //vsnprintf
 #include <string.h> //strlen
-#include <stringapiset.h> //WideCharToMultiByte, MultiByteToWideChar
+
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h> //WideCharToMultiByte, MultiByteToWideChar
 
 String8 String8FromPointerSize(const s8 *pointer, strSize size)
 {
