@@ -12,6 +12,9 @@
 
 #include "onnx_helpers.c"
 
+#define MEMORY_IMPLEMENTATION
+#include "memory.h"
+
 #ifndef DEBUG_WRITE_STATE_TO_FILE
 #define DEBUG_WRITE_STATE_TO_FILE 0
 #endif
