@@ -7,8 +7,8 @@
 #include <inttypes.h>
 
 #define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <Shlwapi.h>
+#include <windows.h> // GetModuleFileNameW
+#include <Shlwapi.h> // PathRemoveFileSpecW, PathAppendW
 
 #include "onnx_helpers.c"
 
