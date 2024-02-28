@@ -143,11 +143,13 @@ String8 Widechar_ToString8(MemoryArena *arena, const wchar_t *str, size_t str_le
 
 String8 escape_json_string(MemoryArena *arena, String8 input)
 {
+    String8 empty_result = {0};
+
     // Allocate buffer (worst case: every char is escaped, plus null terminator)
     size_t input_length = (size_t)input.size;
 
     char *output = pushArray(arena, input_length * 2 + 1, char);
-    if (!output) return {0};
+    if (!output) return empty_result;
 
     const char *in_ptr = (const char *)input.begin;
     const char *in_ptr_end = (const char *)input.begin + input_length;
