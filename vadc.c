@@ -1,8 +1,8 @@
 #include "vadc.h"
 
 #include <assert.h>
-#include <io.h>
-#include <fcntl.h>
+#include <io.h> // TODO(irwin): symbols
+#include <fcntl.h> // TODO(irwin): symbols
 
 #include <inttypes.h>
 
@@ -12,14 +12,18 @@
 
 #include "onnx_helpers.c"
 
+#include "string8.c"
+
 #define MEMORY_IMPLEMENTATION
 #include "memory.h"
+
 
 #ifndef DEBUG_WRITE_STATE_TO_FILE
 #define DEBUG_WRITE_STATE_TO_FILE 0
 #endif
 
-// TODO(irwin): move win32-specific stuff to separate file
+// TODO(irwin):
+// - move win32-specific stuff to separate file
 // - add arenas to vadc
 // - and String8
 // - switch to ReadFile to read from stdin as well
@@ -698,6 +702,7 @@ static void deinit_buffered_stream_file( Buffered_Stream *s )
 
 
 int run_inference(OrtSession* session,
+                  MemoryArena *arena,
                   float min_silence_duration_ms,
                   float min_speech_duration_ms,
                   float threshold,
@@ -744,9 +749,11 @@ int run_inference(OrtSession* session,
       min_silence_duration_chunks = 1;
    }
 
+
    // NOTE(irwin): create tensors and allocate tensors backing memory buffers
    const size_t input_count = window_size_samples;
-   float *input_tensor_samples = (float *)malloc(input_count * sizeof(float));
+   // float *input_tensor_samples = (float *)malloc(input_count * sizeof(float));
+   float *input_tensor_samples = pushArray(arena, input_count, float);
 
    int64_t input_tensor_samples_shape[] = {1, input_count};
    const size_t input_tensor_samples_shape_count = ArrayCount(input_tensor_samples_shape);
@@ -757,16 +764,20 @@ int run_inference(OrtSession* session,
    create_tensor(memory_info, &input_tensors[0], input_tensor_samples_shape, input_tensor_samples_shape_count, input_tensor_samples, input_count);
 
    const size_t state_count = 128;
-   float *state_h = (float *)malloc(state_count * sizeof(float));
+   // float *state_h = (float *)malloc(state_count * sizeof(float));
+   float *state_h = pushArray(arena, state_count, float);
    memset(state_h, 0, state_count * sizeof(float));
 
-   float *state_c = (float *)malloc(state_count * sizeof(float));
+   // float *state_c = (float *)malloc(state_count * sizeof(float));
+   float *state_c = pushArray(arena, state_count, float);
    memset(state_c, 0, state_count * sizeof(float));
 
-   float *state_h_out = (float *)malloc(state_count * sizeof(float));
+   // float *state_h_out = (float *)malloc(state_count * sizeof(float));
+   float *state_h_out = pushArray(arena, state_count, float);
    memset(state_h_out, 0, state_count * sizeof(float));
 
-   float *state_c_out = (float *)malloc(state_count * sizeof(float));
+   // float *state_c_out = (float *)malloc(state_count * sizeof(float));
+   float *state_c_out = pushArray(arena, state_count, float);
    memset(state_c_out, 0, state_count * sizeof(float));
 
    int64_t state_shape[] = {2, 1, 64};
@@ -834,9 +845,12 @@ int run_inference(OrtSession* session,
    // NOTE(irwin): buffered_samples_count is the normalization window size
    const size_t buffered_samples_count = window_size_samples * chunks_count;
 
-   short *samples_buffer_s16 = (short *)malloc(buffered_samples_count * sizeof(short));
-   float *samples_buffer_float32 = (float *)malloc(buffered_samples_count * sizeof(float));
-   float *probabilities_buffer = (float *)malloc(chunks_count * sizeof(float));
+   // short *samples_buffer_s16 = (short *)malloc(buffered_samples_count * sizeof(short));
+   short *samples_buffer_s16 = pushArray(arena, buffered_samples_count, short);
+   // float *samples_buffer_float32 = (float *)malloc(buffered_samples_count * sizeof(float));
+   float *samples_buffer_float32 = pushArray(arena, buffered_samples_count, float);
+   // float *probabilities_buffer = (float *)malloc(chunks_count * sizeof(float));
+   float *probabilities_buffer = pushArray(arena, chunks_count, float);
 
    Buffered_Stream read_stream = {0};
 
@@ -1092,6 +1106,18 @@ ArgOption options[] = {
 
 int main(int arg_count, char **arg_array)
 {
+   MemoryArena arena = {0};
+   size_t arena_capacity = Megabytes(32);
+   u8 *base_address = malloc(arena_capacity);
+   if (base_address == 0)
+   {
+      // TODO(irwin):
+      fprintf(stderr, "Fatal: couldn't allocate required memory\n");
+      return 1;
+   }
+   initializeMemoryArena(&arena, base_address, arena_capacity);
+
+
    float min_silence_duration_ms;
    float min_speech_duration_ms;
    float threshold;
@@ -1134,32 +1160,34 @@ int main(int arg_count, char **arg_array)
                int arg_value_index = arg_index + 1;
                if ( arg_value_index < arg_count )
                {
-                  const char *arg_value_string = arg_array[arg_value_index];
-
                   // TODO(irwin): get command line in UTF16, reencode to utf8.
                   // Doesn't make sense to assume it's UTF8 here!
-                  int buf_char_count_needed = MultiByteToWideChar(
-                     CP_UTF8,
-                     0,
-                     arg_value_string,
-                     -1,
-                     0,
-                     0
-                  );
-                  if ( buf_char_count_needed )
-                  {
-                     model_path_arg = malloc( (buf_char_count_needed + 1) * sizeof( wchar_t ) );
-                     MultiByteToWideChar(
-                        CP_UTF8,
-                        0,
-                        arg_value_string,
-                        -1,
-                        model_path_arg,
-                        buf_char_count_needed
-                     );
+                  const char *arg_value_string = arg_array[arg_value_index];
+                  String8 arg_value_string8 = String8FromCString(arg_value_string);
+                  String8_ToWidechar(&arena, &model_path_arg, arg_value_string8);
 
-                     //(*dest)[buf_char_count_needed] = 0;
-                  }
+                  // int buf_char_count_needed = MultiByteToWideChar(
+                  //    CP_UTF8,
+                  //    0,
+                  //    arg_value_string,
+                  //    -1,
+                  //    0,
+                  //    0
+                  // );
+                  // if ( buf_char_count_needed )
+                  // {
+                  //    model_path_arg = malloc( (buf_char_count_needed + 1) * sizeof( wchar_t ) );
+                  //    MultiByteToWideChar(
+                  //       CP_UTF8,
+                  //       0,
+                  //       arg_value_string,
+                  //       -1,
+                  //       model_path_arg,
+                  //       buf_char_count_needed
+                  //    );
+
+                  //    //(*dest)[buf_char_count_needed] = 0;
+                  // }
                   option->value = 1.0f;
                }
             }
@@ -1235,6 +1263,7 @@ int main(int arg_count, char **arg_array)
       // verify_input_output_count(session);
 
       run_inference(session,
+                    &arena,
                     min_silence_duration_ms,
                     min_speech_duration_ms,
                     threshold,
