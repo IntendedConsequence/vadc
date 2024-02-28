@@ -386,8 +386,12 @@ struct Buffered_Stream
 
    BS_Error error_code;
 
+   // NOTE(irwin): win32
+   HANDLE read_handle_internal;
 
+   // NOTE(irwin): crt
    FILE *file_handle_internal;
+
    u8 *buffer_internal;
    size_t buffer_internal_size;
 };
@@ -443,6 +447,204 @@ BS_Error refill_FILE( Buffered_Stream *s )
    }
 
    return s->error_code;
+}
+
+BS_Error refill_HANDLE( Buffered_Stream *s )
+{
+   if ( s->cursor == s->end )
+   {
+      DWORD byte_count_read = 0;
+      DWORD byte_count_read_total = 0;
+      BOOL read_file_result = 0;
+      do
+      {
+         // NOTE(irwin): keep calling ReadFile until we've filled our internal buffer or until ReadFile returns 0
+         u8 *destination = s->buffer_internal + byte_count_read_total;
+         DWORD max_byte_count_to_read = (DWORD)s->buffer_internal_size - byte_count_read_total;
+
+         read_file_result = ReadFile( s->read_handle_internal, destination, max_byte_count_to_read, &byte_count_read, NULL );
+         byte_count_read_total += byte_count_read;
+      } while (read_file_result && byte_count_read > 0 && byte_count_read_total < (DWORD)s->buffer_internal_size);
+
+      if ( byte_count_read_total > 0 )
+      {
+         s->start = s->buffer_internal;
+         s->cursor = s->buffer_internal;
+         s->end = s->start + byte_count_read_total;
+      }
+      else
+      {
+         if ( !read_file_result )
+         {
+            return fail_buffered_stream( s, BS_Error_EndOfFile );
+         }
+         else // read_file_result && bytes_read == 0
+         {
+            return fail_buffered_stream( s, BS_Error_Error );
+         }
+      }
+   }
+
+   return s->error_code;
+}
+
+// NOTE(irwin): caller must free
+int UTF8_ToWidechar( wchar_t **dest, const char *str, size_t str_size )
+{
+   if ( str_size == 0 )
+   {
+      str_size = strlen( str );
+   }
+
+   int buf_char_count_needed = MultiByteToWideChar(
+      CP_UTF8,
+      0,
+      str,
+      (DWORD)str_size,
+      0,
+      0
+   );
+
+   if ( buf_char_count_needed )
+   {
+      *dest = (wchar_t *)malloc( (buf_char_count_needed + 1) * sizeof( wchar_t ) );
+      MultiByteToWideChar(
+         CP_UTF8,
+         0,
+         str,
+         (DWORD)str_size,
+         *dest,
+         buf_char_count_needed
+      );
+
+      (*dest)[buf_char_count_needed] = 0;
+   }
+
+   return buf_char_count_needed;
+}
+
+
+// NOTE(irwin): caller must free
+int Widechar_ToUTF8( char **dest, const wchar_t *str, size_t str_length )
+{
+   if ( str_length == 0 )
+   {
+      str_length = wcslen( str );
+   }
+
+   int buf_char_count_needed = WideCharToMultiByte(
+      CP_UTF8,
+      0,
+      str,
+      (DWORD)str_length,
+      0,
+      0,
+      0,
+      0
+   );
+
+   if ( buf_char_count_needed )
+   {
+      *dest = (char *)malloc( (buf_char_count_needed + 1) * sizeof( char ) );
+      WideCharToMultiByte(
+         CP_UTF8,
+         0,
+         str,
+         (DWORD)str_length,
+         *dest,
+         buf_char_count_needed,
+         0,
+         0
+      );
+
+      (*dest)[buf_char_count_needed] = 0;
+   }
+
+   return buf_char_count_needed;
+}
+
+
+static void init_buffered_stream_ffmpeg(Buffered_Stream *s, const char *fname_inp, size_t buffer_size)
+{
+   memset( s, 0, sizeof( *s ) );
+
+   const wchar_t ffmpeg_to_s16le[] = L"ffmpeg -hide_banner -loglevel error -stats -i \"%s\" -map 0:a:0 -vn -sn -dn -ac 1 -ar 16k -f s16le -";
+   wchar_t *fname_widechar = NULL;
+   if ( UTF8_ToWidechar( &fname_widechar, fname_inp, 0 ) )
+   {
+      wchar_t ffmpeg_final[4096];
+      swprintf( ffmpeg_final, 4096, ffmpeg_to_s16le, fname_widechar );
+
+      free( fname_widechar );
+
+      // Create the pipe
+      SECURITY_ATTRIBUTES saAttr = {sizeof( SECURITY_ATTRIBUTES )};
+      saAttr.bInheritHandle = FALSE;
+
+      HANDLE ffmpeg_stdout_read, ffmpeg_stdout_write;
+
+      if ( !CreatePipe( &ffmpeg_stdout_read, &ffmpeg_stdout_write, &saAttr, 0 ) )
+      {
+         fprintf( stderr, "Error creating ffmpeg pipe\n" );
+         return;
+      }
+
+      // NOTE(irwin): ffmpeg does inherit the write handle to its output
+      SetHandleInformation( ffmpeg_stdout_write, HANDLE_FLAG_INHERIT, 1 );
+
+      // Launch ffmpeg and redirect its output to the pipe
+      STARTUPINFOW startup_info_ffmpeg = {sizeof( STARTUPINFO )};
+      // NOTE(irwin): hStdInput is 0, we don't want ffmpeg to inherit our stdin
+      startup_info_ffmpeg.hStdOutput = ffmpeg_stdout_write;
+      startup_info_ffmpeg.hStdError = GetStdHandle( STD_ERROR_HANDLE );
+      startup_info_ffmpeg.dwFlags |= STARTF_USESTDHANDLES;
+
+      PROCESS_INFORMATION ffmpeg_process_info = {0};
+
+      if ( !CreateProcessW( NULL, ffmpeg_final, NULL, NULL, TRUE, 0, NULL, NULL, &startup_info_ffmpeg, &ffmpeg_process_info ) )
+      {
+         fprintf( stderr, "Error launching ffmpeg\n" );
+         return;
+      }
+
+      // Close the write end of the pipe, as we're not writing to it
+      CloseHandle( ffmpeg_stdout_write );
+
+      // NOTE(irwin): restore non-inheritable status
+      SetHandleInformation( ffmpeg_stdout_write, HANDLE_FLAG_INHERIT, 0 );
+
+      // we can close the handles early if we're not going to use them
+      CloseHandle( ffmpeg_process_info.hProcess );
+      CloseHandle( ffmpeg_process_info.hThread );
+
+
+      if ( ffmpeg_stdout_read != INVALID_HANDLE_VALUE )
+      {
+         s->buffer_internal = malloc( buffer_size );
+         if ( s->buffer_internal )
+         {
+            memset( s->buffer_internal, 0, buffer_size );
+            s->read_handle_internal = ffmpeg_stdout_read;
+            s->refill = refill_HANDLE;
+            s->buffer_internal_size = buffer_size;
+            s->error_code = BS_Error_NoError;
+            s->refill( s );
+         }
+         else
+         {
+            fail_buffered_stream( s, BS_Error_Memory );
+         }
+      }
+      else
+      {
+         fail_buffered_stream( s, BS_Error_Error );
+      }
+   }
+   else
+   {
+      fail_buffered_stream( s, BS_Error_Error );
+   }
+
 }
 
 static void init_buffered_stream_file(Buffered_Stream *s, FILE *f, size_t buffer_size)
@@ -629,10 +831,12 @@ int run_inference(OrtSession* session,
    float *samples_buffer_float32 = (float *)malloc(buffered_samples_count * sizeof(float));
    float *probabilities_buffer = (float *)malloc(chunks_count * sizeof(float));
 
-   FILE* read_source;
+   Buffered_Stream read_stream = {0};
+
    if (filename)
    {
-      read_source = fopen( filename, "rb" );
+      // read_source = fopen( filename, "rb" );
+      init_buffered_stream_ffmpeg( &read_stream, filename, sizeof( short ) * buffered_samples_count );
    }
    else
    {
@@ -646,16 +850,17 @@ int run_inference(OrtSession* session,
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif //__clang__
-   
+
+      FILE *read_source;
       read_source = stdin;
+      size_t buffered_samples_size_in_bytes = sizeof( short ) * buffered_samples_count;
+      init_buffered_stream_file( &read_stream, read_source, buffered_samples_size_in_bytes );
    }
 
 #if FROM_STDIN
 #else
 #endif
 
-   Buffered_Stream read_stream = {0};
-   init_buffered_stream_file( &read_stream, read_source, sizeof( short ) * buffered_samples_count );
 
 
    VADC_Context context =
@@ -689,7 +894,9 @@ int run_inference(OrtSession* session,
    size_t values_read = 0;
    for(;;)
    {
-      BS_Error read_error_code = read_stream.refill( &read_stream );
+      BS_Error read_error_code = 0;
+      read_error_code = read_stream.refill( &read_stream );
+
       values_read = (read_stream.end - read_stream.start) / sizeof(short);
       // values_read = fread(samples_buffer_s16, sizeof(short), buffered_samples_count, read_source);
       // fprintf(stderr, "%zu\n", values_read);
@@ -810,7 +1017,7 @@ int run_inference(OrtSession* session,
 
    if (filename)
    {
-      fclose( read_source );
+      // fclose( read_source );
    }
 
 #if !FROM_STDIN
@@ -970,6 +1177,7 @@ int main(int arg_count, char **arg_array)
 
       if ( !found_named_option )
       {
+         // TODO(irwin): trim quotes?
          input_filename = arg_array[arg_index];
       }
    }
