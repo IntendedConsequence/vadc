@@ -24,8 +24,6 @@
 
 // TODO(irwin):
 // - move win32-specific stuff to separate file
-// - add arenas to vadc
-// - and String8
 // - switch to ReadFile to read from stdin as well
 
 
@@ -498,94 +496,19 @@ BS_Error refill_HANDLE( Buffered_Stream *s )
    return s->error_code;
 }
 
-// NOTE(irwin): caller must free
-int UTF8_ToWidechar( wchar_t **dest, const char *str, size_t str_size )
-{
-   if ( str_size == 0 )
-   {
-      str_size = strlen( str );
-   }
-
-   int buf_char_count_needed = MultiByteToWideChar(
-      CP_UTF8,
-      0,
-      str,
-      (DWORD)str_size,
-      0,
-      0
-   );
-
-   if ( buf_char_count_needed )
-   {
-      *dest = (wchar_t *)malloc( (buf_char_count_needed + 1) * sizeof( wchar_t ) );
-      MultiByteToWideChar(
-         CP_UTF8,
-         0,
-         str,
-         (DWORD)str_size,
-         *dest,
-         buf_char_count_needed
-      );
-
-      (*dest)[buf_char_count_needed] = 0;
-   }
-
-   return buf_char_count_needed;
-}
-
-
-// NOTE(irwin): caller must free
-int Widechar_ToUTF8( char **dest, const wchar_t *str, size_t str_length )
-{
-   if ( str_length == 0 )
-   {
-      str_length = wcslen( str );
-   }
-
-   int buf_char_count_needed = WideCharToMultiByte(
-      CP_UTF8,
-      0,
-      str,
-      (DWORD)str_length,
-      0,
-      0,
-      0,
-      0
-   );
-
-   if ( buf_char_count_needed )
-   {
-      *dest = (char *)malloc( (buf_char_count_needed + 1) * sizeof( char ) );
-      WideCharToMultiByte(
-         CP_UTF8,
-         0,
-         str,
-         (DWORD)str_length,
-         *dest,
-         buf_char_count_needed,
-         0,
-         0
-      );
-
-      (*dest)[buf_char_count_needed] = 0;
-   }
-
-   return buf_char_count_needed;
-}
-
-
-static void init_buffered_stream_ffmpeg(Buffered_Stream *s, const char *fname_inp, size_t buffer_size)
+static void init_buffered_stream_ffmpeg(MemoryArena *arena, Buffered_Stream *s, String8 fname_inp, size_t buffer_size)
 {
    memset( s, 0, sizeof( *s ) );
 
    const wchar_t ffmpeg_to_s16le[] = L"ffmpeg -hide_banner -loglevel error -stats -i \"%s\" -map 0:a:0 -vn -sn -dn -ac 1 -ar 16k -f s16le -";
    wchar_t *fname_widechar = NULL;
-   if ( UTF8_ToWidechar( &fname_widechar, fname_inp, 0 ) )
+   String8_ToWidechar(arena, &fname_widechar, fname_inp);
+   // if ( UTF8_ToWidechar( &fname_widechar, fname_inp, 0 ) )
    {
       wchar_t ffmpeg_final[4096];
       swprintf( ffmpeg_final, 4096, ffmpeg_to_s16le, fname_widechar );
 
-      free( fname_widechar );
+      // free( fname_widechar );
 
       // Create the pipe
       SECURITY_ATTRIBUTES saAttr = {sizeof( SECURITY_ATTRIBUTES )};
@@ -630,10 +553,11 @@ static void init_buffered_stream_ffmpeg(Buffered_Stream *s, const char *fname_in
 
       if ( ffmpeg_stdout_read != INVALID_HANDLE_VALUE )
       {
-         s->buffer_internal = malloc( buffer_size );
+         // s->buffer_internal = malloc( buffer_size );
+         s->buffer_internal = pushSizeZeroed( arena, buffer_size, TEMP_DEFAULT_ALIGNMENT );
          if ( s->buffer_internal )
          {
-            memset( s->buffer_internal, 0, buffer_size );
+            // memset( s->buffer_internal, 0, buffer_size );
             s->read_handle_internal = ffmpeg_stdout_read;
             s->refill = refill_HANDLE;
             s->buffer_internal_size = buffer_size;
@@ -651,23 +575,24 @@ static void init_buffered_stream_ffmpeg(Buffered_Stream *s, const char *fname_in
          fail_buffered_stream( s, BS_Error_Error );
       }
    }
-   else
-   {
-      // TODO(irwin):
-      fail_buffered_stream( s, BS_Error_Error );
-   }
+   // else
+   // {
+   //    // TODO(irwin):
+   //    fail_buffered_stream( s, BS_Error_Error );
+   // }
 
 }
 
-static void init_buffered_stream_file(Buffered_Stream *s, FILE *f, size_t buffer_size)
+static void init_buffered_stream_file(MemoryArena *arena, Buffered_Stream *s, FILE *f, size_t buffer_size)
 {
    memset( s, 0, sizeof( *s ) );
    if (f)
    {
-      s->buffer_internal = malloc( buffer_size );
+      // s->buffer_internal = malloc( buffer_size );
+      s->buffer_internal = pushSizeZeroed( arena, buffer_size, TEMP_DEFAULT_ALIGNMENT );
       if ( s->buffer_internal )
       {
-         memset( s->buffer_internal, 0, buffer_size );
+         // memset( s->buffer_internal, 0, buffer_size );
          s->file_handle_internal = f;
          s->refill = refill_FILE;
          s->buffer_internal_size = buffer_size;
@@ -694,7 +619,7 @@ static void deinit_buffered_stream_file( Buffered_Stream *s )
    
    if ( s->buffer_internal )
    {
-      free( s->buffer_internal );
+      // free( s->buffer_internal );
       s->buffer_internal = NULL;
       s->buffer_internal_size = 0;
    }
@@ -857,7 +782,7 @@ int run_inference(OrtSession* session,
    if (filename)
    {
       // read_source = fopen( filename, "rb" );
-      init_buffered_stream_ffmpeg( &read_stream, filename, sizeof( short ) * buffered_samples_count );
+      init_buffered_stream_ffmpeg(arena, &read_stream, String8FromCString(filename), sizeof( short ) * buffered_samples_count );
    }
    else
    {
@@ -875,7 +800,7 @@ int run_inference(OrtSession* session,
       FILE *read_source;
       read_source = stdin;
       size_t buffered_samples_size_in_bytes = sizeof( short ) * buffered_samples_count;
-      init_buffered_stream_file( &read_stream, read_source, buffered_samples_size_in_bytes );
+      init_buffered_stream_file(arena, &read_stream, read_source, buffered_samples_size_in_bytes );
    }
 
 
@@ -1166,28 +1091,6 @@ int main(int arg_count, char **arg_array)
                   String8 arg_value_string8 = String8FromCString(arg_value_string);
                   String8_ToWidechar(&arena, &model_path_arg, arg_value_string8);
 
-                  // int buf_char_count_needed = MultiByteToWideChar(
-                  //    CP_UTF8,
-                  //    0,
-                  //    arg_value_string,
-                  //    -1,
-                  //    0,
-                  //    0
-                  // );
-                  // if ( buf_char_count_needed )
-                  // {
-                  //    model_path_arg = malloc( (buf_char_count_needed + 1) * sizeof( wchar_t ) );
-                  //    MultiByteToWideChar(
-                  //       CP_UTF8,
-                  //       0,
-                  //       arg_value_string,
-                  //       -1,
-                  //       model_path_arg,
-                  //       buf_char_count_needed
-                  //    );
-
-                  //    //(*dest)[buf_char_count_needed] = 0;
-                  // }
                   option->value = 1.0f;
                }
             }
