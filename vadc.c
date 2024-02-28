@@ -19,6 +19,12 @@
 #define DEBUG_WRITE_STATE_TO_FILE 0
 #endif
 
+// TODO(irwin): move win32-specific stuff to separate file
+// - add arenas to vadc
+// - and String8
+// - switch to ReadFile to read from stdin as well
+
+
 #if DEBUG_WRITE_STATE_TO_FILE
 typedef struct DEBUG_Silero_State DEBUG_Silero_State;
 struct DEBUG_Silero_State
@@ -637,11 +643,13 @@ static void init_buffered_stream_ffmpeg(Buffered_Stream *s, const char *fname_in
       }
       else
       {
+         // TODO(irwin):
          fail_buffered_stream( s, BS_Error_Error );
       }
    }
    else
    {
+      // TODO(irwin):
       fail_buffered_stream( s, BS_Error_Error );
    }
 
@@ -649,7 +657,6 @@ static void init_buffered_stream_ffmpeg(Buffered_Stream *s, const char *fname_in
 
 static void init_buffered_stream_file(Buffered_Stream *s, FILE *f, size_t buffer_size)
 {
-   //*s = {0};
    memset( s, 0, sizeof( *s ) );
    if (f)
    {
@@ -895,6 +902,10 @@ int run_inference(OrtSession* session,
    for(;;)
    {
       BS_Error read_error_code = 0;
+
+      // TODO(irwin): what do we do about errors that arose in refilling the buffered stream
+      // but some data was still read? Like EOF, or closed pipe?
+
       read_error_code = read_stream.refill( &read_stream );
 
       values_read = (read_stream.end - read_stream.start) / sizeof(short);
