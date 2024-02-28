@@ -11,9 +11,6 @@
 #include <Shlwapi.h>
 
 #include "onnx_helpers.c"
-#ifndef FROM_STDIN
-#define FROM_STDIN 1
-#endif
 
 #ifndef DEBUG_WRITE_STATE_TO_FILE
 #define DEBUG_WRITE_STATE_TO_FILE 0
@@ -864,10 +861,6 @@ int run_inference(OrtSession* session,
       init_buffered_stream_file( &read_stream, read_source, buffered_samples_size_in_bytes );
    }
 
-#if FROM_STDIN
-#else
-#endif
-
 
 
    VADC_Context context =
@@ -1030,9 +1023,6 @@ int run_inference(OrtSession* session,
    {
       // fclose( read_source );
    }
-
-#if !FROM_STDIN
-#endif
 
    if (!raw_probabilities)
    {
