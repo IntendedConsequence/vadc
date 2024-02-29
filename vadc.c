@@ -1,6 +1,5 @@
 #include "vadc.h"
 
-#include <assert.h>
 #include <io.h> // TODO(irwin): symbols
 #include <fcntl.h> // TODO(irwin): symbols
 
@@ -96,11 +95,11 @@ VADC_Chunk_Result run_inference_on_single_chunk( VADC_Context context,
                                    context.outputs_count,
                                    context.output_tensors )
    );
-   assert( context.output_tensors[0] != NULL );
+   Assert( context.output_tensors[0] != NULL );
 
    int is_tensor;
    ORT_ABORT_ON_ERROR( g_ort->IsTensor( context.output_tensors[0], &is_tensor ) );
-   assert( is_tensor );
+   Assert( is_tensor );
 
    float result_probability = context.output_tensor_prob[context.silero_probability_out_index];
    result.probability = result_probability;
@@ -1129,7 +1128,7 @@ int main(int arg_count, char **arg_array)
 
    OrtEnv* env;
    ORT_ABORT_ON_ERROR(g_ort->CreateEnv(ORT_LOGGING_LEVEL_ERROR, "test", &env));
-   assert(env != NULL);
+   Assert(env != NULL);
 
    OrtSessionOptions* session_options;
    ORT_ABORT_ON_ERROR(g_ort->CreateSessionOptions(&session_options));
