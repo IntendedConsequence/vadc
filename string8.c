@@ -27,12 +27,17 @@ String8 String8FromRange(const s8 *first, const s8 *one_past_last)
 
 String8 String8FromCString(const char *cstring)
 {
-    String8 result = {0};
-    result.begin = (const s8 *)cstring;
-    result.size = (strSize)strlen(cstring);
-
-    return result;
+    return String8FromPointerSize(cstring, (strSize)strlen(cstring));
 }
+
+String8 String8ToCString(MemoryArena *arena, String8 source_string)
+{
+    s8 *cstring = pushSizeZeroed(arena, source_string.size + 1, TEMP_DEFAULT_ALIGNMENT);
+    memmove(cstring, source_string.begin, source_string.size);
+
+    return String8FromPointerSize(cstring, source_string.size);
+}
+
 String8 String8_pushfv(MemoryArena *arena, const char *format, va_list args)
 {
     va_list args_copy;

@@ -500,16 +500,12 @@ static void init_buffered_stream_ffmpeg(MemoryArena *arena, Buffered_Stream *s, 
 {
    memset( s, 0, sizeof( *s ) );
 
-   const wchar_t ffmpeg_to_s16le[] = L"ffmpeg -hide_banner -loglevel error -stats -i \"%s\" -map 0:a:0 -vn -sn -dn -ac 1 -ar 16k -f s16le -";
-   wchar_t *fname_widechar = NULL;
-   String8_ToWidechar(arena, &fname_widechar, fname_inp);
-   // if ( UTF8_ToWidechar( &fname_widechar, fname_inp, 0 ) )
+   const char *ffmpeg_to_s16le = "ffmpeg -hide_banner -loglevel error -stats -i \"%.*s\" -map 0:a:0 -vn -sn -dn -ac 1 -ar 16k -f s16le -";
+   String8 ffmpeg_command = String8_pushf(arena, ffmpeg_to_s16le, fname_inp.size, fname_inp.begin);
+   wchar_t *ffmpeg_command_wide = NULL;
+   String8_ToWidechar(arena, &ffmpeg_command_wide, ffmpeg_command);
+
    {
-      wchar_t ffmpeg_final[4096];
-      swprintf( ffmpeg_final, 4096, ffmpeg_to_s16le, fname_widechar );
-
-      // free( fname_widechar );
-
       // Create the pipe
       SECURITY_ATTRIBUTES saAttr = {sizeof( SECURITY_ATTRIBUTES )};
       saAttr.bInheritHandle = FALSE;
@@ -534,7 +530,7 @@ static void init_buffered_stream_ffmpeg(MemoryArena *arena, Buffered_Stream *s, 
 
       PROCESS_INFORMATION ffmpeg_process_info = {0};
 
-      if ( !CreateProcessW( NULL, ffmpeg_final, NULL, NULL, TRUE, 0, NULL, NULL, &startup_info_ffmpeg, &ffmpeg_process_info ) )
+      if ( !CreateProcessW( NULL, ffmpeg_command_wide, NULL, NULL, TRUE, 0, NULL, NULL, &startup_info_ffmpeg, &ffmpeg_process_info ) )
       {
          fprintf( stderr, "Error launching ffmpeg\n" );
          return;
@@ -575,12 +571,6 @@ static void init_buffered_stream_ffmpeg(MemoryArena *arena, Buffered_Stream *s, 
          fail_buffered_stream( s, BS_Error_Error );
       }
    }
-   // else
-   // {
-   //    // TODO(irwin):
-   //    fail_buffered_stream( s, BS_Error_Error );
-   // }
-
 }
 
 static void init_buffered_stream_file(MemoryArena *arena, Buffered_Stream *s, FILE *f, size_t buffer_size)

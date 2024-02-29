@@ -1,7 +1,6 @@
 #pragma once
 #include "utils.h"
 
-// TODO(irwin):
 #include "memory.h"
 
 #include <stdarg.h> //va_list, va_start, va_end
@@ -15,15 +14,15 @@ struct String8
     strSize size;
 };
 
-// TODO(irwin):
-// typedef Arena MemoryArena;
-
 String8 Widechar_ToString8(MemoryArena *arena, const wchar_t *str, size_t str_length);
 int String8_ToWidechar(MemoryArena *arena, wchar_t **dest, String8 source);
 
 String8 String8FromPointerSize(const s8 *pointer, strSize size);
 String8 String8FromRange(const s8 *first, const s8 *one_past_last);
 String8 String8FromCString(const char *cstring);
+
+// NOTE(irwin): copies the string to arena ensuring a null terminator
+String8 String8ToCString(MemoryArena *arena, String8 source_string);
 inline String8 String8FromWidechar(MemoryArena *arena, const wchar_t *str, size_t str_length)
 {
     return Widechar_ToString8(arena, str, str_length);
