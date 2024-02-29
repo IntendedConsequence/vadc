@@ -1,8 +1,5 @@
 #include "vadc.h"
 
-#include <io.h> // TODO(irwin): symbols
-#include <fcntl.h> // TODO(irwin): symbols
-
 #include <inttypes.h>
 
 #define WIN32_LEAN_AND_MEAN
@@ -572,6 +569,23 @@ static void init_buffered_stream_ffmpeg(MemoryArena *arena, Buffered_Stream *s, 
    }
 }
 
+static void init_buffered_stream_stdin(MemoryArena *arena, Buffered_Stream *s, size_t buffer_size)
+{
+   memset( s, 0, sizeof( *s ) );
+   s->buffer_internal = pushSizeZeroed( arena, buffer_size, TEMP_DEFAULT_ALIGNMENT );
+   if ( s->buffer_internal )
+   {
+      s->read_handle_internal = GetStdHandle(STD_INPUT_HANDLE);
+      s->refill = refill_HANDLE;
+      s->buffer_internal_size = buffer_size;
+      s->error_code = BS_Error_NoError;
+      s->refill( s );
+   }
+   else
+   {
+      fail_buffered_stream( s, BS_Error_Memory );
+   }
+}
 static void init_buffered_stream_file(MemoryArena *arena, Buffered_Stream *s, FILE *f, size_t buffer_size)
 {
    memset( s, 0, sizeof( *s ) );
@@ -768,28 +782,14 @@ int run_inference(OrtSession* session,
 
    Buffered_Stream read_stream = {0};
 
+   size_t buffered_samples_size_in_bytes = sizeof( short ) * buffered_samples_count;
    if (filename)
    {
-      // read_source = fopen( filename, "rb" );
-      init_buffered_stream_ffmpeg(arena, &read_stream, String8FromCString(filename), sizeof( short ) * buffered_samples_count );
+      init_buffered_stream_ffmpeg(arena, &read_stream, String8FromCString(filename), buffered_samples_size_in_bytes );
    }
    else
    {
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#endif //__clang__
-
-      _setmode( _fileno( stdin ), O_BINARY );
-
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif //__clang__
-
-      FILE *read_source;
-      read_source = stdin;
-      size_t buffered_samples_size_in_bytes = sizeof( short ) * buffered_samples_count;
-      init_buffered_stream_file(arena, &read_stream, read_source, buffered_samples_size_in_bytes );
+      init_buffered_stream_stdin(arena, &read_stream, buffered_samples_size_in_bytes );
    }
 
 
@@ -895,14 +895,7 @@ int run_inference(OrtSession* session,
                fprintf( stderr, "Error: Unreachable switch case\n" );
             } break;
          }
-         // if (feof(read_source))
-         // {
-         //    fprintf( stderr, "EOF indicator set");
-         // }
-         // if (ferror(read_source))
-         // {
-         //    fprintf( stderr, "Error indicator set");
-         // }
+
          break;
       }
 
