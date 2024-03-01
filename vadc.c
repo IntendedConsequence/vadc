@@ -1157,6 +1157,7 @@ int main()
                   {
                      option->value = arg_value;
                   }
+                  ++arg_index;
                }
             }
          }
