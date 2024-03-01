@@ -28,7 +28,7 @@ inline String8 String8FromWidechar(MemoryArena *arena, const wchar_t *str, size_
     return Widechar_ToString8(arena, str, str_length);
 }
 
-#define String8FromLiteral(value) String8FromPointerSize((const s8 *)(value), sizeof(value) - 1)
+#define String8FromLiteral(value) { .begin = (value), .size = sizeof(value) - 1 }
 
 String8 String8_pushfv(MemoryArena *arena, const char *format, va_list args);
 String8 String8_pushf(MemoryArena *arena, const char *format, ...);
@@ -36,3 +36,5 @@ String8 String8_pushf(MemoryArena *arena, const char *format, ...);
 String8 escape_json_string(MemoryArena *arena, String8 input);
 
 b32 String8_Equal(String8 a, String8 b);
+
+String8 *get_command_line_as_utf8(MemoryArena *arena, int *out_argcount );

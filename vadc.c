@@ -20,7 +20,6 @@
 
 // TODO(irwin):
 // - move win32-specific stuff to separate file
-// - switch to ReadFile to read from stdin as well
 
 
 #if DEBUG_WRITE_STATE_TO_FILE
@@ -638,7 +637,7 @@ int run_inference(OrtSession* session,
                   float speech_pad_ms,
                   b32 raw_probabilities,
                   Segment_Output_Format output_format,
-                  const char *filename ) {
+                  String8 filename ) {
    size_t model_input_count = 0;
    ORT_ABORT_ON_ERROR(g_ort->SessionGetInputCount( session, &model_input_count ));
    Assert( model_input_count == 3 || model_input_count == 4 );
@@ -783,9 +782,9 @@ int run_inference(OrtSession* session,
    Buffered_Stream read_stream = {0};
 
    size_t buffered_samples_size_in_bytes = sizeof( short ) * buffered_samples_count;
-   if (filename)
+   if (filename.size)
    {
-      init_buffered_stream_ffmpeg(arena, &read_stream, String8FromCString(filename), buffered_samples_size_in_bytes );
+      init_buffered_stream_ffmpeg(arena, &read_stream, filename, buffered_samples_size_in_bytes );
    }
    else
    {
@@ -943,11 +942,6 @@ int run_inference(OrtSession* session,
 
    deinit_buffered_stream_file( &read_stream );
 
-   if (filename)
-   {
-      // fclose( read_source );
-   }
-
    if (!raw_probabilities)
    {
       // NOTE(irwin): snap last speech segment to actual audio length
@@ -982,7 +976,7 @@ int run_inference(OrtSession* session,
 typedef struct ArgOption ArgOption;
 struct ArgOption
 {
-   const char *name;
+   String8 name;
    float value;
 };
 
@@ -1001,17 +995,17 @@ enum ArgOptionIndex
 };
 
 ArgOption options[] = {
-   {"--min_silence", 200.0f}, // NOTE(irwin): up from previous default 100.0f
-   {"--min_speech", 250.0f},
-   {"--threshold", 0.5f},
-   {"--neg_threshold_relative", 0.15f},
-   {"--speech_pad", 30.0f},
-   {"--raw_probabilities", 0.0f},
-   {"--output_centi_seconds", 0.0f},
-   {"--model", 0.0f},
+   {String8FromLiteral("--min_silence"),            200.0f  }, // NOTE(irwin): up from previous default 100.0f
+   {String8FromLiteral("--min_speech"),             250.0f  },
+   {String8FromLiteral("--threshold"),                0.5f  },
+   {String8FromLiteral("--neg_threshold_relative"),   0.15f },
+   {String8FromLiteral("--speech_pad"),              30.0f  },
+   {String8FromLiteral("--raw_probabilities"),        0.0f  },
+   {String8FromLiteral("--output_centi_seconds"),     0.0f  },
+   {String8FromLiteral("--model"),                    0.0f  },
 };
 
-int main(int arg_count, char **arg_array)
+int main()
 {
    MemoryArena arena = {0};
    size_t arena_capacity = Megabytes(32);
@@ -1034,21 +1028,26 @@ int main(int arg_count, char **arg_array)
 
    Segment_Output_Format output_format = Segment_Output_Format_Seconds;
 
-   wchar_t *model_path_arg = NULL;
+   String8 model_path_arg = {0};
    //const char *input_filename = "RED.s16le";
-   const char *input_filename = NULL;
+   String8 input_filename = {0};
 
    b32 raw_probabilities = 0;
 
-   for (int arg_index = 1; arg_index < arg_count; ++arg_index)
+   int arg_count_u8 = 0;
+   String8 *arg_array_u8 = get_command_line_as_utf8(&arena, &arg_count_u8);
+   for (int arg_index = 1; arg_index < arg_count_u8; ++arg_index)
    {
-      const char *arg_string = arg_array[arg_index];
+      String8 arg_string = arg_array_u8[arg_index];
+
+      // const char *arg_string_c = arg_array[arg_index];
+      // String8 arg_string = String8FromCString(arg_string_c);
       b32 found_named_option = 0;
 
       for (int arg_option_index = 0; arg_option_index < ArgOptionIndex_COUNT; ++arg_option_index)
       {
          ArgOption *option = options + arg_option_index;
-         if (strcmp(arg_string, option->name) == 0)
+         if (String8_Equal(arg_string, option->name))
          {
             found_named_option = 1;
 
@@ -1065,13 +1064,9 @@ int main(int arg_count, char **arg_array)
             else if ( arg_option_index == ArgOptionIndex_Model )
             {
                int arg_value_index = arg_index + 1;
-               if ( arg_value_index < arg_count )
+               if ( arg_value_index < arg_count_u8 )
                {
-                  // TODO(irwin): get command line in UTF16, reencode to utf8.
-                  // Doesn't make sense to assume it's UTF8 here!
-                  const char *arg_value_string = arg_array[arg_value_index];
-                  String8 arg_value_string8 = String8FromCString(arg_value_string);
-                  String8_ToWidechar(&arena, &model_path_arg, arg_value_string8);
+                  model_path_arg = arg_array_u8[arg_value_index];
 
                   option->value = 1.0f;
                }
@@ -1079,10 +1074,11 @@ int main(int arg_count, char **arg_array)
             else
             {
                int arg_value_index = arg_index + 1;
-               if (arg_value_index < arg_count)
+               if (arg_value_index < arg_count_u8)
                {
-                  const char *arg_value_string = arg_array[arg_value_index];
-                  float arg_value = (float)atof(arg_value_string);
+                  String8 arg_value_string = arg_array_u8[arg_value_index];
+                  String8 arg_value_string_null_terminated = String8ToCString(&arena, arg_value_string);
+                  float arg_value = (float)atof(arg_value_string_null_terminated.begin);
                   if (arg_value > 0.0f)
                   {
                      option->value = arg_value;
@@ -1095,7 +1091,7 @@ int main(int arg_count, char **arg_array)
       if ( !found_named_option )
       {
          // TODO(irwin): trim quotes?
-         input_filename = arg_array[arg_index];
+         input_filename = arg_array_u8[arg_index];
       }
    }
 
@@ -1130,11 +1126,14 @@ int main(int arg_count, char **arg_array)
    ORT_ABORT_ON_ERROR(g_ort->SetInterOpNumThreads(session_options, 1));
 
 #define MODEL_PATH_BUFFER_SIZE 1024
+   wchar_t *model_path_arg_w = 0;
+   String8_ToWidechar(&arena, &model_path_arg_w, model_path_arg);
+
    const size_t model_path_buffer_size = MODEL_PATH_BUFFER_SIZE;
    wchar_t model_path[MODEL_PATH_BUFFER_SIZE];
    GetModuleFileNameW(NULL, model_path, (DWORD)model_path_buffer_size);
    PathRemoveFileSpecW( model_path );
-   PathAppendW( model_path, model_path_arg ? model_path_arg : model_filename );
+   PathAppendW( model_path, model_path_arg_w ? model_path_arg_w : model_filename );
 
 //    if ( model_path_arg )
 //    {

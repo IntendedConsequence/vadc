@@ -6,6 +6,7 @@
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h> //WideCharToMultiByte, MultiByteToWideChar
+#include <Shellapi.h> // CommandLineToArgvW, GetCommandLineW
 
 String8 String8FromPointerSize(const s8 *pointer, strSize size)
 {
@@ -187,4 +188,23 @@ b32 String8_Equal(String8 a, String8 b)
     {
         return memcmp(a.begin, b.begin, a.size) == 0;
     }
+}
+
+String8 *get_command_line_as_utf8(MemoryArena *arena, int *out_argcount )
+{
+   int argcount = 0;
+   wchar_t **arglist = CommandLineToArgvW( GetCommandLineW(), &argcount );
+
+   int u8argc = argcount;
+   // char **u8argv = (char **)malloc( sizeof( char * ) * argcount );
+   String8 *result = pushArray(arena, argcount, String8);
+   for ( int arg_index = 0; arg_index < argcount; ++arg_index )
+   {
+      result[arg_index] = Widechar_ToString8(arena, arglist[arg_index], 0);
+      // Widechar_ToUTF8( &u8argv[arg_index], arglist[arg_index] );
+   }
+
+   *out_argcount = u8argc;
+
+   return result;
 }
