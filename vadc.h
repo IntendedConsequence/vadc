@@ -130,7 +130,9 @@ int run_inference( OrtSession *session,
                   Segment_Output_Format output_format,
                   String8 filename,
                   b32 stats_output_enabled,
-                  s32 preferred_batch_size );
+                  s32 preferred_batch_size,
+                  int audio_source,
+                  float start_seconds );
 
 void process_chunks( VADC_Context context,
                     const size_t buffered_samples_count,

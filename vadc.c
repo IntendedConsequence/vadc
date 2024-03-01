@@ -551,12 +551,14 @@ BS_Error refill_HANDLE( Buffered_Stream *s )
    return s->error_code;
 }
 
-static void init_buffered_stream_ffmpeg(MemoryArena *arena, Buffered_Stream *s, String8 fname_inp, size_t buffer_size)
+static void init_buffered_stream_ffmpeg(MemoryArena *arena, Buffered_Stream *s, String8 fname_inp, size_t buffer_size,
+                  int audio_source,
+                  float start_seconds)
 {
    memset( s, 0, sizeof( *s ) );
 
-   const char *ffmpeg_to_s16le = "ffmpeg -hide_banner -loglevel error -nostats -i \"%.*s\" -map 0:a:0 -vn -sn -dn -ac 1 -ar 16k -f s16le -";
-   String8 ffmpeg_command = String8_pushf(arena, ffmpeg_to_s16le, fname_inp.size, fname_inp.begin);
+   const char *ffmpeg_to_s16le = "ffmpeg -hide_banner -loglevel error -nostats -ss %f -i \"%.*s\" -map 0:a:%d -vn -sn -dn -ac 1 -ar 16k -f s16le -";
+   String8 ffmpeg_command = String8_pushf(arena, ffmpeg_to_s16le, start_seconds, fname_inp.size, fname_inp.begin, audio_source);
    wchar_t *ffmpeg_command_wide = NULL;
    String8_ToWidechar(arena, &ffmpeg_command_wide, ffmpeg_command);
 
@@ -699,7 +701,9 @@ int run_inference(OrtSession* session,
                   Segment_Output_Format output_format,
                   String8 filename,
                   b32 stats_output_enabled,
-                  s32 preferred_batch_size )
+                  s32 preferred_batch_size,
+                  int audio_source,
+                  float start_seconds )
 {
    size_t model_input_count = 0;
    ORT_ABORT_ON_ERROR(g_ort->SessionGetInputCount( session, &model_input_count ));
@@ -905,7 +909,9 @@ int run_inference(OrtSession* session,
    size_t buffered_samples_size_in_bytes = sizeof( short ) * buffered_samples_count;
    if (filename.size)
    {
-      init_buffered_stream_ffmpeg(arena, &read_stream, filename, buffered_samples_size_in_bytes );
+      init_buffered_stream_ffmpeg(arena, &read_stream, filename, buffered_samples_size_in_bytes,
+                  audio_source,
+                  start_seconds );
    }
    else
    {
@@ -1187,6 +1193,8 @@ enum ArgOptionIndex
    ArgOptionIndex_NegThresholdRelative,
    ArgOptionIndex_SpeechPad,
    ArgOptionIndex_Batch,
+   ArgOptionIndex_AudioSource,
+   ArgOptionIndex_StartSeconds,
    ArgOptionIndex_RawProbabilities,
    ArgOptionIndex_Stats,
    ArgOptionIndex_OutputFormatCentiSeconds,
@@ -1202,6 +1210,8 @@ ArgOption options[] = {
    {String8FromLiteral("--neg_threshold_relative"),   0.15f },
    {String8FromLiteral("--speech_pad"),              30.0f  },
    {String8FromLiteral("--batch"),                   96.0f  },
+   {String8FromLiteral("--audio_source"),             0.0f  },
+   {String8FromLiteral("--start_seconds"),            0.0f  },
    {String8FromLiteral("--raw_probabilities"),        0.0f  },
    {String8FromLiteral("--stats"),                    0.0f  },
    {String8FromLiteral("--output_centi_seconds"),     0.0f  },
@@ -1368,7 +1378,9 @@ int main()
                     output_format,
                     input_filename,
                     stats_output_enabled,
-                    (int)options[ArgOptionIndex_Batch].value);
+                    (int)options[ArgOptionIndex_Batch].value,
+                    (int)options[ArgOptionIndex_AudioSource].value,
+                    options[ArgOptionIndex_StartSeconds].value);
 
    }
 
