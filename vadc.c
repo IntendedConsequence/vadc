@@ -1238,6 +1238,7 @@ int main()
 
                   option->value = 1.0f;
                }
+               ++arg_index;
             }
             else
             {
