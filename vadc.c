@@ -697,7 +697,10 @@ int run_inference(OrtSession* session,
                   float speech_pad_ms,
                   b32 raw_probabilities,
                   Segment_Output_Format output_format,
-                  String8 filename, b32 stats_output_enabled ) {
+                  String8 filename,
+                  b32 stats_output_enabled,
+                  s32 preferred_batch_size )
+{
    size_t model_input_count = 0;
    ORT_ABORT_ON_ERROR(g_ort->SessionGetInputCount( session, &model_input_count ));
    Assert( model_input_count == 3 || model_input_count == 4 );
@@ -712,6 +715,7 @@ int run_inference(OrtSession* session,
    ORT_ABORT_ON_ERROR(g_ort->SessionGetOutputCount( session, &model_output_count ));
 
    b32 model_is_hardcoded_batch32 = 0;
+#if 0
    {
       char *output_name_first = 0;
       ORT_ABORT_ON_ERROR(g_ort->SessionGetOutputName(session, 0, ort_allocator, &output_name_first));
@@ -722,6 +726,40 @@ int run_inference(OrtSession* session,
       {
          model_is_hardcoded_batch32 = 1;
       }
+   }
+#endif
+
+   s32 batch_size_restriction = 1;
+
+   for (size_t i = 0; i < model_input_count; i++)
+   {
+      char* input_name;
+      g_ort->SessionGetInputName(session, i, ort_allocator, &input_name);
+
+      if (strcmp(input_name, "input") == 0) {
+         OrtTypeInfo* type_info;
+         g_ort->SessionGetInputTypeInfo(session, i, &type_info);
+
+         const OrtTensorTypeAndShapeInfo* tensor_info;
+         g_ort->CastTypeInfoToTensorInfo(type_info, &tensor_info);
+
+         int64_t dim_value;
+         g_ort->GetDimensions(tensor_info, &dim_value, 1);
+
+         batch_size_restriction = (int)dim_value;
+
+         // fprintf(stderr, "Axis-0 dimension of 'input': %" PRId64 "\n", dim_value);
+
+         g_ort->ReleaseTypeInfo(type_info);
+         break;
+      }
+
+      g_ort->AllocatorFree(ort_allocator, input_name);
+   }
+
+   if (batch_size_restriction == 32)
+   {
+      model_is_hardcoded_batch32 = 1;
    }
 
 
@@ -753,7 +791,7 @@ int run_inference(OrtSession* session,
 
    // NOTE(irwin): create tensors and allocate tensors backing memory buffers
    const size_t input_count = window_size_samples;
-   int batch_size = (!is_silero_v4 && model_is_hardcoded_batch32) ? 32 : 1;
+   int batch_size = (batch_size_restriction == -1) ? preferred_batch_size : batch_size_restriction;
    // int batch_size = 1;
    // float *input_tensor_samples = (float *)malloc(input_count * batch_size * sizeof(float));
    float *input_tensor_samples = pushArray(arena, input_count * batch_size, float);
@@ -821,7 +859,7 @@ int run_inference(OrtSession* session,
    int64_t *prob_shape = is_silero_v4 ? prob_shape_v4 : prob_shape_v3;
 
    const char *output_names_normal[] = { "output", "hn", "cn" };
-   const char *output_names_batch32[] = { "5804", "5732", "5733" };
+   // const char *output_names_batch32[] = { "5804", "5732", "5733" };
 
    OrtValue *output_tensors[3] = { 0 };
    OrtValue **output_prob_tensor = &output_tensors[0];
@@ -882,7 +920,7 @@ int run_inference(OrtSession* session,
       .output_tensors = output_tensors,
       .session = session,
       .input_names = input_names,
-      .output_names = model_is_hardcoded_batch32 ? output_names_batch32 : output_names_normal,
+      .output_names = output_names_normal,
       .state_count = state_count,
       .input_tensor_state_h = state_h,
       .input_tensor_state_c = state_c,
@@ -1148,6 +1186,7 @@ enum ArgOptionIndex
    ArgOptionIndex_Threshold,
    ArgOptionIndex_NegThresholdRelative,
    ArgOptionIndex_SpeechPad,
+   ArgOptionIndex_Batch,
    ArgOptionIndex_RawProbabilities,
    ArgOptionIndex_Stats,
    ArgOptionIndex_OutputFormatCentiSeconds,
@@ -1162,6 +1201,7 @@ ArgOption options[] = {
    {String8FromLiteral("--threshold"),                0.5f  },
    {String8FromLiteral("--neg_threshold_relative"),   0.15f },
    {String8FromLiteral("--speech_pad"),              30.0f  },
+   {String8FromLiteral("--batch"),                   96.0f  },
    {String8FromLiteral("--raw_probabilities"),        0.0f  },
    {String8FromLiteral("--stats"),                    0.0f  },
    {String8FromLiteral("--output_centi_seconds"),     0.0f  },
@@ -1325,7 +1365,10 @@ int main()
                     neg_threshold,
                     speech_pad_ms,
                     raw_probabilities,
-                    output_format, input_filename, stats_output_enabled);
+                    output_format,
+                    input_filename,
+                    stats_output_enabled,
+                    (int)options[ArgOptionIndex_Batch].value);
 
    }
 

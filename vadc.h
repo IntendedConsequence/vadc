@@ -10,7 +10,8 @@
 
 #define SILERO_FILENAME_V4 L"silero_vad_v4.onnx"
 #define SILERO_FILENAME_V3 L"silero_vad_v3.onnx"
-#define SILERO_FILENAME_V3_B32 L"silero_restored_v3.1_16k.onnx"
+#define SILERO_FILENAME_V3_B32 L"silero_restored_v3.1_16k_v2_b32.onnx"
+#define SILERO_FILENAME_V3_B_DYNAMIC L"silero_restored_v3.1_16k_v2_dyn.onnx"
 
 #if SILERO_V4
 #define SILERO_PROBABILITY_OUT_INDEX 0
@@ -19,7 +20,7 @@
 #else
 #define SILERO_PROBABILITY_OUT_INDEX 1
 #define SILERO_INPUT_TENSOR_COUNT 3
-#define SILERO_FILENAME SILERO_FILENAME_V3_B32
+#define SILERO_FILENAME SILERO_FILENAME_V3_B_DYNAMIC
 #endif
 
 #define SILERO_WINDOW_SIZE_SAMPLES 1536
@@ -128,7 +129,8 @@ int run_inference( OrtSession *session,
                   b32 raw_probabilities,
                   Segment_Output_Format output_format,
                   String8 filename,
-                  b32 stats_output_enabled );
+                  b32 stats_output_enabled,
+                  s32 preferred_batch_size );
 
 void process_chunks( VADC_Context context,
                     const size_t buffered_samples_count,
