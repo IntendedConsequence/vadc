@@ -196,7 +196,10 @@ static inline float to_s(int in_chunks)
    return in_chunks / chunks_per_second;
 }
 
-void emit_speech_segment(FeedProbabilityResult segment, float speech_pad_ms, Segment_Output_Format output_format)
+void emit_speech_segment(FeedProbabilityResult segment,
+                         float speech_pad_ms,
+                         Segment_Output_Format output_format,
+                         VADC_Stats *stats)
 {
    const float speech_pad_s = speech_pad_ms / 1000.0f;
 
@@ -208,6 +211,8 @@ void emit_speech_segment(FeedProbabilityResult segment, float speech_pad_ms, Seg
    {
       speech_start_padded = 0.0f;
    }
+
+   stats->total_speech += (double)speech_end_padded - (double)speech_start_padded;
 
    switch (output_format)
    {
@@ -227,7 +232,7 @@ void emit_speech_segment(FeedProbabilityResult segment, float speech_pad_ms, Seg
 }
 
 FeedProbabilityResult combine_or_emit_speech_segment(FeedProbabilityResult buffered, FeedProbabilityResult feed_result,
-                                                     float speech_pad_ms, Segment_Output_Format output_format)
+                                                     float speech_pad_ms, Segment_Output_Format output_format, VADC_Stats *stats)
 {
    FeedProbabilityResult result = buffered;
 
@@ -248,7 +253,7 @@ FeedProbabilityResult combine_or_emit_speech_segment(FeedProbabilityResult buffe
       }
       else
       {
-         emit_speech_segment(result, speech_pad_ms, output_format);
+         emit_speech_segment(result, speech_pad_ms, output_format, stats);
 
          result = feed_result;
       }
@@ -820,7 +825,9 @@ int run_inference(OrtSession* session,
 
    FeedProbabilityResult buffered = {0};
 
+   VADC_Stats stats = {0};
 
+   s64 total_samples_read = 0;
    size_t values_read = 0;
    for(;;)
    {
@@ -832,6 +839,9 @@ int run_inference(OrtSession* session,
       read_error_code = read_stream.refill( &read_stream );
 
       values_read = (read_stream.end - read_stream.start) / sizeof(short);
+      total_samples_read += values_read;
+      stats.total_duration = (double)total_samples_read / sample_rate;
+
       // values_read = fread(samples_buffer_s16, sizeof(short), buffered_samples_count, read_source);
       // fprintf(stderr, "%zu\n", values_read);
 
@@ -903,9 +913,10 @@ int run_inference(OrtSession* session,
                      samples_buffer_float32,
                      probabilities_buffer);
 
+      int probabilities_count = (int)(values_read / window_size_samples);
       if (!raw_probabilities)
       {
-         for (size_t i = 0; i < values_read / window_size_samples; ++i)
+         for (int i = 0; i < probabilities_count; ++i)
          {
             float probability = probabilities_buffer[i];
 
@@ -921,7 +932,7 @@ int run_inference(OrtSession* session,
          if (feed_result.is_valid)
          {
             buffered = combine_or_emit_speech_segment(buffered, feed_result,
-                                                      speech_pad_ms, output_format);
+                                                      speech_pad_ms, output_format, &stats);
          }
 
             // printf("%f\n", probability);
@@ -930,7 +941,7 @@ int run_inference(OrtSession* session,
       }
       else
       {
-         for (size_t i = 0; i < values_read / window_size_samples; ++i)
+         for (int i = 0; i < probabilities_count; ++i)
          {
             float probability = probabilities_buffer[i];
             printf("%f\n", probability);
@@ -940,6 +951,7 @@ int run_inference(OrtSession* session,
 
    }
 
+   // TODO(irwin):
    deinit_buffered_stream_file( &read_stream );
 
    if (!raw_probabilities)
@@ -956,20 +968,39 @@ int run_inference(OrtSession* session,
             final_segment.speech_end = (int)(audio_length_samples / window_size_samples);
 
             buffered = combine_or_emit_speech_segment(buffered, final_segment,
-                                                         speech_pad_ms, output_format);
+                                                         speech_pad_ms, output_format, &stats);
          }
       }
 
       if (buffered.is_valid)
       {
-         emit_speech_segment(buffered, speech_pad_ms, output_format);
+         emit_speech_segment(buffered, speech_pad_ms, output_format, &stats);
       }
    }
+
+   print_speech_stats(stats);
 
    // g_ort->ReleaseValue(output_tensor);
    // g_ort->ReleaseValue(input_tensor);
    // return ret;
    return 0;
+}
+
+void print_speech_stats(VADC_Stats stats)
+{
+   double total_speech = stats.total_speech;
+   double total_duration = stats.total_duration;
+   double total_non_speech = total_duration - total_speech;
+
+   double total_speech_percent = total_speech / total_duration * 100.0;
+
+#if 1
+   fprintf(stderr, "%.2f speech, %.2f non-speech, (%.1f%% total speech)\n", total_speech, total_non_speech, total_speech_percent);
+#else
+   fprintf(stderr, "%f total speech\n", total_speech);
+   fprintf(stderr, "%f total non-speech\n", total_non_speech);
+   fprintf(stderr, "%f total percentage of speech\n", total_speech_percent);
+#endif
 }
 
 

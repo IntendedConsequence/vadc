@@ -24,6 +24,7 @@
 #define SILERO_WINDOW_SIZE_SAMPLES 1536
 #define SILERO_SAMPLE_RATE 16000
 
+// TODO(irwin): fix, globals shouldn't be lowercase like that
 const size_t window_size_samples = SILERO_WINDOW_SIZE_SAMPLES;
 const size_t sample_rate = SILERO_SAMPLE_RATE;
 const float chunks_per_second = (float)SILERO_SAMPLE_RATE / SILERO_WINDOW_SIZE_SAMPLES;
@@ -91,6 +92,13 @@ typedef struct FeedProbabilityResult
    b32 is_valid;
 } FeedProbabilityResult;
 
+typedef struct VADC_Stats VADC_Stats;
+struct VADC_Stats
+{
+   double total_speech;
+   double total_duration;
+};
+
 typedef enum Segment_Output_Format Segment_Output_Format;
 enum Segment_Output_Format
 {
@@ -106,11 +114,13 @@ void process_chunks( VADC_Context context, const size_t buffered_samples_count, 
 VADC_Chunk_Result run_inference_on_single_chunk( VADC_Context context, const size_t samples_count, const float *samples_buffer_float32, float *state_h_in, float *state_c_in );
 
 FeedProbabilityResult feed_probability( FeedState *state, int min_silence_duration_chunks, int min_speech_duration_chunks, float probability, float threshold, float neg_threshold, int global_chunk_index );
-void emit_speech_segment( FeedProbabilityResult segment, float speech_pad_ms, Segment_Output_Format output_format );
-FeedProbabilityResult combine_or_emit_speech_segment( FeedProbabilityResult buffered, FeedProbabilityResult feed_result, float speech_pad_ms, Segment_Output_Format output_format );
+void emit_speech_segment( FeedProbabilityResult segment, float speech_pad_ms, Segment_Output_Format output_format, VADC_Stats *stats );
+FeedProbabilityResult combine_or_emit_speech_segment( FeedProbabilityResult buffered, FeedProbabilityResult feed_result, float speech_pad_ms, Segment_Output_Format output_format, VADC_Stats *stats );
 
 // NOTE(irwin): onnx helper routines
 void verify_input_output_count( OrtSession *session );
 void create_tensor( OrtMemoryInfo *memory_info, OrtValue **out_tensor, int64_t *shape, size_t shape_count, float *input, size_t input_count );
 void create_tensor_int64( OrtMemoryInfo *memory_info, OrtValue **out_tensor, int64_t *shape, size_t shape_count, int64_t *input, size_t input_count );
 int enable_cuda( OrtSessionOptions *session_options );
+
+void print_speech_stats(VADC_Stats stats);
