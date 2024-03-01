@@ -229,6 +229,7 @@ void emit_speech_segment(FeedProbabilityResult segment,
       } break;
    }
    fflush(stdout);
+   print_speech_stats(*stats);
 }
 
 FeedProbabilityResult combine_or_emit_speech_segment(FeedProbabilityResult buffered, FeedProbabilityResult feed_result,
@@ -500,7 +501,7 @@ static void init_buffered_stream_ffmpeg(MemoryArena *arena, Buffered_Stream *s, 
 {
    memset( s, 0, sizeof( *s ) );
 
-   const char *ffmpeg_to_s16le = "ffmpeg -hide_banner -loglevel error -stats -i \"%.*s\" -map 0:a:0 -vn -sn -dn -ac 1 -ar 16k -f s16le -";
+   const char *ffmpeg_to_s16le = "ffmpeg -hide_banner -loglevel error -nostats -i \"%.*s\" -map 0:a:0 -vn -sn -dn -ac 1 -ar 16k -f s16le -";
    String8 ffmpeg_command = String8_pushf(arena, ffmpeg_to_s16le, fname_inp.size, fname_inp.begin);
    wchar_t *ffmpeg_command_wide = NULL;
    String8_ToWidechar(arena, &ffmpeg_command_wide, ffmpeg_command);
@@ -826,6 +827,17 @@ int run_inference(OrtSession* session,
    FeedProbabilityResult buffered = {0};
 
    VADC_Stats stats = {0};
+   stats.output_enabled = 0;
+   {
+      LARGE_INTEGER frequency = {0};
+      LARGE_INTEGER first_timestamp = {0};
+
+      QueryPerformanceFrequency(&frequency);
+      QueryPerformanceCounter(&first_timestamp);
+
+      stats.first_call_timestamp = first_timestamp.QuadPart;
+      stats.timer_frequency = frequency.QuadPart;
+   }
 
    s64 total_samples_read = 0;
    size_t values_read = 0;
@@ -840,7 +852,9 @@ int run_inference(OrtSession* session,
 
       values_read = (read_stream.end - read_stream.start) / sizeof(short);
       total_samples_read += values_read;
+      stats.total_samples = total_samples_read;
       stats.total_duration = (double)total_samples_read / sample_rate;
+
 
       // values_read = fread(samples_buffer_s16, sizeof(short), buffered_samples_count, read_source);
       // fprintf(stderr, "%zu\n", values_read);
@@ -986,20 +1000,49 @@ int run_inference(OrtSession* session,
    return 0;
 }
 
-void print_speech_stats(VADC_Stats stats)
+static inline void print_speech_stats(VADC_Stats stats)
 {
+#if 0
+   VAR_UNUSED(stats);
+#else
+   LARGE_INTEGER current;
+   QueryPerformanceCounter(&current);
+   s64 current_timestamp = current.QuadPart;
+
    double total_speech = stats.total_speech;
    double total_duration = stats.total_duration;
-   double total_non_speech = total_duration - total_speech;
+   // double total_non_speech = total_duration - total_speech;
 
    double total_speech_percent = total_speech / total_duration * 100.0;
 
-#if 1
-   fprintf(stderr, "%.2f speech, %.2f non-speech, (%.1f%% total speech)\n", total_speech, total_non_speech, total_speech_percent);
-#else
-   fprintf(stderr, "%f total speech\n", total_speech);
-   fprintf(stderr, "%f total non-speech\n", total_non_speech);
-   fprintf(stderr, "%f total percentage of speech\n", total_speech_percent);
+   s64 ticks = current_timestamp - stats.first_call_timestamp;
+
+   // ticks / freq = how many ticks in 1s
+   // samples in 1s = usually 16k (sample_rate global)
+   // samples / 16k * freq
+   s64 ticks_worth_total_processed = stats.total_samples * stats.timer_frequency;
+   s64 ratio = ticks_worth_total_processed / ticks;
+   double ratio_seconds = ratio / (double)sample_rate;
+
+   int hours = (int)(total_duration / 3600.0);
+   int minutes = (int)((total_duration - hours * 3600.0) / 60.0);
+   int seconds = (int)(total_duration - hours * 3600.0 - minutes * 60.0);
+   int milliseconds = (int)((total_duration - hours * 3600.0 - minutes * 60.0 - seconds) * 1000.0);
+
+
+   if (stats.output_enabled)
+   {
+      fprintf(stderr, "time=%02d:%02d:%02d.%04d", hours, minutes, seconds, milliseconds);
+      fprintf(stderr, " %7.2f speech (%5.1f%%), %5.1f / %5.1f (%5.1fx)\r",
+              total_speech,
+              total_speech_percent,
+              total_duration,
+              (double)ticks / stats.timer_frequency,
+              ratio_seconds);
+   }
+
+   // last_call = current;
+   // stats.last_call_timestamp = current.QuadPart;
 #endif
 }
 

@@ -95,8 +95,15 @@ typedef struct FeedProbabilityResult
 typedef struct VADC_Stats VADC_Stats;
 struct VADC_Stats
 {
+   s64 first_call_timestamp;
+   // s64 last_call_timestamp;
+   s64 timer_frequency;
+
    double total_speech;
    double total_duration;
+   s64 total_samples;
+
+   b32 output_enabled;
 };
 
 typedef enum Segment_Output_Format Segment_Output_Format;
@@ -123,4 +130,4 @@ void create_tensor( OrtMemoryInfo *memory_info, OrtValue **out_tensor, int64_t *
 void create_tensor_int64( OrtMemoryInfo *memory_info, OrtValue **out_tensor, int64_t *shape, size_t shape_count, int64_t *input, size_t input_count );
 int enable_cuda( OrtSessionOptions *session_options );
 
-void print_speech_stats(VADC_Stats stats);
+static inline void print_speech_stats(VADC_Stats stats);
