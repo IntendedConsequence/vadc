@@ -643,7 +643,7 @@ int run_inference(OrtSession* session,
                   float speech_pad_ms,
                   b32 raw_probabilities,
                   Segment_Output_Format output_format,
-                  String8 filename ) {
+                  String8 filename, b32 stats_output_enabled ) {
    size_t model_input_count = 0;
    ORT_ABORT_ON_ERROR(g_ort->SessionGetInputCount( session, &model_input_count ));
    Assert( model_input_count == 3 || model_input_count == 4 );
@@ -827,7 +827,7 @@ int run_inference(OrtSession* session,
    FeedProbabilityResult buffered = {0};
 
    VADC_Stats stats = {0};
-   stats.output_enabled = 0;
+   stats.output_enabled = stats_output_enabled;
    {
       LARGE_INTEGER frequency = {0};
       LARGE_INTEGER first_timestamp = {0};
@@ -1062,6 +1062,7 @@ enum ArgOptionIndex
    ArgOptionIndex_NegThresholdRelative,
    ArgOptionIndex_SpeechPad,
    ArgOptionIndex_RawProbabilities,
+   ArgOptionIndex_Stats,
    ArgOptionIndex_OutputFormatCentiSeconds,
    ArgOptionIndex_Model,
 
@@ -1075,6 +1076,7 @@ ArgOption options[] = {
    {String8FromLiteral("--neg_threshold_relative"),   0.15f },
    {String8FromLiteral("--speech_pad"),              30.0f  },
    {String8FromLiteral("--raw_probabilities"),        0.0f  },
+   {String8FromLiteral("--stats"),                    0.0f  },
    {String8FromLiteral("--output_centi_seconds"),     0.0f  },
    {String8FromLiteral("--model"),                    0.0f  },
 };
@@ -1130,6 +1132,11 @@ int main()
                // TODO(irwin): bool options
                option->value = 1.0f;
             }
+            else if (arg_option_index == ArgOptionIndex_Stats)
+            {
+               // TODO(irwin): bool options
+               option->value = 1.0f;
+            }
             else if (arg_option_index == ArgOptionIndex_OutputFormatCentiSeconds)
             {
                // TODO(irwin): bool options
@@ -1180,6 +1187,7 @@ int main()
    {
       output_format = Segment_Output_Format_CentiSeconds;
    }
+   b32 stats_output_enabled = (options[ArgOptionIndex_Stats].value != 0.0f);
 
    neg_threshold           = threshold - neg_threshold_relative;
 
@@ -1229,7 +1237,7 @@ int main()
                     neg_threshold,
                     speech_pad_ms,
                     raw_probabilities,
-                    output_format, input_filename);
+                    output_format, input_filename, stats_output_enabled);
 
    }
 

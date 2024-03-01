@@ -116,7 +116,7 @@ enum Segment_Output_Format
 };
 
 
-int run_inference( OrtSession *session, MemoryArena *arena, float min_silence_duration_ms, float min_speech_duration_ms, float threshold, float neg_threshold, float speech_pad_ms, b32 raw_probabilities, Segment_Output_Format output_format, String8 filename );
+int run_inference( OrtSession *session, MemoryArena *arena, float min_silence_duration_ms, float min_speech_duration_ms, float threshold, float neg_threshold, float speech_pad_ms, b32 raw_probabilities, Segment_Output_Format output_format, String8 filename, b32 stats_output_enabled );
 void process_chunks( VADC_Context context, const size_t buffered_samples_count, const float *samples_buffer_float32, float *probabilities_buffer );
 VADC_Chunk_Result run_inference_on_single_chunk( VADC_Context context, const size_t samples_count, const float *samples_buffer_float32, float *state_h_in, float *state_c_in );
 
