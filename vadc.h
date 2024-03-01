@@ -10,6 +10,7 @@
 
 #define SILERO_FILENAME_V4 L"silero_vad_v4.onnx"
 #define SILERO_FILENAME_V3 L"silero_vad_v3.onnx"
+#define SILERO_FILENAME_V3_B32 L"silero_restored_v3.1_16k.onnx"
 
 #if SILERO_V4
 #define SILERO_PROBABILITY_OUT_INDEX 0
@@ -67,6 +68,7 @@ struct VADC_Context
    float *input_tensor_state_c;
    b32 is_silero_v4;
    s32 silero_probability_out_index;
+   const int batch_size;
 };
 
 typedef struct VADC_Chunk_Result
