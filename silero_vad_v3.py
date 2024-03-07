@@ -102,10 +102,8 @@ class STFT(torch.nn.Module):
         input_data0 = input_data.view([num_batches, 1, num_samples])
         _1 = torch.unsqueeze(input_data0, 1)
         filter_length = self.filter_length
-        _2 = int(torch.div(filter_length, 2))
-        filter_length0 = self.filter_length
-        _3 = [_2, int(torch.div(filter_length0, 2)), 0, 0]
-        input_data1 = torch.nn.functional.pad(_1, _3, "reflect", 0., )
+        filter_length_half = int(filter_length / 2)
+        input_data1 = torch.nn.functional.pad(_1, [filter_length_half, filter_length_half, 0, 0], "reflect", 0., )
         input_data2 = torch.squeeze(input_data1, 1)
         forward_basis_buffer = self.forward_basis_buffer
         hop_length = self.hop_length
@@ -113,7 +111,7 @@ class STFT(torch.nn.Module):
         # filter_length1 = self.filter_length
         # _4 = torch.add(torch.div(filter_length1, 2), 1)
         # cutoff = int(_4)
-        cutoff = int((filter_length / 2) + 1)
+        cutoff = filter_length_half + 1
         # _5 = torch.slice(torch.slice(forward_transform), 1, None, cutoff)
         # real_part = torch.slice(_5, 2)
         real_part = forward_transform[:, :cutoff, :]
@@ -634,40 +632,44 @@ class Silero_VAD_V3(torch.nn.Module):
     def spam(self, input, h, c) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
         # h, c = hc
 
-        r0, (h, c) = self.lstm(input[0:0+1, :, :], (h, c))
-        r1, (h, c) = self.lstm(input[1:1+1, :, :], (h, c))
-        r2, (h, c) = self.lstm(input[2:2+1, :, :], (h, c))
-        r3, (h, c) = self.lstm(input[3:3+1, :, :], (h, c))
-        r4, (h, c) = self.lstm(input[4:4+1, :, :], (h, c))
-        r5, (h, c) = self.lstm(input[5:5+1, :, :], (h, c))
-        r6, (h, c) = self.lstm(input[6:6+1, :, :], (h, c))
-        r7, (h, c) = self.lstm(input[7:7+1, :, :], (h, c))
-        r8, (h, c) = self.lstm(input[8:8+1, :, :], (h, c))
-        r9, (h, c) = self.lstm(input[9:9+1, :, :], (h, c))
-        r10, (h, c) = self.lstm(input[10:10+1, :, :], (h, c))
-        r11, (h, c) = self.lstm(input[11:11+1, :, :], (h, c))
-        r12, (h, c) = self.lstm(input[12:12+1, :, :], (h, c))
-        r13, (h, c) = self.lstm(input[13:13+1, :, :], (h, c))
-        r14, (h, c) = self.lstm(input[14:14+1, :, :], (h, c))
-        r15, (h, c) = self.lstm(input[15:15+1, :, :], (h, c))
-        r16, (h, c) = self.lstm(input[16:16+1, :, :], (h, c))
-        r17, (h, c) = self.lstm(input[17:17+1, :, :], (h, c))
-        r18, (h, c) = self.lstm(input[18:18+1, :, :], (h, c))
-        r19, (h, c) = self.lstm(input[19:19+1, :, :], (h, c))
-        r20, (h, c) = self.lstm(input[20:20+1, :, :], (h, c))
-        r21, (h, c) = self.lstm(input[21:21+1, :, :], (h, c))
-        r22, (h, c) = self.lstm(input[22:22+1, :, :], (h, c))
-        r23, (h, c) = self.lstm(input[23:23+1, :, :], (h, c))
-        r24, (h, c) = self.lstm(input[24:24+1, :, :], (h, c))
-        r25, (h, c) = self.lstm(input[25:25+1, :, :], (h, c))
-        r26, (h, c) = self.lstm(input[26:26+1, :, :], (h, c))
-        r27, (h, c) = self.lstm(input[27:27+1, :, :], (h, c))
-        r28, (h, c) = self.lstm(input[28:28+1, :, :], (h, c))
-        r29, (h, c) = self.lstm(input[29:29+1, :, :], (h, c))
-        r30, (h, c) = self.lstm(input[30:30+1, :, :], (h, c))
-        r31, (h, c) = self.lstm(input[31:31+1, :, :], (h, c))
+        batch, seq, feat = input.shape
+        r, (h, c) = self.lstm(input.reshape(1, -1, feat), (h, c))
+        r = r.reshape(batch, seq, -1)
 
-        r = torch.stack([r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31], dim=0).squeeze()
+        # r0, (h, c) = self.lstm(input[0:0+1, :, :], (h, c))
+        # r1, (h, c) = self.lstm(input[1:1+1, :, :], (h, c))
+        # r2, (h, c) = self.lstm(input[2:2+1, :, :], (h, c))
+        # r3, (h, c) = self.lstm(input[3:3+1, :, :], (h, c))
+        # r4, (h, c) = self.lstm(input[4:4+1, :, :], (h, c))
+        # r5, (h, c) = self.lstm(input[5:5+1, :, :], (h, c))
+        # r6, (h, c) = self.lstm(input[6:6+1, :, :], (h, c))
+        # r7, (h, c) = self.lstm(input[7:7+1, :, :], (h, c))
+        # r8, (h, c) = self.lstm(input[8:8+1, :, :], (h, c))
+        # r9, (h, c) = self.lstm(input[9:9+1, :, :], (h, c))
+        # r10, (h, c) = self.lstm(input[10:10+1, :, :], (h, c))
+        # r11, (h, c) = self.lstm(input[11:11+1, :, :], (h, c))
+        # r12, (h, c) = self.lstm(input[12:12+1, :, :], (h, c))
+        # r13, (h, c) = self.lstm(input[13:13+1, :, :], (h, c))
+        # r14, (h, c) = self.lstm(input[14:14+1, :, :], (h, c))
+        # r15, (h, c) = self.lstm(input[15:15+1, :, :], (h, c))
+        # r16, (h, c) = self.lstm(input[16:16+1, :, :], (h, c))
+        # r17, (h, c) = self.lstm(input[17:17+1, :, :], (h, c))
+        # r18, (h, c) = self.lstm(input[18:18+1, :, :], (h, c))
+        # r19, (h, c) = self.lstm(input[19:19+1, :, :], (h, c))
+        # r20, (h, c) = self.lstm(input[20:20+1, :, :], (h, c))
+        # r21, (h, c) = self.lstm(input[21:21+1, :, :], (h, c))
+        # r22, (h, c) = self.lstm(input[22:22+1, :, :], (h, c))
+        # r23, (h, c) = self.lstm(input[23:23+1, :, :], (h, c))
+        # r24, (h, c) = self.lstm(input[24:24+1, :, :], (h, c))
+        # r25, (h, c) = self.lstm(input[25:25+1, :, :], (h, c))
+        # r26, (h, c) = self.lstm(input[26:26+1, :, :], (h, c))
+        # r27, (h, c) = self.lstm(input[27:27+1, :, :], (h, c))
+        # r28, (h, c) = self.lstm(input[28:28+1, :, :], (h, c))
+        # r29, (h, c) = self.lstm(input[29:29+1, :, :], (h, c))
+        # r30, (h, c) = self.lstm(input[30:30+1, :, :], (h, c))
+        # r31, (h, c) = self.lstm(input[31:31+1, :, :], (h, c))
+
+        # r = torch.stack([r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31], dim=0).squeeze()
 
         return r, (h, c)
 
@@ -793,16 +795,27 @@ def foo():
     hn = torch.from_numpy(h0)
     cn = torch.from_numpy(c0)
 
-    batch_size = 32
+    CUSTOM_BATCH = 32
+    batch_size = CUSTOM_BATCH
     # example random input [batch_size, 1536]
     rand_input = torch.rand([batch_size, 1536])
 
-    # silero = silero_restored2
-    silero = torch.jit.script(silero_restored2, example_inputs=(rand_input, hn, cn))
+    silero = silero_restored2
+    # silero = torch.jit.script(silero_restored2, example_inputs=(rand_input, hn, cn))
 
-    onnx_exported_filename = "silero_restored_v3.1_16k.onnx"
+    # onnx_exported_filename = f"silero_restored_v3.1_16k_v2_b{batch_size}.onnx"
+    onnx_exported_filename = f"silero_restored_v3.1_16k_v2_dyn.onnx"
+    if False:
+        torch.onnx.export(silero_restored2,
+                        (rand_input, hn, cn),
+                        onnx_exported_filename,
+                        input_names=["input", "h0", "c0"],
+                        output_names=["output", "hn", "cn"],
+                        dynamic_axes={
+                            "input": [0],
+                            "output": [0],
+                        })
     ort = OnnxWrapper(onnx_exported_filename)
-    # torch.onnx.export(silero_restored2, (rand_input, hn, cn), onnx_exported_filename, input_names=["input", "h0", "c0"])
     # silero_stateless = torch.jit.trace(silero_restored2.forward_stateless, example_inputs=(rand_input, ))
     # silero_stateful = torch.jit.trace(silero_restored2.forward_stateful, example_inputs=(torch.rand((1, 64, 7)), hn, cn))
 
@@ -813,7 +826,7 @@ def foo():
             for chunk in chunk_batch:
                 result_stateless = silero.forward_stateless(torch.from_numpy(chunk).reshape([1, 1536]))
                 result_batch.append(result_stateless)
-        elif batch_size == 32:
+        elif batch_size == CUSTOM_BATCH:
             chunks_batched = np.array([c for c in chunk_batch if c is not None])
             rem = batch_size - chunks_batched.shape[0]
             if rem > 0:
@@ -824,8 +837,12 @@ def foo():
 
             result = result_stateless
             prob_result = result[0]
-            hn = torch.from_numpy(result[1])
-            cn = torch.from_numpy(result[2])
+            try:
+                hn = torch.from_numpy(result[1])
+                cn = torch.from_numpy(result[2])
+            except:
+                hn = result[1]
+                cn = result[2]
 
             for i in range(prob_result.shape[0] - rem):
                 prob = prob_result[i][1].item()
@@ -838,7 +855,7 @@ def foo():
                 # print(result_stateless.shape)
                 result_batch.append(result_stateless[j:j+1, :, :])
 
-        if batch_size == 32:
+        if batch_size == CUSTOM_BATCH:
             pass
         else:
             for result_stateless in result_batch:
