@@ -76,6 +76,54 @@ static void layer_norm( TestTensor *input, TestTensor *weight, TestTensor *bias,
    endTemporaryMemory( mark );
 }
 
+/*
+def mybatchnorm1d(x, running_mean, running_var, weight, bias, eps=1e-05):
+    """simple numpy implementation of batchnorm1d. x is (batches, features, sequence)"""
+
+    x_normalized = (x - running_mean[None, :, None]) / np.sqrt(running_var[None, :, None] + eps)
+    x_normalized = x_normalized * weight[None, :, None] + bias[None, :, None]
+    return x_normalized
+*/
+
+static void batch_norm1d( TestTensor *input,
+                          TestTensor *running_mean,
+                          TestTensor *running_var,
+                          TestTensor *weight,
+                          TestTensor *bias,
+                          TestTensor *output )
+{
+   const float eps = 1e-5f;
+
+   Assert( input->ndim == 3 );
+   Assert( output->ndim == 3 );
+   Assert( running_mean->ndim == 1 );
+   Assert( running_var->ndim == 1 );
+   Assert( weight->ndim == 1 );
+   Assert( bias->ndim == 1 );
+
+   int batches = tdim( input, 0 );
+   int features = tdim( input, 1 );
+   int sequence = tdim( input, 2 );
+
+   for ( int batch = 0; batch < batches; ++batch )
+   {
+      for ( int index = 0; index < features; ++index )
+      {
+         float mean = running_mean->data[index];
+         float variance = running_var->data[index];
+         float std_dev = sqrtf( variance + eps );
+
+         for ( int sequence_index = 0; sequence_index < sequence; ++sequence_index )
+         {
+            float value = *index3d( input, batch, index, sequence_index );
+            float normalized_value = (value - mean) / std_dev;
+            float scaled_value = normalized_value * weight->data[index] + bias->data[index];
+            *index3d( output, batch, index, sequence_index ) = scaled_value;
+         }
+      }
+   }
+}
+
 static void dual_head_attention( TestTensor *input,
                                  TestTensor *QKV_weights, TestTensor *QKV_biases,
                                  TestTensor *proj_weights, TestTensor *proj_biases,

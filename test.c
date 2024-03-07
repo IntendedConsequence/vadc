@@ -548,6 +548,37 @@ TestResult layer_norm_test()
    return test_result;
 }
 
+TestResult batch_norm_test()
+{
+   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+
+   LoadTesttensorResult res = {0};
+   res = load_testtensor( "batchnorm_test.testtensor" );
+
+   // TODO(irwin): validate loaded tensor count helpers
+   Assert( res.tensor_count == 6 );
+
+   int test_data_index = 0;
+   TestTensor *input = res.tensor_array + test_data_index++;
+   TestTensor *running_mean = res.tensor_array + test_data_index++;
+   TestTensor *running_var = res.tensor_array + test_data_index++;
+   TestTensor *weight = res.tensor_array + test_data_index++;
+   TestTensor *bias = res.tensor_array + test_data_index++;
+   TestTensor *result = res.tensor_array + test_data_index++;
+
+   TestTensor *output = tensor_zeros_like( debug_arena, result );
+
+   batch_norm1d( input, running_mean, running_var, weight, bias, output );
+
+   float atol = 1e-4f;
+   TestResult test_result = all_close( result->data, output->data, result->size, atol );
+
+   endTemporaryMemory( mark );
+
+   return test_result;
+}
+
 
 TestResult dual_head_attention_test()
 {
@@ -654,6 +685,7 @@ TestFunctionDescription test_function_descriptions[] =
    TEST_FUNCTION_DESCRIPTION(transpose2d_test),
    TEST_FUNCTION_DESCRIPTION(softmax_test),
    TEST_FUNCTION_DESCRIPTION(layer_norm_test),
+   TEST_FUNCTION_DESCRIPTION(batch_norm_test),
    TEST_FUNCTION_DESCRIPTION(dual_head_attention_test),
    TEST_FUNCTION_DESCRIPTION(transformer_block_16_16_48_test),
    TEST_FUNCTION_DESCRIPTION(lstm_test),
