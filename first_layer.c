@@ -219,7 +219,129 @@ static TestTensor *tensor_reflect_pad_last_dim( MemoryArena *arena, TestTensor *
    return new_tensor;
 }
 
-static void my_stft ( MemoryArena *arena, TestTensor *input, TestTensor *filters, TestTensor *output, int padding )
+static void adaptive_audio_normalization_inplace(MemoryArena *arena, TestTensor *input)
+{
+   static float filter[7] = {
+      0.03663284704089164733887f,
+      0.11128076165914535522461f,
+      0.21674531698226928710938f,
+      0.27068215608596801757812f,
+      0.21674531698226928710938f,
+      0.11128076165914535522461f,
+      0.03663284704089164733887f
+   };
+
+   static int dims[3] = {1, 1, 7};
+   static TestTensor filter_tensor = {
+      .ndim = 3,
+      .dims = dims,
+      .data = filter,
+      .size = 7,
+      .nbytes = 7 * sizeof(float),
+      .name = NULL,
+   };
+
+   const int to_pad = 3; // (kernel size - 1) / 2
+   const float million = (float)(1024 * 1024); // 1048576
+
+   TemporaryMemory mark = beginTemporaryMemory(arena);
+   // 1) tensor for mean [:, :, tdim(input, -1)]
+   // 2) tensor for pad-reflected-mean [:, :, tdim(mean, -1) + to_pad * 2]
+   // 3) tensor for conv1d output [:, :, tdim(mean, -1)] // can reuse mean from 1)
+
+   TestTensor input_unsqueezed = *input;
+   if (input->ndim == 2)
+   {
+      input_unsqueezed = tensor_unsqueeze(arena, input, 0);
+   }
+
+   TestTensor *mean = tensor_zeros_3d(arena, input_unsqueezed.dims[0], 1, input_unsqueezed.dims[2]);
+
+   for (int i = 0; i < input_unsqueezed.size; ++i)
+   {
+      float spect = input_unsqueezed.data[i];
+      float spect_rescaled = spect * million;
+      float spect_log = log1pf(spect_rescaled);
+      input_unsqueezed.data[i] = spect_log;
+   }
+
+   int channel_count = input_unsqueezed.dims[1];
+   int batch_count = input_unsqueezed.dims[0];
+   for (int batch_index = 0; batch_index < batch_count; ++batch_index)
+   {
+      for (int bin_index = 0; bin_index < input_unsqueezed.dims[2]; ++bin_index)
+      {
+         float bin_sum = 0.0f;
+         for (int channel_index = 0; channel_index < channel_count; ++channel_index)
+         {
+            float value = *index3d(&input_unsqueezed, batch_index, channel_index, bin_index);
+            bin_sum += value;
+         }
+         float bin_mean = bin_sum / channel_count;
+         *index3d(mean, batch_index, 0, bin_index) = bin_mean;
+      }
+   }
+
+   TestTensor *mean_padded = tensor_reflect_pad_last_dim(arena, mean, to_pad);
+   TestTensor *conv1d_output = tensor_zeros_like(arena, mean);
+   conv_tensor(mean_padded, &filter_tensor, NULL, 1, conv1d_output);
+
+   TestTensor *mean_mean = tensor_zeros_3d(arena, batch_count, 1, 1);
+
+   for (int batch_index = 0; batch_index < batch_count; ++batch_index)
+   {
+      float mean_sum = 0.0f;
+      int bin_count = tdim(conv1d_output, -1);
+      for (int i = 0; i < bin_count; ++i)
+      {
+         float value = *index3d(conv1d_output, batch_index, 0, i);
+         mean_sum += value;
+      }
+
+      *index3d(mean_mean, batch_index, 0, 0) = mean_sum / bin_count;
+   }
+
+   for (int batch_index = 0; batch_index < batch_count; ++batch_index)
+   {
+      float mean_value = *index3d(mean_mean, batch_index, 0, 0);
+      for (int channel_index = 0; channel_index < channel_count; ++channel_index)
+      {
+         float *channel = index3d(&input_unsqueezed, batch_index, channel_index, 0);
+         for (int bin_index = 0; bin_index < input_unsqueezed.dims[2]; ++bin_index)
+         {
+            float value_adjusted = channel[bin_index] - mean_value;
+            channel[bin_index] = value_adjusted;
+         }
+      }
+   }
+
+   endTemporaryMemory(mark);
+   /*
+   class AdaptiveAudioNormalization(torch.nn.Module):
+    filter_: torch.Tensor
+    to_pad: int
+
+    def __init__(self):
+        super().__init__()
+
+        self.to_pad = 3
+
+        self.register_buffer("filter_", torch.zeros((1, 1, 7)))
+
+    def forward(self, spect: torch.Tensor) -> torch.Tensor:
+        spect = torch.log1p(spect * 1048576)
+        if len(spect.shape) == 2:
+            spect = spect[None, :, :]
+        mean = spect.mean(dim=1, keepdim=True)
+        mean = simple_pad(mean, self.to_pad)
+        mean = torch.conv1d(mean, self.filter_)
+        mean_mean = mean.mean(dim=-1, keepdim=True)
+        spect = spect.add(-mean_mean)
+        return spect
+   */
+}
+
+static void my_stft ( MemoryArena *arena, TestTensor *input, TestTensor *filters, TestTensor *output )
 {
    Assert(filters->ndim == 3);
    Assert(output->ndim == filters->ndim);
@@ -229,6 +351,8 @@ static void my_stft ( MemoryArena *arena, TestTensor *input, TestTensor *filters
    Assert(tdim(filters, 2) == 256);
 
    int filter_length = tdim(filters, 2);
+   int padding = filter_length / 2;
+   Assert(padding * 2 == filter_length);
    int half_filter_length = filter_length / 2;
    int cutoff = half_filter_length + 1;
    int hop_length = 64;

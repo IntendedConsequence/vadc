@@ -597,7 +597,34 @@ TestResult stft_test()
 
    TestTensor *output = tensor_zeros_like( debug_arena, result );
 
-   my_stft(debug_arena, input, forward_basis_buffer, output, 128 );
+   my_stft(debug_arena, input, forward_basis_buffer, output );
+
+   float atol = 1e-4f;
+   TestResult test_result = all_close( result->data, output->data, result->size, atol );
+
+   endTemporaryMemory( mark );
+
+   return test_result;
+}
+
+TestResult adaptive_audio_normalization_test()
+{
+   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+
+   LoadTesttensorResult res = {0};
+   res = load_testtensor( "adaptive_audio_normalization_test.testtensor" );
+
+   // TODO(irwin): validate loaded tensor count helpers
+   Assert( res.tensor_count == 2 );
+
+   int test_data_index = 0;
+   TestTensor *input = res.tensor_array + test_data_index++;
+   TestTensor *result = res.tensor_array + test_data_index++;
+
+   TestTensor *output = tensor_copy( debug_arena, input );
+
+   adaptive_audio_normalization_inplace(debug_arena, output );
 
    float atol = 1e-4f;
    TestResult test_result = all_close( result->data, output->data, result->size, atol );
@@ -717,6 +744,7 @@ TestFunctionDescription test_function_descriptions[] =
    TEST_FUNCTION_DESCRIPTION(dual_head_attention_test),
    TEST_FUNCTION_DESCRIPTION(transformer_block_16_16_48_test),
    TEST_FUNCTION_DESCRIPTION(stft_test),
+   TEST_FUNCTION_DESCRIPTION(adaptive_audio_normalization_test),
    TEST_FUNCTION_DESCRIPTION(lstm_test),
    TEST_FUNCTION_DESCRIPTION(lstm_test_RED),
 };

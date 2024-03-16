@@ -16,6 +16,9 @@ struct TestTensor
    float *data;
 };
 
+static inline int tdimindex( TestTensor *tensor, int idx );
+static inline int tdim( TestTensor *tensor, int idx );
+
 // static_assert(sizeof(TestTensor) == 64, "Wrong size");
 
 // TODO(irwin):
@@ -24,15 +27,22 @@ struct TestTensor
 static inline float *index2d( TestTensor *tensor, int index0, int index1 )
 {
    Assert( tensor->ndim == 2 );
-   int dim0_stride = tensor->dims[tensor->ndim - 1];
+   Assert (index0 < tdim(tensor, 0));
+   Assert (index1 < tdim(tensor, 1));
+
+   int dim0_stride = tdim(tensor, -1);
    return tensor->data + index0 * dim0_stride + index1;
 }
 
 static inline float *index3d( TestTensor *tensor, int index0, int index1, int index2 )
 {
    Assert( tensor->ndim == 3 );
-   int dim0_stride = tensor->dims[tensor->ndim - 1] * tensor->dims[tensor->ndim - 2];
-   int dim1_stride = tensor->dims[tensor->ndim - 1];
+   Assert (index0 < tdim(tensor, 0));
+   Assert (index1 < tdim(tensor, 1));
+   Assert (index2 < tdim(tensor, 2));
+
+   int dim0_stride = tensor->size / tdim(tensor, 0);
+   int dim1_stride = tdim(tensor, -1);
    return tensor->data + index0 * dim0_stride + index1 * dim1_stride + index2;
 }
 
@@ -41,17 +51,71 @@ static inline b32 tensor_is_valid( TestTensor *tensor )
    return (!!tensor->data) & (!!tensor->nbytes) & (!!tensor->size) & (!!tensor->ndim) & (!!tensor->dims);
 }
 
+static inline TestTensor tensor_unsqueeze( MemoryArena *arena, TestTensor *tensor, int dim )
+{
+   Assert( tensor_is_valid( tensor ) );
+
+   dim = tdimindex( tensor, dim );
+
+   TestTensor result = {0};
+
+   result.ndim = tensor->ndim + 1;
+   result.dims = pushArray( arena, result.ndim, int );
+   for (int i = 0; i < dim; ++i)
+   {
+      result.dims[i] = tensor->dims[i];
+   }
+   result.dims[dim] = 1;
+   for (int i = dim + 1; i < result.ndim; ++i)
+   {
+      result.dims[i] = tensor->dims[i-1];
+   }
+
+   result.size = tensor->size;
+   result.nbytes = tensor->nbytes;
+   result.data = tensor->data;
+   result.name = tensor->name;
+
+   return result;
+}
+
+static inline TestTensor tensor_squeeze( MemoryArena *arena, TestTensor *tensor, int dim )
+{
+   Assert( tensor_is_valid( tensor ) );
+
+   dim = tdimindex( tensor, dim );
+   Assert( dim < tensor->ndim );
+   Assert( tensor->ndim > 1 );
+   Assert( tdim(tensor, dim) == 1 );
+
+   TestTensor result = {0};
+
+   result.ndim = tensor->ndim - 1;
+   result.dims = pushArray( arena, result.ndim, int );
+   for (int i = 0; i < dim; ++i)
+   {
+      result.dims[i] = tensor->dims[i];
+   }
+   for (int i = dim; i < result.ndim; ++i)
+   {
+      result.dims[i] = tensor->dims[i+1];
+   }
+
+   result.size = tensor->size;
+   result.nbytes = tensor->nbytes;
+   result.data = tensor->data;
+   result.name = tensor->name;
+
+   return result;
+}
+
 // NOTE(irwin): contiguous only
 static inline TestTensor tensor_slice_first_dim( TestTensor *tensor_to_slice, int at_index )
 {
    Assert( tensor_is_valid( tensor_to_slice ) );
    Assert( at_index >= 0 );
 
-   int first_dimension_stride = 1;
-   for ( int dimension_index = 1; dimension_index < tensor_to_slice->ndim; ++dimension_index )
-   {
-      first_dimension_stride *= tensor_to_slice->dims[dimension_index];
-   }
+   int first_dimension_stride = tensor_to_slice->size / tdim(tensor_to_slice, 0);
 
    TestTensor result = {0};
 
@@ -103,10 +167,22 @@ static inline TestTensor *tensor_zeros( MemoryArena *arena, int ndim, int dims[]
    return result;
 }
 
+static inline TestTensor *tensor_zeros_1d( MemoryArena *arena, int dim0 )
+{
+   int dims[1] = {dim0};
+   return tensor_zeros( arena, 1, dims );
+}
+
 static inline TestTensor *tensor_zeros_2d( MemoryArena *arena, int dim0, int dim1 )
 {
    int dims[2] = {dim0, dim1};
    return tensor_zeros( arena, 2, dims );
+}
+
+static inline TestTensor *tensor_zeros_3d( MemoryArena *arena, int dim0, int dim1, int dim2 )
+{
+   int dims[3] = {dim0, dim1, dim2};
+   return tensor_zeros( arena, 3, dims );
 }
 
 static inline void broadcast_value_to_tensor( TestTensor *tensor, float value )
