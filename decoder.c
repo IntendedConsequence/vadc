@@ -22,6 +22,9 @@ int decoder ( float *input, int *input_dims, int input_ndims, float *weights, in
 {
    VAR_UNUSED( biases_dims );
    VAR_UNUSED( output_dims );
+   VAR_UNUSED( biases_ndims );
+   VAR_UNUSED( output_ndims );
+   VAR_UNUSED( weights_ndims );
 
    int result_ok = 1;
 
@@ -29,10 +32,10 @@ int decoder ( float *input, int *input_dims, int input_ndims, float *weights, in
 
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
-   assert( input_ndims == 3 );
-   assert( weights_ndims == 3 );
-   assert( biases_ndims == 1 );
-   assert( output_ndims == 3 );
+   Assert( input_ndims == 3 );
+   Assert( weights_ndims == 3 );
+   Assert( biases_ndims == 1 );
+   Assert( output_ndims == 3 );
 
    if ( result_ok )
    {

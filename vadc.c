@@ -137,7 +137,7 @@ void process_chunks( VADC_Context context,
    }
    else
    {
-      assert(!context.is_silero_v4);
+      Assert(!context.is_silero_v4);
       int stride = (int)context.window_size_samples * context.batch_size;
       for (size_t offset = 0;
          offset < buffered_samples_count;
@@ -170,11 +170,11 @@ void process_chunks( VADC_Context context,
                                          context.output_tensors )
          );
 
-         assert( context.output_tensors[0] != NULL );
+         Assert( context.output_tensors[0] != NULL );
 
          int is_tensor;
          ORT_ABORT_ON_ERROR( g_ort->IsTensor( context.output_tensors[0], &is_tensor ) );
-         assert( is_tensor );
+         Assert( is_tensor );
 
          int output_stride = context.is_silero_v4 ? 1 : 2;
          for (int i = 0; i < context.batch_size; ++i)
@@ -403,7 +403,7 @@ void read_wav_ffmpeg( const char *fname_inp )
             //-----------------------------------------------------------------------------
             // got bytes, do something with them here
             //-----------------------------------------------------------------------------
-            
+
             if ( remainder != 0 )
             {
                memmove( buffer, to, remainder );
@@ -462,11 +462,11 @@ struct Buffered_Stream
 BS_Error refill_zeros(Buffered_Stream *s)
 {
    static u8 zeros[256] = {0};
-   
+
    s->start = zeros;
    s->cursor = zeros;
    s->end = zeros + sizeof( zeros );
-   
+
    return s->error_code;
 }
 
@@ -680,7 +680,7 @@ static void deinit_buffered_stream_file( Buffered_Stream *s )
    {
       s->file_handle_internal = NULL;
    }
-   
+
    if ( s->buffer_internal )
    {
       // free( s->buffer_internal );
