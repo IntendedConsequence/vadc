@@ -58,9 +58,15 @@ typedef int32_t b32;
 #define ASSERT_TOSTRING_M(x) #x
 #define ASSERT_TOSTRING(x) ASSERT_TOSTRING_M(x)
 
-#define Assert(truth) do { if(!(truth)) { ASSERT_ACTION(ASSERT_TOSTRING(truth)); ASSERT_HALT; } } while (0)
-#define AssertFail(message) do { ASSERT_ACTION(message); ASSERT_HALT; } while (0)
-#define AssertMessage(truth, message) Assert((truth) && message)
+#if !defined(NDEBUG)
+# define Assert(truth) do { if(!(truth)) { ASSERT_ACTION(ASSERT_TOSTRING(truth)); ASSERT_HALT; } } while (0)
+# define AssertFail(message) do { ASSERT_ACTION(message); ASSERT_HALT; } while (0)
+# define AssertMessage(truth, message) Assert((truth) && message)
+#else // !defined(NDEBUG)
+# define Assert(truth) VAR_UNUSED(truth)
+# define AssertFail(message) VAR_UNUSED(message)
+# define AssertMessage(truth, message) Assert((truth) && message)
+#endif // !defined(NDEBUG)
 
 #define ArrayCount(arr) (sizeof(arr) / sizeof((arr)[0]))
 
