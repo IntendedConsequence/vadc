@@ -44,7 +44,8 @@ LoadTesttensorResult load_testtensor( const char *path )
    AssertMessage( f, "Couldn't open file" );
 
    TestTensor_Header header = {0};
-   Assert( fread( &header, sizeof( header ), 1, f ) );
+   size_t fread_result = fread( &header, sizeof( header ), 1, f );
+   Assert( fread_result );
    Assert( header.version == 1 );
 
    int tensor_count = header.tensor_count;
@@ -56,10 +57,12 @@ LoadTesttensorResult load_testtensor( const char *path )
    {
       TestTensor *tensor = tensor_array + i;
       int name_len = 0;
-      Assert( fread( &name_len, sizeof( name_len ), 1, f ) );
+      fread_result = fread( &name_len, sizeof( name_len ), 1, f );
+      Assert( fread_result );
       Assert( name_len );
       char *name = pushSizeZeroed( debug_arena, name_len + 1, 1 );
-      Assert( fread( name, sizeof( char ), name_len, f ) );
+      fread_result = fread( name, sizeof( char ), name_len, f );
+      Assert( fread_result );
       tensor->name = name;
    }
 
@@ -67,17 +70,22 @@ LoadTesttensorResult load_testtensor( const char *path )
    {
       TestTensor *tensor = tensor_array + i;
 
-      Assert( fread( &tensor->ndim, sizeof( tensor->ndim ), 1, f ) );
+      fread_result = fread( &tensor->ndim, sizeof( tensor->ndim ), 1, f );
+      Assert( fread_result );
       if ( tensor->ndim )
       {
          tensor->dims = pushArray( debug_arena, tensor->ndim, int );
-         Assert( fread( tensor->dims, sizeof( tensor->dims[0] ), tensor->ndim, f ) );
+         fread_result = fread( tensor->dims, sizeof( tensor->dims[0] ), tensor->ndim, f );
+         Assert( fread_result );
       }
-      Assert( fread( &tensor->size, sizeof( tensor->size ), 1, f ) );
-      Assert( fread( &tensor->nbytes, sizeof( tensor->nbytes ), 1, f ) );
+      fread_result = fread( &tensor->size, sizeof( tensor->size ), 1, f );
+      Assert( fread_result );
+      fread_result = fread( &tensor->nbytes, sizeof( tensor->nbytes ), 1, f );
+      Assert( fread_result );
 
       tensor->data = pushSizeZeroed( debug_arena, tensor->nbytes, 1 );
-      Assert( fread( tensor->data, tensor->nbytes, 1, f ) );
+      fread_result = fread( tensor->data, tensor->nbytes, 1, f );
+      Assert( fread_result );
    }
 
    fclose( f );
@@ -248,6 +256,7 @@ TestResult decoder_test()
 
    int result_ok = decoder( input->data, input->dims, input->ndim, weights->data, weights->dims, weights->ndim, biases->data, biases->dims, biases->ndim, output, output_dims, output_ndims );
    Assert( result_ok );
+   VAR_UNUSED( result_ok );
 
    float atol = 1e-10f;
 
@@ -377,6 +386,7 @@ TestResult dw_conv_129_test()
 
    size_t output_size = input->dims[0] * input->dims[1] * sizeof( float );
    Assert( output_size == result->nbytes );
+   VAR_UNUSED( output_size );
 
    TestTensor *output_tensor = tensor_zeros_like( debug_arena, result );
 
@@ -406,6 +416,7 @@ TestResult pw_conv_129_16_test()
 
    size_t output_size = weights->dims[0] * input->dims[1] * sizeof( float );
    Assert( output_size == result->nbytes );
+   VAR_UNUSED( output_size );
 
    TestTensor *output_tensor = tensor_zeros_like( debug_arena, result );
 
