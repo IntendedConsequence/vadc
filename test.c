@@ -779,7 +779,7 @@ int main()
       passed_count += !!result.pass;
       failed_count += !result.pass;
 
-      fprintf( stderr, "%-32s max error magnitude: %-6s", desc->test_name, test_error_magnitude_names[result.error_magnitude] );
+      fprintf( stderr, "%-34s max error magnitude: %-6s", desc->test_name, test_error_magnitude_names[result.error_magnitude] );
       fprintf( stderr, " ... %s\n", result_strings[!!result.pass] );
    }
 
