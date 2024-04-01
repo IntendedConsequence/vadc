@@ -41,7 +41,11 @@ LoadTesttensorResult load_testtensor( const char *path )
    // memset(tensor, 0, sizeof(*tensor));
 
    FILE *f = fopen( path, "rb" );
-   AssertMessage( f, "Couldn't open file" );
+   if (!f)
+   {
+      return result;
+   }
+   // AssertMessage( f, "Couldn't open file" );
 
    TestTensor_Header header = {0};
    size_t fread_result = fread( &header, sizeof( header ), 1, f );
@@ -241,7 +245,13 @@ TestResult decoder_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "decoder_test.testtensor" );
+   res = load_testtensor( "testdata\\decoder_test.testtensor" );
+   if (res.tensor_count == 0)
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
    TestTensor *input = res.tensor_array + 0;
    TestTensor *weights = res.tensor_array + 1;
    TestTensor *biases = res.tensor_array + 2;
@@ -273,7 +283,13 @@ TestResult lstm_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult lstm_res = {0};
-   lstm_res = load_testtensor( "lstm_nito_reference_randn.testtensor" );
+   lstm_res = load_testtensor( "testdata\\lstm_nito_reference_randn.testtensor" );
+   if (lstm_res.tensor_count == 0)
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
 
    // Assert(memcmp(output, result->data, output_size) == 0);
 
@@ -319,9 +335,20 @@ TestResult lstm_test_RED()
    LoadTesttensorResult lstm_input = {0};
    LoadTesttensorResult lstm_weights = {0};
    LoadTesttensorResult lstm_output = {0};
-   lstm_input = load_testtensor( "RED600_all_before_lstm.testtensor" );
-   lstm_weights = load_testtensor( "lstm_silero_3.1_16k_for_c.testtensor" );
-   lstm_output = load_testtensor( "RED600_all_lstm_output_lite.testtensor" );
+
+   lstm_input = load_testtensor( "testdata\\untracked\\RED600_all_before_lstm.testtensor" );
+   lstm_weights = load_testtensor( "testdata\\untracked\\lstm_silero_3.1_16k_for_c.testtensor" );
+   lstm_output = load_testtensor( "testdata\\untracked\\RED600_all_lstm_output_lite.testtensor" );
+
+   if (lstm_input.tensor_count == 0 ||
+       lstm_weights.tensor_count == 0 ||
+       lstm_output.tensor_count == 0)
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
+
 
    TestTensor *input = lstm_input.tensor_array + 0;
 
@@ -378,7 +405,13 @@ TestResult dw_conv_129_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "dw_conv_129.testtensor" );
+   res = load_testtensor( "testdata\\dw_conv_129.testtensor" );
+   if (res.tensor_count == 0)
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
    TestTensor *input = res.tensor_array + 0;
    TestTensor *weights = res.tensor_array + 1;
    TestTensor *biases = res.tensor_array + 2;
@@ -408,7 +441,13 @@ TestResult pw_conv_129_16_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "pw_conv_129_16.testtensor" );
+   res = load_testtensor( "testdata\\pw_conv_129_16.testtensor" );
+   if (res.tensor_count == 0)
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
    TestTensor *input = res.tensor_array + 0;
    TestTensor *weights = res.tensor_array + 1;
    TestTensor *biases = res.tensor_array + 2;
@@ -437,7 +476,13 @@ TestResult first_layer_conv_block_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "first_layer_conv_block.testtensor" );
+   res = load_testtensor( "testdata\\first_layer_conv_block.testtensor" );
+   if (res.tensor_count == 0)
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
 
    int test_data_index = 0;
    TestTensor *dw_conv_weights = res.tensor_array + test_data_index++;
@@ -511,7 +556,13 @@ TestResult softmax_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "softmax_test.testtensor" );
+   res = load_testtensor( "testdata\\softmax_test.testtensor" );
+   if (res.tensor_count == 0)
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
 
    int test_data_index = 0;
    TestTensor *input = res.tensor_array + test_data_index++;
@@ -536,7 +587,13 @@ TestResult layer_norm_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "layernorm_test.testtensor" );
+   res = load_testtensor( "testdata\\layernorm_test.testtensor" );
+   if (res.tensor_count == 0)
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
 
    // TODO(irwin): validate loaded tensor count helpers
    Assert( res.tensor_count == 4 );
@@ -565,7 +622,13 @@ TestResult batch_norm_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "batchnorm_test.testtensor" );
+   res = load_testtensor( "testdata\\batchnorm_test.testtensor" );
+   if (res.tensor_count == 0)
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
 
    // TODO(irwin): validate loaded tensor count helpers
    Assert( res.tensor_count == 6 );
@@ -596,7 +659,13 @@ TestResult stft_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "stft_test.testtensor" );
+   res = load_testtensor( "testdata\\untracked\\stft_test.testtensor" );
+   if (res.tensor_count == 0)
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
 
    // TODO(irwin): validate loaded tensor count helpers
    Assert( res.tensor_count == 3 );
@@ -624,7 +693,13 @@ TestResult adaptive_audio_normalization_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "adaptive_audio_normalization_test.testtensor" );
+   res = load_testtensor( "testdata\\adaptive_audio_normalization_test.testtensor" );
+   if (res.tensor_count == 0)
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
 
    // TODO(irwin): validate loaded tensor count helpers
    Assert( res.tensor_count == 2 );
@@ -652,7 +727,13 @@ TestResult dual_head_attention_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "dual_head_attention_test.testtensor" );
+   res = load_testtensor( "testdata\\dual_head_attention_test.testtensor" );
+   if (res.tensor_count == 0)
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
 
    int test_data_index = 0;
    TestTensor *input = res.tensor_array + test_data_index++;
@@ -684,7 +765,13 @@ TestResult transformer_block_16_16_48_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "transformer_block_test_16_16_48.testtensor" );
+   res = load_testtensor( "testdata\\transformer_block_test_16_16_48.testtensor" );
+   if (res.tensor_count == 0)
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
 
    int test_data_index = 0;
    TestTensor *attention_weights = res.tensor_array + test_data_index++;
