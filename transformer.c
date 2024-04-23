@@ -201,7 +201,11 @@ static void dual_head_attention( TestTensor *input,
 
 
 
-   // NOTE(irwin): 1.0f / (2.0f * sqrtf(2.0f));
+   // NOTE(irwin): 1.0f / sqrtf(8.0f);
+   //              where 8.0f is the dimensionality of the head
+   //              (this is the sqrt(dk) in the paper Attention Is All You Need
+   //              https://arxiv.org/pdf/1706.03762.pdf)
+   // NOTE(irwin): this is done for numerical stability
    const float scale = 0.3535533905932737622f;
    tensor_mul_inplace( a1, scale );
    tensor_mul_inplace( a2, scale );
@@ -240,9 +244,9 @@ static void dual_head_attention( TestTensor *input,
 
 
 // TODO(irwin):
-// - [ ] add test
-// - [ ] generate test data
-static void transformer_block( MemoryArena *arena, TestTensor *input, int shape, int att_in, int att_out,
+// - [x] batch input support via wrapper
+// - [ ] proper batch input support
+static void transformer_block( MemoryArena *arena, TestTensor *input,
                                TestTensor *attention_weights, TestTensor *attention_biases,
                                TestTensor *attention_proj_weights, TestTensor *attention_proj_biases,
                                TestTensor *norm1_weights, TestTensor *norm1_biases,
@@ -251,11 +255,10 @@ static void transformer_block( MemoryArena *arena, TestTensor *input, int shape,
                                TestTensor *norm2_weights, TestTensor *norm2_biases,
                                TestTensor *output )
 {
-   VAR_UNUSED(att_in);
-   VAR_UNUSED(att_out);
-
    Assert( input->ndim == 2 );
    Assert( output->ndim == 2 );
+
+   int shape = tdim( input, -2 );
 
    TemporaryMemory mark = beginTemporaryMemory( arena );
 
@@ -273,6 +276,9 @@ static void transformer_block( MemoryArena *arena, TestTensor *input, int shape,
    TestTensor *norm1_output = tensor_zeros_like( arena, input_transposed );
    layer_norm( input_transposed, norm1_weights, norm1_biases, norm1_output );
 
+   // NOTE(irwin): tdim(input_transposed, -1) == tdim(input, -2)
+   // NOTE(irwin): tdim(norm1_output, -1) == tdim(input_transposed, -1)
+   // NOTE(irwin): shape is tdim(input, -2)
    Assert(tdim( norm1_output, -1 ) == shape);
    TestTensor *linear1_output = tensor_zeros_2d( arena, tdim( norm1_output, -2 ), shape );
    tensor_linear( norm1_output, linear1_weights, linear1_biases, linear1_output );
@@ -287,6 +293,140 @@ static void transformer_block( MemoryArena *arena, TestTensor *input, int shape,
    TestTensor *output_copy_source = tensor_transpose_2d( arena, norm2_output );
    Assert(output->nbytes == output_copy_source->nbytes);
    memmove( output->data, output_copy_source->data, output->nbytes );
+
+   endTemporaryMemory( mark );
+}
+
+static void transformer_block_batch( MemoryArena *arena, TestTensor *input,
+                                     TestTensor *attention_weights, TestTensor *attention_biases,
+                                     TestTensor *attention_proj_weights, TestTensor *attention_proj_biases,
+                                     TestTensor *norm1_weights, TestTensor *norm1_biases,
+                                     TestTensor *linear1_weights, TestTensor *linear1_biases,
+                                     TestTensor *linear2_weights, TestTensor *linear2_biases,
+                                     TestTensor *norm2_weights, TestTensor *norm2_biases,
+                                     TestTensor *output )
+{
+   Assert( input->ndim == 3 );
+   Assert( output->ndim == 3 );
+
+   int batch_size = tdim( input, 0 );
+   for ( int batch_index = 0; batch_index < batch_size; ++batch_index )
+   {
+      TestTensor input_slice = tensor_slice_first_dim( input, batch_index );
+      TestTensor output_slice = tensor_slice_first_dim( output, batch_index );
+
+      transformer_block( arena, &input_slice, 
+                         attention_weights, attention_biases, 
+                         attention_proj_weights, attention_proj_biases, 
+                         norm1_weights, norm1_biases, 
+                         linear1_weights, linear1_biases, 
+                         linear2_weights, linear2_biases, 
+                         norm2_weights, norm2_biases, 
+                         &output_slice );
+   }
+}
+
+typedef struct TransformerLayer_Weights TransformerLayer_Weights;
+struct TransformerLayer_Weights
+{
+   // NOTE(irwin): ConvBlock
+
+   TestTensor *dw_conv_weights;
+   TestTensor *dw_conv_biases;
+   TestTensor *pw_conv_weights;
+   TestTensor *pw_conv_biases;
+   // NOTE(irwin): optional proj
+   TestTensor *proj_weights;
+   TestTensor *proj_biases;
+
+
+   // NOTE(irwin): attention
+   TestTensor *attention_weights;
+   TestTensor *attention_biases;
+   TestTensor *attention_proj_weights;
+   TestTensor *attention_proj_biases;
+
+   // NOTE(irwin): transformer rest
+   TestTensor *norm1_weights;
+   TestTensor *norm1_biases;
+   TestTensor *linear1_weights;
+   TestTensor *linear1_biases;
+   TestTensor *linear2_weights;
+   TestTensor *linear2_biases;
+   TestTensor *norm2_weights;
+   TestTensor *norm2_biases;
+
+   // NOTE(irwin): conv1d
+   TestTensor *conv_weights;
+   TestTensor *conv_biases;
+
+   // NOTE(irwin): batch norm
+   TestTensor *batch_norm_weights;
+   TestTensor *batch_norm_biases;
+   TestTensor *batch_norm_running_mean;
+   TestTensor *batch_norm_running_var;
+
+
+   // TODO(irwin):
+   // - [x] Conv1d (2)
+   // - [x] BatchNorm1d (4)
+   // - [x] ConvBlock
+   //       - [x] Conv1d (2)
+   //       - [x] Conv1d (2)
+   //       - [x] proj (optional) (2)
+};
+
+static void transformer_layer( MemoryArena *arena, TestTensor *input, TransformerLayer_Weights weights, TestTensor *output )
+{
+   TemporaryMemory mark = beginTemporaryMemory( arena );
+
+   ConvOutputShape conv_block_out_shape = conv_block_output_shape( input, weights.dw_conv_weights, weights.pw_conv_weights );
+
+   {
+      ConvOutputShape output_required_shape = conv_output_shape_shape( conv_block_out_shape, weights.conv_weights, 2 );
+      // TODO(irwin): verify
+      Assert( output_required_shape.batch_size == tdim( output, 0 ) );
+      Assert( output_required_shape.channels_out == tdim( output, 1 ) );
+      Assert( output_required_shape.sequence_length == tdim( output, 2 ) );
+   }
+
+   TestTensor* conv_block_output = tensor_zeros_3d( arena, conv_block_out_shape.batch_size, conv_block_out_shape.channels_out, conv_block_out_shape.sequence_length );
+   
+   // NOTE(irwin): 1 - ConvBlock
+   conv_block( input, 1,
+               weights.dw_conv_weights, weights.dw_conv_biases,
+               weights.pw_conv_weights, weights.pw_conv_biases,
+               weights.proj_weights, weights.proj_biases,
+               conv_block_output );
+
+
+   TestTensor *transformer_block_output = tensor_zeros_like( arena, conv_block_output );
+
+   // NOTE(irwin): 2 - TransformerBlock
+   transformer_block_batch(arena,
+                     conv_block_output,
+                     weights.attention_weights, weights.attention_biases,
+                     weights.attention_proj_weights, weights.attention_proj_biases,
+                     weights.norm1_weights, weights.norm1_biases,
+                     weights.linear1_weights, weights.linear1_biases,
+                     weights.linear2_weights, weights.linear2_biases,
+                     weights.norm2_weights, weights.norm2_biases,
+                     transformer_block_output);
+
+   // NOTE(irwin): 3 - Conv1d
+   int hop_length = 2;
+   TestTensor *conv_output = conv_tensor_out ( arena, transformer_block_output, weights.conv_weights, weights.conv_biases, hop_length );
+
+   batch_norm1d( conv_output,
+                 weights.batch_norm_running_mean,
+                 weights.batch_norm_running_var,
+                 weights.batch_norm_weights,
+                 weights.batch_norm_biases,
+                 output );
+
+   // NOTE(irwin): 4 - ReLU
+   tensor_relu_inplace( output );
+
 
    endTemporaryMemory( mark );
 }

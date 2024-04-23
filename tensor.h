@@ -22,7 +22,6 @@ static inline int tdim( TestTensor *tensor, int idx );
 // static_assert(sizeof(TestTensor) == 64, "Wrong size");
 
 // TODO(irwin):
-// - [x] move to tensor source files
 // - [ ] use where applicable
 static inline float *index2d( TestTensor *tensor, int index0, int index1 )
 {
@@ -358,4 +357,71 @@ static inline void tensor_mul_inplace( TestTensor *input, float value )
    {
       input->data[i] *= value;
    }
+}
+
+typedef struct ConvOutputShape ConvOutputShape;
+struct ConvOutputShape
+{
+   int batch_size;
+   int channels_out;
+   int sequence_length;
+};
+
+static inline ConvOutputShape conv_output_shape( TestTensor *input, TestTensor *weights, int stride )
+{
+   Assert( weights->ndim == 3 );
+
+   ConvOutputShape out = {0};
+   out.batch_size = input->ndim == 3 ? tdim( input, -3 ) : 1;
+   out.channels_out = tdim( weights, 0 );
+
+   int sequence_count_in = tdim(input, -1);
+   int kernel_size = tdim(weights, -1);
+   int hop_length = stride;
+   out.sequence_length = 1 + (sequence_count_in - kernel_size) / hop_length;
+
+   return out;
+}
+
+static inline ConvOutputShape conv_output_shape_shape( ConvOutputShape input_shape, TestTensor *weights, int stride )
+{
+   Assert( weights->ndim == 3 );
+
+   ConvOutputShape out = {0};
+   out.batch_size = input_shape.batch_size;
+   out.channels_out = tdim( weights, 0 );
+
+   int sequence_count_in = input_shape.sequence_length;
+   int kernel_size = tdim( weights, -1 );
+   int hop_length = stride;
+   out.sequence_length = 1 + (sequence_count_in - kernel_size) / hop_length;
+
+   return out;
+}
+
+static inline ConvOutputShape conv_block_output_shape( TestTensor *input, TestTensor *dw_conv_weights, TestTensor *pw_conv_weights )
+{
+   int sequence_count_in = tdim(input, -1);
+   int kernel_size_dw = tdim(dw_conv_weights, -1);
+   int dw_pad = 2;
+
+   // dw_out
+   int batch_size = input->ndim == 3 ? tdim( input, -3 ) : 1;
+   // int channels_out = tdim( dw_conv_weights, 0 );
+   int out_sequence_length_dw = 1 + (sequence_count_in + 2 * dw_pad - kernel_size_dw);
+
+   // pw_out
+   ConvOutputShape out = {0};
+   out.batch_size = batch_size;
+   out.channels_out = tdim(pw_conv_weights, 0);
+   int kernel_size_pw = tdim(pw_conv_weights, -1);
+   out.sequence_length = 1 + (out_sequence_length_dw - kernel_size_pw);
+
+   return out;
+}
+
+static inline TestTensor *tensor_zeros_for_conv( MemoryArena *arena, TestTensor *input, TestTensor *weights, int stride )
+{
+   ConvOutputShape shape = conv_output_shape( input, weights, stride );
+   return tensor_zeros_3d( arena, shape.batch_size, shape.channels_out, shape.sequence_length );
 }

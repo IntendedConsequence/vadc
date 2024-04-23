@@ -424,7 +424,7 @@ TestResult dw_conv_129_test()
    TestTensor *output_tensor = tensor_zeros_like( debug_arena, result );
 
    // TODO(irwin): dehardcode 129, put assert instead
-   dw_conv_tensor( input, 129, weights, biases, output_tensor );
+   dw_conv_tensor( input, weights, biases, output_tensor );
 
    float atol = 1e-4f;
 
@@ -496,7 +496,7 @@ TestResult first_layer_conv_block_test()
 
    TestTensor *output_tensor = tensor_zeros_like( debug_arena, result );
 
-   conv_block( input, 129, 16, 1,
+   conv_block( input, 1,
                dw_conv_weights, dw_conv_biases,
                pw_conv_weights, pw_conv_biases,
                proj_weights, proj_biases,
@@ -792,13 +792,150 @@ TestResult transformer_block_16_16_48_test()
 
    TestTensor *output = tensor_zeros_like( debug_arena, result );
 
-   transformer_block( debug_arena, input, 16, 16, 48,
+   // NOTE(irwin): 16, 16, 48
+   transformer_block( debug_arena, input,
                       attention_weights, attention_biases,
                       attention_proj_weights, attention_proj_biases,
                       norm1_weights, norm1_biases,
                       linear1_weights, linear1_biases,
                       linear2_weights, linear2_biases,
                       norm2_weights, norm2_biases,
+                      output );
+
+   float atol = 1e-4f;
+
+   TestResult test_result = all_close( result->data, output->data, result->size, atol );
+
+   endTemporaryMemory( mark );
+
+   return test_result;
+}
+
+TestResult transformer_first_layer_test()
+{
+   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+
+   LoadTesttensorResult res = {0};
+   res = load_testtensor( "testdata\\transformer_first_layer.testtensor" );
+   if ( res.tensor_count == 0 )
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
+
+   Assert( res.tensor_count == 26 );
+
+   TransformerLayer_Weights transformer_weights = {0};
+
+   /*
+   TestTensor *dw_conv_weights;
+   TestTensor *dw_conv_biases;
+   TestTensor *pw_conv_weights;
+   TestTensor *pw_conv_biases;
+   // NOTE(irwin): optional proj
+   TestTensor *proj_weights;
+   TestTensor *proj_biases;
+
+
+   // NOTE(irwin): attention
+   TestTensor *attention_weights;
+   TestTensor *attention_biases;
+   TestTensor *attention_proj_weights;
+   TestTensor *attention_proj_biases;
+
+   // NOTE(irwin): transformer rest
+   TestTensor *norm1_weights;
+   TestTensor *norm1_biases;
+   TestTensor *linear1_weights;
+   TestTensor *linear1_biases;
+   TestTensor *linear2_weights;
+   TestTensor *linear2_biases;
+   TestTensor *norm2_weights;
+   TestTensor *norm2_biases;
+
+   // NOTE(irwin): conv1d
+   TestTensor *conv_weights;
+   TestTensor *conv_biases;
+
+   // NOTE(irwin): batch norm
+   TestTensor *batch_norm_weights;
+   TestTensor *batch_norm_biases;
+   TestTensor *batch_norm_running_mean;
+   TestTensor *batch_norm_running_var;
+   */
+
+   int test_data_index = 0;
+   TestTensor *dw_conv_weights = res.tensor_array + test_data_index++;
+   TestTensor *dw_conv_biases = res.tensor_array + test_data_index++;
+   TestTensor *pw_conv_weights = res.tensor_array + test_data_index++;
+   TestTensor *pw_conv_biases = res.tensor_array + test_data_index++;
+   TestTensor *proj_weights = res.tensor_array + test_data_index++;
+   TestTensor *proj_biases = res.tensor_array + test_data_index++;
+   
+   TestTensor *attention_weights = res.tensor_array + test_data_index++;
+   TestTensor *attention_biases = res.tensor_array + test_data_index++;
+   TestTensor *attention_proj_weights = res.tensor_array + test_data_index++;
+   TestTensor *attention_proj_biases = res.tensor_array + test_data_index++;
+   
+   TestTensor *norm1_weights = res.tensor_array + test_data_index++;
+   TestTensor *norm1_biases = res.tensor_array + test_data_index++;
+   TestTensor *linear1_weights = res.tensor_array + test_data_index++;
+   TestTensor *linear1_biases = res.tensor_array + test_data_index++;
+   TestTensor *linear2_weights = res.tensor_array + test_data_index++;
+   TestTensor *linear2_biases = res.tensor_array + test_data_index++;
+   TestTensor *norm2_weights = res.tensor_array + test_data_index++;
+   TestTensor *norm2_biases = res.tensor_array + test_data_index++;
+   
+   TestTensor *conv_weights = res.tensor_array + test_data_index++;
+   TestTensor *conv_biases = res.tensor_array + test_data_index++;
+
+   TestTensor *batch_norm_weights = res.tensor_array + test_data_index++;
+   TestTensor *batch_norm_biases = res.tensor_array + test_data_index++;
+   TestTensor *batch_norm_running_mean = res.tensor_array + test_data_index++;
+   TestTensor *batch_norm_running_var = res.tensor_array + test_data_index++;
+
+   transformer_weights.dw_conv_weights = dw_conv_weights;
+   transformer_weights.dw_conv_biases = dw_conv_biases;
+   transformer_weights.pw_conv_weights = pw_conv_weights;
+   transformer_weights.pw_conv_biases = pw_conv_biases;
+   transformer_weights.proj_weights = proj_weights;
+   transformer_weights.proj_biases = proj_biases;
+
+   transformer_weights.attention_weights = attention_weights;
+   transformer_weights.attention_biases = attention_biases;
+   transformer_weights.attention_proj_weights = attention_proj_weights;
+   transformer_weights.attention_proj_biases = attention_proj_biases;
+
+   transformer_weights.norm1_weights = norm1_weights;
+   transformer_weights.norm1_biases = norm1_biases;
+   transformer_weights.linear1_weights = linear1_weights;
+   transformer_weights.linear1_biases = linear1_biases;
+   transformer_weights.linear2_weights = linear2_weights;
+   transformer_weights.linear2_biases = linear2_biases;
+   transformer_weights.norm2_weights = norm2_weights;
+   transformer_weights.norm2_biases = norm2_biases;
+
+   transformer_weights.conv_weights = conv_weights;
+   transformer_weights.conv_biases = conv_biases;
+
+   transformer_weights.batch_norm_weights = batch_norm_weights;
+   transformer_weights.batch_norm_biases = batch_norm_biases;
+   transformer_weights.batch_norm_running_mean = batch_norm_running_mean;
+   transformer_weights.batch_norm_running_var = batch_norm_running_var;
+
+
+
+   TestTensor *input = res.tensor_array + test_data_index++;
+   TestTensor *result = res.tensor_array + test_data_index++;
+
+   TestTensor *output = tensor_zeros_like( debug_arena, result );
+
+   // NOTE(irwin): 16, 16, 48
+   transformer_layer( debug_arena,
+                      input,
+                      transformer_weights,
                       output );
 
    float atol = 1e-4f;
@@ -841,6 +978,7 @@ TestFunctionDescription test_function_descriptions[] =
    TEST_FUNCTION_DESCRIPTION(batch_norm_test),
    TEST_FUNCTION_DESCRIPTION(dual_head_attention_test),
    TEST_FUNCTION_DESCRIPTION(transformer_block_16_16_48_test),
+   TEST_FUNCTION_DESCRIPTION( transformer_first_layer_test ),
    TEST_FUNCTION_DESCRIPTION(stft_test),
    TEST_FUNCTION_DESCRIPTION(adaptive_audio_normalization_test),
    TEST_FUNCTION_DESCRIPTION(lstm_test),

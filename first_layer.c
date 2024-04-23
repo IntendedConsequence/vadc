@@ -53,30 +53,54 @@ void convolve_k5_pad2 ( const float *arr, int count, const float *kernel_flipped
    arr_out_one_before_two_last_elements[2] = bias + dotproduct( arr_pad + 2, kernel_size - 2, kernel_flipped, kernel_size - 2 );
 }
 
-static void dw_conv_tensor ( TestTensor *input, int in_out_channels_groups, TestTensor *filters, TestTensor *biases, TestTensor *output )
+// NOTE(irwin): batch support almost ready
+// but filters are hardcoded to 2 dims
+// usually filters for conv1d are in the shape (out_channels, in_channels/groups, kernel_size)
+// (where out_channels == filter_count)
+// but for dw_conv, in_channels/groups == 1 and it's squeezed out, leaving (out_channels, kernel_size)
+static void dw_conv_tensor ( TestTensor *input, TestTensor *filters, TestTensor *biases, TestTensor *output )
 {
    Assert( tensor_is_valid( input ) );
    Assert( tensor_is_valid( filters ) );
    Assert( tensor_is_valid( biases ) );
    Assert( tensor_is_valid( output ) );
 
-   Assert( input->ndim == 2 );
-   Assert( filters->ndim == 2 );
+   // TODO(irwin): for batch support
+   // - Assert ndim == 3
+   // - batch_size = tdim(input, 0)
+   Assert( input->ndim == 2 || input->ndim == 3 );
+   int batch_size = 1;
+
+   Assert( filters->ndim == 2 || (filters->ndim == 3 && tdim(filters, -2) == 1) );
    Assert( biases->ndim == 1 );
-   Assert( output->ndim == 2 );
+   Assert( output->ndim == input->ndim );
 
-   Assert( input->dims[0] == in_out_channels_groups );
-   Assert( filters->dims[0] == in_out_channels_groups );
-   Assert( biases->dims[0] == in_out_channels_groups );
-   Assert( output->dims[0] == in_out_channels_groups );
 
-   for ( int i = 0; i < in_out_channels_groups; ++i )
+   int sequence_length_in = tdim(input, -1);
+   int in_channels = tdim(input, -2);
+   int out_channels = tdim(filters, 0);
+
+   int in_out_channels_groups = in_channels;
+
+   Assert( out_channels == in_out_channels_groups );
+   Assert( tdim(biases, 0) == out_channels );
+   Assert( tdim(output, -2) == out_channels );
+
+   int batch_stride = input->size / batch_size;
+   int filter_len = tdim( filters, -1 );
+
+   for (int batch_index = 0; batch_index < batch_size; ++batch_index )
    {
-      float *arr_out = index2d( output, i, 0 );
-      float *arr_in = index2d( input, i, 0 );
-      float *arr_filters = index2d( filters, i, 0 );
-      float bias = biases->data[i];
-      convolve_k5_pad2( arr_in, input->dims[1], arr_filters, arr_out, bias );
+      int batch_offset = batch_index * batch_stride;
+      for ( int i = 0; i < in_out_channels_groups; ++i )
+      {
+         float *arr_in = input->data + batch_offset + i * sequence_length_in;
+         float *arr_out = output->data + batch_offset + i * sequence_length_in;
+
+         float *arr_filters = filters->data + i * filter_len;
+         float bias = biases->data[i];
+         convolve_k5_pad2( arr_in, sequence_length_in, arr_filters, arr_out, bias );
+      }
    }
 }
 
@@ -162,10 +186,24 @@ static void conv_tensor ( TestTensor *input, TestTensor *filters, TestTensor *bi
    }
 }
 
+
+static inline TestTensor *conv_tensor_out ( MemoryArena *arena, TestTensor *input, TestTensor *filters, TestTensor *biases, int hop_length )
+{
+   TestTensor *output = tensor_zeros_for_conv( arena, input, filters, hop_length );
+   conv_tensor( input, filters, biases, hop_length, output );
+   return output;
+}
+
 static void pw_conv_tensor ( TestTensor *input, TestTensor *filters, TestTensor *biases, TestTensor *output )
 {
    conv_tensor( input, filters, biases, 1, output );
 }
+
+static inline TestTensor *pw_conv_tensor_out ( MemoryArena *arena, TestTensor *input, TestTensor *filters, TestTensor *biases )
+{
+   return conv_tensor_out( arena, input, filters, biases, 1 );
+}
+
 
 static void conv_tensor_stride64_nobias ( MemoryArena *arena, TestTensor *input, TestTensor *filters, TestTensor *output )
 {
@@ -413,14 +451,12 @@ static void my_stft ( MemoryArena *arena, TestTensor *input, TestTensor *filters
 
 
 
-static void conv_block( TestTensor *input, int in_channels, int out_channels_pw_proj, b32 has_out_proj,
+static void conv_block( TestTensor *input, b32 has_out_proj,
                         TestTensor *dw_weights, TestTensor *dw_biases,
                         TestTensor *pw_weights, TestTensor *pw_biases,
                         TestTensor *proj_weights, TestTensor *proj_biases,
                         TestTensor *output )
 {
-   VAR_UNUSED( out_channels_pw_proj );
-
    Assert( tensor_is_valid( input ) );
    Assert( tensor_is_valid( dw_weights ) );
    Assert( tensor_is_valid( dw_biases ) );
@@ -436,9 +472,10 @@ static void conv_block( TestTensor *input, int in_channels, int out_channels_pw_
    MemoryArena *debug_arena = DEBUG_getDebugArena();
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
-   TestTensor *dw_output = tensor_zeros_2d( debug_arena, input->dims[0], input->dims[1] );
+   //TestTensor *dw_output = tensor_zeros_2d( debug_arena, input->dims[0], input->dims[1] );
+   TestTensor *dw_output = tensor_zeros_like( debug_arena, input );
 
-   dw_conv_tensor( input, in_channels, dw_weights, dw_biases, dw_output );
+   dw_conv_tensor( input, dw_weights, dw_biases, dw_output );
    tensor_relu_inplace( dw_output );
 
    // NOTE(irwin): pw_output size calc
