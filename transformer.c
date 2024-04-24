@@ -366,15 +366,6 @@ struct TransformerLayer_Weights
    TestTensor *batch_norm_biases;
    TestTensor *batch_norm_running_mean;
    TestTensor *batch_norm_running_var;
-
-
-   // TODO(irwin):
-   // - [x] Conv1d (2)
-   // - [x] BatchNorm1d (4)
-   // - [x] ConvBlock
-   //       - [x] Conv1d (2)
-   //       - [x] Conv1d (2)
-   //       - [x] proj (optional) (2)
 };
 
 static void transformer_layer( MemoryArena *arena, TestTensor *input, TransformerLayer_Weights weights, TestTensor *output )
@@ -393,8 +384,9 @@ static void transformer_layer( MemoryArena *arena, TestTensor *input, Transforme
 
    TestTensor* conv_block_output = tensor_zeros_3d( arena, conv_block_out_shape.batch_size, conv_block_out_shape.channels_out, conv_block_out_shape.sequence_length );
    
+   b32 conv_block_has_proj = (weights.proj_weights != 0 && weights.proj_biases != 0);
    // NOTE(irwin): 1 - ConvBlock
-   conv_block( input, 1,
+   conv_block( input, conv_block_has_proj,
                weights.dw_conv_weights, weights.dw_conv_biases,
                weights.pw_conv_weights, weights.pw_conv_biases,
                weights.proj_weights, weights.proj_biases,
