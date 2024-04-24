@@ -201,12 +201,13 @@ static void dual_head_attention( TestTensor *input,
 
 
 
-   // NOTE(irwin): 1.0f / sqrtf(8.0f);
-   //              where 8.0f is the dimensionality of the head
+   // NOTE(irwin): 1.0f / sqrtf(head_length);
+   //              where head_length is the dimensionality of the head
    //              (this is the sqrt(dk) in the paper Attention Is All You Need
    //              https://arxiv.org/pdf/1706.03762.pdf)
    // NOTE(irwin): this is done for numerical stability
-   const float scale = 0.3535533905932737622f;
+   const float scale = 1.0f / sqrtf((float)head_length);
+
    tensor_mul_inplace( a1, scale );
    tensor_mul_inplace( a2, scale );
 
