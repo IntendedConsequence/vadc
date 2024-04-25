@@ -502,6 +502,10 @@ static void conv_block( TestTensor *input, b32 has_out_proj,
 
       add_arrays_inplace( pw_output->data, pw_output->size, out_proj->data );
    }
+   else
+   {
+      add_arrays_inplace( pw_output->data, pw_output->size, input->data );
+   }
 
    tensor_relu_inplace( output );
 
