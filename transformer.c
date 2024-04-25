@@ -368,14 +368,14 @@ struct TransformerLayer_Weights
    TestTensor *batch_norm_running_var;
 };
 
-static void transformer_layer( MemoryArena *arena, TestTensor *input, TransformerLayer_Weights weights, TestTensor *output )
+static void transformer_layer( MemoryArena *arena, TestTensor *input, TransformerLayer_Weights weights, int conv_stride, TestTensor *output )
 {
    TemporaryMemory mark = beginTemporaryMemory( arena );
 
    ConvOutputShape conv_block_out_shape = conv_block_output_shape( input, weights.dw_conv_weights, weights.pw_conv_weights );
 
    {
-      ConvOutputShape output_required_shape = conv_output_shape_shape( conv_block_out_shape, weights.conv_weights, 2 );
+      ConvOutputShape output_required_shape = conv_output_shape_shape( conv_block_out_shape, weights.conv_weights, conv_stride );
       // TODO(irwin): verify
       Assert( output_required_shape.batch_size == tdim( output, 0 ) );
       Assert( output_required_shape.channels_out == tdim( output, 1 ) );
@@ -407,7 +407,7 @@ static void transformer_layer( MemoryArena *arena, TestTensor *input, Transforme
                      transformer_block_output);
 
    // NOTE(irwin): 3 - Conv1d
-   int hop_length = 2;
+   int hop_length = conv_stride;
    TestTensor *conv_output = conv_tensor_out ( arena, transformer_block_output, weights.conv_weights, weights.conv_biases, hop_length );
 
    batch_norm1d( conv_output,

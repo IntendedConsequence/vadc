@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include <stdbool.h> //true, false
 #include <stdio.h> //fprintf, stderr
 #include <string.h> //memcpy, memset
 #include <assert.h> //assert
