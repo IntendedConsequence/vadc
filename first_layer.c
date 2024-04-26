@@ -379,6 +379,15 @@ static void adaptive_audio_normalization_inplace(MemoryArena *arena, TestTensor 
    */
 }
 
+static inline int compute_stft_output_feature_count( TestTensor *input, TestTensor *filters, int hop_length )
+{
+   int filter_length = tdim( filters, 2 );
+   int padding = filter_length / 2;
+   int features_count = (tdim( input, -1 ) + padding * 2 - filter_length) / hop_length + 1; // padded (128 + 1536 + 128) - filter first (256) / hop length (64) + filter first (1)
+   
+   return features_count;
+}
+
 static void my_stft ( MemoryArena *arena, TestTensor *input, TestTensor *filters, TestTensor *output )
 {
    Assert(filters->ndim == 3);
@@ -394,7 +403,9 @@ static void my_stft ( MemoryArena *arena, TestTensor *input, TestTensor *filters
    int half_filter_length = filter_length / 2;
    int cutoff = half_filter_length + 1;
    int hop_length = 64;
-   int features_count = (tdim(input, -1) + padding * 2 - filter_length) / hop_length + 1; // padded (128 + 1536 + 128) - filter first (256) / hop length (64) + filter first (1)
+   //int features_count = (tdim(input, -1) + padding * 2 - filter_length) / hop_length + 1; // padded (128 + 1536 + 128) - filter first (256) / hop length (64) + filter first (1)
+   
+   int features_count = compute_stft_output_feature_count( input, filters, hop_length );
 
    Assert(tdim(output, 0) == tdim(input, 0));
    Assert(tdim(output, 1) == cutoff);
