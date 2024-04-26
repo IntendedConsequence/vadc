@@ -478,19 +478,6 @@ static void conv_block( TestTensor *input, b32 has_out_proj,
    dw_conv_tensor( input, dw_weights, dw_biases, dw_output );
    tensor_relu_inplace( dw_output );
 
-   // NOTE(irwin): pw_output size calc
-   int pw_output_dims[] = {0, 0};
-   {
-      int array_count = dw_output->dims[1];
-      int out_channels = pw_weights->dims[0];
-      int filter_count = out_channels;
-      int kernel_size = pw_weights->dims[2];
-      int output_array_count = array_count - kernel_size + 1;
-
-      pw_output_dims[0] = filter_count;
-      pw_output_dims[1] = output_array_count;
-   }
-
    TestTensor *pw_output = output;
    // TestTensor *pw_output = tensor_zeros_2d(debug_arena, pw_output_dims[0], pw_output_dims[1]);
    pw_conv_tensor( dw_output, pw_weights, pw_biases, pw_output );
