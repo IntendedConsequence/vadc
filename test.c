@@ -1071,6 +1071,58 @@ TestResult transformer_layers_1_2_3_test()
    return test_result;
 }
 
+TestResult transformer_layers_3_test()
+{
+   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+
+   LoadTesttensorResult res = {0};
+   res = load_testtensor( "testdata\\transformer_layers_3.testtensor" );
+   if ( res.tensor_count == 0 )
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
+
+   Assert( res.tensor_count == (22 + 2) );
+
+   TransformerLayer_Weights transformer_weights_l3 = {0};
+
+   int test_data_index = 0;
+   test_data_index += fill_transformer_weights( &transformer_weights_l3, res.tensor_array + test_data_index, false );
+
+
+   TestTensor *input = res.tensor_array + test_data_index++;
+   TestTensor *result = res.tensor_array + test_data_index++;
+
+   TestTensor *output = tensor_zeros_like( debug_arena, result );
+
+
+   transformer_layer( debug_arena,
+                      input,
+                      transformer_weights_l3,
+                      1,
+                      output );
+
+   float atol = 1e-4f;
+
+   TestResult test_result = all_close( result->data, output->data, result->size, atol );
+
+#if 0
+   if ( test_result.max_error > atol )
+   {
+      //const char *funcname = __FUNCTION__;
+      dump_tensor_hdr( "output.hdr", output );
+      dump_tensor_hdr( "output_expected.hdr", result );
+   }
+#endif
+
+   endTemporaryMemory( mark );
+
+   return test_result;
+}
+
 static const char *result_strings[] =
 {
    "FAIL",
@@ -1104,6 +1156,7 @@ TestFunctionDescription test_function_descriptions[] =
    TEST_FUNCTION_DESCRIPTION(transformer_block_16_16_48_test),
    TEST_FUNCTION_DESCRIPTION( transformer_first_layer_test ),
    TEST_FUNCTION_DESCRIPTION( transformer_layers_1_2_test ),
+   TEST_FUNCTION_DESCRIPTION( transformer_layers_3_test ),
    TEST_FUNCTION_DESCRIPTION( transformer_layers_1_2_3_test ),
    TEST_FUNCTION_DESCRIPTION(stft_test),
    TEST_FUNCTION_DESCRIPTION(adaptive_audio_normalization_test),
