@@ -16,6 +16,10 @@
 #define MEMORY_IMPLEMENTATION
 #include "memory.h"
 
+#define STBIW_ASSERT(x) Assert(x)
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
 typedef struct TestTensor_Header TestTensor_Header;
 struct TestTensor_Header
 {
@@ -986,6 +990,13 @@ TestResult transformer_layers_1_2_test()
    endTemporaryMemory( mark );
 
    return test_result;
+}
+
+static inline void dump_tensor_hdr(const char *filename, TestTensor *tensor)
+{
+   int w = tdim( tensor, -1 );
+   int h = tensor->size / w;
+   stbi_write_hdr( filename, w, h, 1, tensor->data );
 }
 
 TestResult transformer_layers_1_2_3_test()
