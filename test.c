@@ -1071,6 +1071,93 @@ TestResult transformer_layers_1_2_3_test()
    return test_result;
 }
 
+TestResult transformer_layers_1_2_3_4_test()
+{
+   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+
+   LoadTesttensorResult res = {0};
+   res = load_testtensor( "testdata\\transformer_layers_1_2_3_4.testtensor" );
+   if ( res.tensor_count == 0 )
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
+
+   Assert( res.tensor_count == (24 + 24 + 22 + 24 + 2) );
+
+   TransformerLayer_Weights transformer_weights_l1 = {0};
+   TransformerLayer_Weights transformer_weights_l2 = {0};
+   TransformerLayer_Weights transformer_weights_l3 = {0};
+   TransformerLayer_Weights transformer_weights_l4 = {0};
+
+   int test_data_index = 0;
+   test_data_index += fill_transformer_weights( &transformer_weights_l1, res.tensor_array + test_data_index, true );
+   test_data_index += fill_transformer_weights( &transformer_weights_l2, res.tensor_array + test_data_index, true );
+   test_data_index += fill_transformer_weights( &transformer_weights_l3, res.tensor_array + test_data_index, false );
+   test_data_index += fill_transformer_weights( &transformer_weights_l4, res.tensor_array + test_data_index, true );
+
+
+   TestTensor *input = res.tensor_array + test_data_index++;
+   TestTensor *result = res.tensor_array + test_data_index++;
+
+   TestTensor *l1_output = 0;
+   {
+      ConvOutputShape conv_block_out_shape = conv_block_output_shape( input, transformer_weights_l1.dw_conv_weights, transformer_weights_l1.pw_conv_weights );
+      ConvOutputShape l1_output_required_shape = conv_output_shape_shape( conv_block_out_shape, transformer_weights_l1.conv_weights, 2 );
+      l1_output = tensor_zeros_3d( debug_arena, l1_output_required_shape.batch_size, l1_output_required_shape.channels_out, l1_output_required_shape.sequence_length );
+   }
+
+   TestTensor *l2_output = 0;
+   {
+      ConvOutputShape conv_block_out_shape = conv_block_output_shape( l1_output, transformer_weights_l2.dw_conv_weights, transformer_weights_l2.pw_conv_weights );
+      ConvOutputShape l2_output_required_shape = conv_output_shape_shape( conv_block_out_shape, transformer_weights_l2.conv_weights, 2 );
+      l2_output = tensor_zeros_3d( debug_arena, l2_output_required_shape.batch_size, l2_output_required_shape.channels_out, l2_output_required_shape.sequence_length );
+   }
+   
+   TestTensor *l3_output = 0;
+   {
+      ConvOutputShape conv_block_out_shape = conv_block_output_shape( l2_output, transformer_weights_l3.dw_conv_weights, transformer_weights_l3.pw_conv_weights );
+      ConvOutputShape l3_output_required_shape = conv_output_shape_shape( conv_block_out_shape, transformer_weights_l3.conv_weights, 1 );
+      l3_output = tensor_zeros_3d( debug_arena, l3_output_required_shape.batch_size, l3_output_required_shape.channels_out, l3_output_required_shape.sequence_length );
+   }
+
+   TestTensor *output = tensor_zeros_like( debug_arena, result );
+
+   transformer_layer( debug_arena,
+                      input,
+                      transformer_weights_l1,
+                      2,
+                      l1_output );
+
+   transformer_layer( debug_arena,
+                      l1_output,
+                      transformer_weights_l2,
+                      2,
+                      l2_output );
+
+   transformer_layer( debug_arena,
+                      l2_output,
+                      transformer_weights_l3,
+                      1,
+                      l3_output );
+
+   transformer_layer( debug_arena,
+                      l3_output,
+                      transformer_weights_l4,
+                      1,
+                      output );
+
+   float atol = 1e-4f;
+
+   TestResult test_result = all_close( result->data, output->data, result->size, atol );
+
+   endTemporaryMemory( mark );
+
+   return test_result;
+}
+
 TestResult transformer_layers_3_test()
 {
    MemoryArena *debug_arena = DEBUG_getDebugArena();
@@ -1158,6 +1245,7 @@ TestFunctionDescription test_function_descriptions[] =
    TEST_FUNCTION_DESCRIPTION( transformer_layers_1_2_test ),
    TEST_FUNCTION_DESCRIPTION( transformer_layers_3_test ),
    TEST_FUNCTION_DESCRIPTION( transformer_layers_1_2_3_test ),
+   TEST_FUNCTION_DESCRIPTION( transformer_layers_1_2_3_4_test ),
    TEST_FUNCTION_DESCRIPTION(stft_test),
    TEST_FUNCTION_DESCRIPTION(adaptive_audio_normalization_test),
    TEST_FUNCTION_DESCRIPTION(lstm_test),
