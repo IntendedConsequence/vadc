@@ -417,11 +417,21 @@ static void my_stft ( MemoryArena *arena, TestTensor *input, TestTensor *filters
    // int mock_biases_dims[1] = { filters->dims[0] };
    // TestTensor *biases = tensor_zeros( arena, ArrayCount(mock_biases_dims), mock_biases_dims );
 
-   TestTensor *input_padded = tensor_reflect_pad_last_dim( arena, input, padding );
+   TestTensor input_3d = {0};
+   if (input->ndim == 2)
+   {
+      input_3d = tensor_unsqueeze( arena, input, 1 );
+   }
+   else
+   {
+      input_3d = *input;
+   }
+
+   TestTensor *input_padded = tensor_reflect_pad_last_dim( arena, &input_3d, padding );
 
    int output_ndim = 3;
    int output_dims[3] = {0};
-   output_dims[0] = tdim(input, 0); // 1 (+, if batched)
+   output_dims[0] = tdim( &input_3d, 0); // 1 (+, if batched)
    output_dims[1] = tdim(filters, 0); // 258
    output_dims[2] = features_count; // 25
 
