@@ -244,7 +244,7 @@ static inline void tensor_add_inplace_nd( TestTensor *lhs, TestTensor *rhs )
    add_arrays_inplace( lhs->data, lhs->size, rhs->data );
 }
 
-static inline TestTensor *tensor_transpose_2d( MemoryArena *arena, TestTensor *source )
+static inline TestTensor *tensor_transpose_2d_( MemoryArena *arena, TestTensor *source )
 {
    TestTensor *output = tensor_zeros_like( arena, source );
    float *data = output->data;
@@ -261,6 +261,46 @@ static inline TestTensor *tensor_transpose_2d( MemoryArena *arena, TestTensor *s
 
    output->dims[0] = source->dims[1];
    output->dims[1] = source->dims[0];
+
+   return output;
+}
+
+//static inline TestTensor *tensor_transpose_last_2d( MemoryArena *arena, TestTensor *source )
+static inline TestTensor *tensor_transpose_2d( MemoryArena *arena, TestTensor *source )
+{
+   Assert( source->ndim >= 2 );
+
+   TestTensor *output = tensor_zeros_like( arena, source );
+
+   output->dims[tdimindex( source, -2 )] = tdim( source, -1 );
+   output->dims[tdimindex( source, -1 )] = tdim( source, -2 );
+
+
+   int columns = tdim( source, -1 );
+   int rows = tdim( source, -2 );
+   int row_stride = columns;
+
+   int batch_stride = columns * rows;
+   int batch_count = source->size / batch_stride;
+
+   for (int batch_index = 0; batch_index < batch_count; ++batch_index)
+   {
+      float *output_data_batch = output->data + batch_index * batch_stride;
+      float *source_data_batch = source->data + batch_index * batch_stride;
+
+      float *data = output_data_batch;
+
+      for ( int x = 0; x < columns; ++x )
+      {
+         for ( int y = 0; y < rows; ++y )
+         {
+            float value = source_data_batch[y * row_stride + x];
+            *data++ = value;
+         }
+      }
+
+      Assert( data - output_data_batch == batch_stride );
+   }
 
    return output;
 }
