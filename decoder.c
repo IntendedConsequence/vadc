@@ -96,3 +96,11 @@ int decoder ( float *input, int *input_dims, int input_ndims, float *weights, in
 
    return result_ok;
 }
+
+int decoder_tensor ( TestTensor *input, TestTensor *weights, TestTensor *biases, TestTensor *output )
+{
+   return decoder( input->data, input->dims, input->ndim,
+                   weights->data, weights->dims, weights->ndim,
+                   biases->data, biases - dims, biases->ndim,
+                   output->data, output->dims, output->ndim );
+}
