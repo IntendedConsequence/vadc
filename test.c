@@ -996,6 +996,23 @@ static inline void dump_tensor_hdr(const char *filename, TestTensor *tensor)
 {
    int w = tdim( tensor, -1 );
    int h = tensor->size / w;
+
+   float ar = (float)mymin( w, h ) / mymax( w, h );
+   for (int i = 1; i < tensor->size; ++i)
+   {
+      if (tensor->size % i == 0)
+      {
+         int w2 = i;
+         int h2 = tensor->size / w2;
+         float ar2 = (float)mymin( w2, h2 ) / mymax( w2, h2 );
+         if (ar2 > ar)
+         {
+            ar = ar2;
+            w = w2;
+            h = h2;
+         }
+      }
+   }
    stbi_write_hdr( filename, w, h, 1, tensor->data );
 }
 
