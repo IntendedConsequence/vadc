@@ -101,6 +101,6 @@ int decoder_tensor ( TestTensor *input, TestTensor *weights, TestTensor *biases,
 {
    return decoder( input->data, input->dims, input->ndim,
                    weights->data, weights->dims, weights->ndim,
-                   biases->data, biases - dims, biases->ndim,
+                   biases->data, biases->dims, biases->ndim,
                    output->data, output->dims, output->ndim );
 }
