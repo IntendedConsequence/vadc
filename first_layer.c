@@ -289,7 +289,7 @@ static void adaptive_audio_normalization_inplace(MemoryArena *arena, TestTensor 
    TestTensor input_unsqueezed = *input;
    if (input->ndim == 2)
    {
-      input_unsqueezed = tensor_unsqueeze(arena, input, 0);
+      input_unsqueezed = tensor_unsqueeze(input, 0);
    }
 
    TestTensor *mean = tensor_zeros_3d(arena, input_unsqueezed.dims[0], 1, input_unsqueezed.dims[2]);
@@ -419,7 +419,7 @@ static void my_stft ( MemoryArena *arena, TestTensor *input, TestTensor *filters
    TestTensor input_3d = {0};
    if (input->ndim == 2)
    {
-      input_3d = tensor_unsqueeze( arena, input, 1 );
+      input_3d = tensor_unsqueeze( input, 1 );
    }
    else
    {

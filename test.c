@@ -542,7 +542,7 @@ TestResult transpose2d_test()
    reference->data[4] = 3.0f;
    reference->data[5] = 6.0f;
 
-   TestTensor *output_tensor = tensor_transpose_2d( debug_arena, source );
+   TestTensor *output_tensor = tensor_transpose_last_2d( debug_arena, source );
 
    float atol = 1e-4f;
 
@@ -1275,7 +1275,7 @@ TestResult stft_normalization_encoder_lstm_test()
 
    encoder( debug_arena, normalization_output, encoder_weights, l4_output );
 
-   TestTensor *l4_output_t = tensor_transpose_2d(debug_arena, l4_output);
+   TestTensor *l4_output_t = tensor_transpose_last_2d(debug_arena, l4_output);
 
    int batches = tdim( l4_output_t, -3);
    int seq_length = tdim( l4_output_t, -2);
@@ -1374,7 +1374,7 @@ TestResult stft_normalization_encoder_lstm_decoder_test()
 
    encoder( debug_arena, normalization_output, encoder_weights, l4_output );
 
-   TestTensor *l4_output_t = tensor_transpose_2d(debug_arena, l4_output);
+   TestTensor *l4_output_t = tensor_transpose_last_2d(debug_arena, l4_output);
 
    int batches = tdim( l4_output_t, -3);
    int seq_length = tdim( l4_output_t, -2);
@@ -1403,7 +1403,7 @@ TestResult stft_normalization_encoder_lstm_decoder_test()
 
    TestTensor *lstm_output_tensor = tensor_zeros_3d( debug_arena, batches, seq_length, input_size );
    memmove( lstm_output_tensor->data, lstm_output, lstm_output_tensor->nbytes );
-   TestTensor *lstm_output_tensor_t = tensor_transpose_2d( debug_arena, lstm_output_tensor );
+   TestTensor *lstm_output_tensor_t = tensor_transpose_last_2d( debug_arena, lstm_output_tensor );
 
    int decoder_output_size = batches * tdim( decoder_weights, 0 );
    Assert( decoder_output_size == output->size );
@@ -1475,8 +1475,7 @@ TestResult silero_test()
    {
       TemporaryMemory batch_mark = beginTemporaryMemory( debug_arena );
 
-      TestTensor input_one_batch = tensor_slice_first_dim( input_batches, batch_index );
-      TestTensor input_one_batch_sq = tensor_unsqueeze( debug_arena, &input_one_batch, 0 );
+      TestTensor input_one_batch = tensor_index_first_dim( input_batches, batch_index, true );
 
       int cutoff;
       {
@@ -1485,10 +1484,10 @@ TestResult silero_test()
          cutoff = half_filter_length + 1;
       }
       // TODO(irwin): dehardcode 64 hop_length
-      int stft_out_features_count = compute_stft_output_feature_count( &input_one_batch_sq, forward_basis_buffer, 64 );
-      TestTensor *stft_output = tensor_zeros_3d( debug_arena, tdim( &input_one_batch_sq, -2 ), cutoff, stft_out_features_count );
+      int stft_out_features_count = compute_stft_output_feature_count( &input_one_batch, forward_basis_buffer, 64 );
+      TestTensor *stft_output = tensor_zeros_3d( debug_arena, tdim( &input_one_batch, -2 ), cutoff, stft_out_features_count );
 
-      my_stft( debug_arena, &input_one_batch_sq, forward_basis_buffer, stft_output );
+      my_stft( debug_arena, &input_one_batch, forward_basis_buffer, stft_output );
 
       TestTensor *normalization_output = tensor_copy( debug_arena, stft_output );
       adaptive_audio_normalization_inplace( debug_arena, normalization_output );
@@ -1498,7 +1497,7 @@ TestResult silero_test()
 
       encoder( debug_arena, normalization_output, encoder_weights, l4_output );
 
-      TestTensor *l4_output_t = tensor_transpose_2d( debug_arena, l4_output );
+      TestTensor *l4_output_t = tensor_transpose_last_2d( debug_arena, l4_output );
 
       int batches = tdim( l4_output_t, -3 );
       int seq_length = tdim( l4_output_t, -2 );
@@ -1538,7 +1537,7 @@ TestResult silero_test()
       memmove( lstm_output_h->data, lstm_output + lstm_output_tensor->size, lstm_output_h->nbytes );
       memmove( lstm_output_c->data, lstm_output + lstm_output_tensor->size + lstm_output_h->size, lstm_output_c->nbytes );
 
-      TestTensor *lstm_output_tensor_t = tensor_transpose_2d( debug_arena, lstm_output_tensor );
+      TestTensor *lstm_output_tensor_t = tensor_transpose_last_2d( debug_arena, lstm_output_tensor );
 
       int decoder_output_size = batches * tdim( decoder_weights, 0 );
 

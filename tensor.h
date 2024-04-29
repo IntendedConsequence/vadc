@@ -6,8 +6,6 @@ typedef struct TestTensor TestTensor;
 
 struct TestTensor
 {
-   // int dummy_;
-   // int dummy2_;
    int ndim;
    int dims[8];
    int size;
@@ -105,9 +103,8 @@ static inline b32 tensor_is_valid( TestTensor *tensor )
    return (!!tensor->data) & (!!tensor->nbytes) & (!!tensor->size) & (!!tensor->ndim) & (!!tensor->dims);
 }
 
-static inline TestTensor tensor_unsqueeze( MemoryArena *arena, TestTensor *tensor, int dim )
+static inline TestTensor tensor_unsqueeze( TestTensor *tensor, int dim )
 {
-   VAR_UNUSED( arena );
    Assert( tensor_is_valid( tensor ) );
 
    dim = tdimindex( tensor, dim );
@@ -133,9 +130,8 @@ static inline TestTensor tensor_unsqueeze( MemoryArena *arena, TestTensor *tenso
    return result;
 }
 
-static inline TestTensor tensor_squeeze( MemoryArena *arena, TestTensor *tensor, int dim )
+static inline TestTensor tensor_squeeze( TestTensor *tensor, int dim )
 {
-   VAR_UNUSED( arena );
    Assert( tensor_is_valid( tensor ) );
 
    dim = tdimindex( tensor, dim );
@@ -164,7 +160,7 @@ static inline TestTensor tensor_squeeze( MemoryArena *arena, TestTensor *tensor,
 }
 
 // NOTE(irwin): contiguous only
-static inline TestTensor tensor_slice_first_dim( TestTensor *tensor_to_slice, int at_index )
+static inline TestTensor tensor_index_first_dim( TestTensor *tensor_to_slice, int at_index, b32 keep_dim )
 {
    Assert( tensor_is_valid( tensor_to_slice ) );
    Assert( at_index >= 0 );
@@ -184,8 +180,17 @@ static inline TestTensor tensor_slice_first_dim( TestTensor *tensor_to_slice, in
       }
       else
       {
-         result.ndim = tensor_to_slice->ndim - 1;
-         for ( int i = 0; i < result.ndim; ++i ) result.dims[i] = tensor_to_slice->dims[i+1];
+         if ( keep_dim )
+         {
+            result.ndim = tensor_to_slice->ndim;
+            for ( int i = 0; i < result.ndim; ++i ) result.dims[i] = tensor_to_slice->dims[i];
+            result.dims[0] = 1;
+         }
+         else
+         {
+            result.ndim = tensor_to_slice->ndim - 1;
+            for ( int i = 0; i < result.ndim; ++i ) result.dims[i] = tensor_to_slice->dims[i + 1];
+         }
       }
 
       result.size = first_dimension_stride;
@@ -204,6 +209,7 @@ static inline void zero_tensor( TestTensor *tensor_to_zero )
 static inline TestTensor *tensor_zeros( MemoryArena *arena, int ndim, int dims[] )
 {
    TestTensor *result = pushStruct( arena, TestTensor );
+   Assert( ndim <= 8 );
    result->ndim = ndim;
 
    static_assert(sizeof( result->dims[0] ) == sizeof( int ), "ERROR");
@@ -297,29 +303,8 @@ static inline void tensor_add_inplace_nd( TestTensor *lhs, TestTensor *rhs )
    add_arrays_inplace( lhs->data, lhs->size, rhs->data );
 }
 
-static inline TestTensor *tensor_transpose_2d_( MemoryArena *arena, TestTensor *source )
-{
-   TestTensor *output = tensor_zeros_like( arena, source );
-   float *data = output->data;
-   for ( int x = 0; x < source->dims[1]; ++x )
-   {
-      for ( int y = 0; y < source->dims[0]; ++y )
-      {
-         float value = *index2d( source, y, x );
-         *data++ = value;
-      }
-   }
 
-   Assert( data - output->data == output->size );
-
-   output->dims[0] = source->dims[1];
-   output->dims[1] = source->dims[0];
-
-   return output;
-}
-
-//static inline TestTensor *tensor_transpose_last_2d( MemoryArena *arena, TestTensor *source )
-static inline TestTensor *tensor_transpose_2d( MemoryArena *arena, TestTensor *source )
+static inline TestTensor *tensor_transpose_last_2d( MemoryArena *arena, TestTensor *source )
 {
    Assert( source->ndim >= 2 );
 

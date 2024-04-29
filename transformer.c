@@ -162,7 +162,7 @@ static void dual_head_attention( TestTensor *input,
    TestTensor *QKV_result = tensor_zeros_2d( debug_arena, seq_length, out_features );
    tensor_linear( input, QKV_weights, QKV_biases, QKV_result );
 
-   TestTensor *QKV_result_T = tensor_transpose_2d( debug_arena, QKV_result );
+   TestTensor *QKV_result_T = tensor_transpose_last_2d( debug_arena, QKV_result );
    int head_size = seq_length * head_length;
 
    TestTensor head_ref = {.ndim = 2, .dims = {head_length, seq_length}};
@@ -173,17 +173,17 @@ static void dual_head_attention( TestTensor *input,
    head_ref.nbytes = head_size * sizeof( float );
 
    head_ref.data = QKV_result_T->data;
-   TestTensor *q1 = tensor_transpose_2d( debug_arena, &head_ref );
+   TestTensor *q1 = tensor_transpose_last_2d( debug_arena, &head_ref );
 
    head_ref.data += head_size;
-   TestTensor *q2 = tensor_transpose_2d( debug_arena, &head_ref );
+   TestTensor *q2 = tensor_transpose_last_2d( debug_arena, &head_ref );
 
 
    head_ref.data += head_size;
-   TestTensor *k1 = tensor_transpose_2d( debug_arena, &head_ref );
+   TestTensor *k1 = tensor_transpose_last_2d( debug_arena, &head_ref );
 
    head_ref.data += head_size;
-   TestTensor *k2 = tensor_transpose_2d( debug_arena, &head_ref );
+   TestTensor *k2 = tensor_transpose_last_2d( debug_arena, &head_ref );
 
 
    head_ref.data += head_size;
@@ -225,8 +225,8 @@ static void dual_head_attention( TestTensor *input,
 
    // [8, 25]
    // [8, 25]
-   TestTensor *attn1_t = tensor_transpose_2d( debug_arena, attn1 );
-   TestTensor *attn2_t = tensor_transpose_2d( debug_arena, attn2 );
+   TestTensor *attn1_t = tensor_transpose_last_2d( debug_arena, attn1 );
+   TestTensor *attn2_t = tensor_transpose_last_2d( debug_arena, attn2 );
 
    // [16, 25]
    // TODO(irwin): tensor_concat routine
@@ -235,7 +235,7 @@ static void dual_head_attention( TestTensor *input,
    memmove( attn12_t->data + attn1_t->size, attn2_t->data, attn2_t->nbytes );
 
    // [25, 16]
-   TestTensor *attention = tensor_transpose_2d( debug_arena, attn12_t );
+   TestTensor *attention = tensor_transpose_last_2d( debug_arena, attn12_t );
 
    // [25, 16] x [16, 16] + [16] = [25, 16]
    tensor_linear( attention, proj_weights, proj_biases, output );
@@ -263,7 +263,7 @@ static void transformer_block( MemoryArena *arena, TestTensor *input,
 
    TemporaryMemory mark = beginTemporaryMemory( arena );
 
-   TestTensor *input_transposed = tensor_transpose_2d( arena, input );
+   TestTensor *input_transposed = tensor_transpose_last_2d( arena, input );
    TestTensor *attention_output = tensor_zeros_like( arena, input_transposed );
 
    dual_head_attention( input_transposed,
@@ -291,7 +291,7 @@ static void transformer_block( MemoryArena *arena, TestTensor *input,
    TestTensor *norm2_output = tensor_zeros_like( arena, norm1_output );
    layer_norm( norm1_output, norm2_weights, norm2_biases, norm2_output );
 
-   TestTensor *output_copy_source = tensor_transpose_2d( arena, norm2_output );
+   TestTensor *output_copy_source = tensor_transpose_last_2d( arena, norm2_output );
    Assert(output->nbytes == output_copy_source->nbytes);
    memmove( output->data, output_copy_source->data, output->nbytes );
 
@@ -313,8 +313,8 @@ static void transformer_block_batch( MemoryArena *arena, TestTensor *input,
    int batch_size = tdim( input, 0 );
    for ( int batch_index = 0; batch_index < batch_size; ++batch_index )
    {
-      TestTensor input_slice = tensor_slice_first_dim( input, batch_index );
-      TestTensor output_slice = tensor_slice_first_dim( output, batch_index );
+      TestTensor input_slice = tensor_index_first_dim( input, batch_index, false );
+      TestTensor output_slice = tensor_index_first_dim( output, batch_index, false );
 
       transformer_block( arena, &input_slice, 
                          attention_weights, attention_biases, 
