@@ -815,43 +815,6 @@ TestResult transformer_block_16_16_48_test()
    return test_result;
 }
 
-/*
-TestTensor *dw_conv_weights;
-TestTensor *dw_conv_biases;
-TestTensor *pw_conv_weights;
-TestTensor *pw_conv_biases;
-// NOTE(irwin): optional proj
-TestTensor *proj_weights;
-TestTensor *proj_biases;
-
-
-// NOTE(irwin): attention
-TestTensor *attention_weights;
-TestTensor *attention_biases;
-TestTensor *attention_proj_weights;
-TestTensor *attention_proj_biases;
-
-// NOTE(irwin): transformer rest
-TestTensor *norm1_weights;
-TestTensor *norm1_biases;
-TestTensor *linear1_weights;
-TestTensor *linear1_biases;
-TestTensor *linear2_weights;
-TestTensor *linear2_biases;
-TestTensor *norm2_weights;
-TestTensor *norm2_biases;
-
-// NOTE(irwin): conv1d
-TestTensor *conv_weights;
-TestTensor *conv_biases;
-
-// NOTE(irwin): batch norm
-TestTensor *batch_norm_weights;
-TestTensor *batch_norm_biases;
-TestTensor *batch_norm_running_mean;
-TestTensor *batch_norm_running_var;
-*/
-
 static inline int fill_transformer_weights( TransformerLayer_Weights *weights, TestTensor *tensor_array, b32 has_out_proj )
 {
    int test_data_index = 0;
@@ -888,6 +851,24 @@ static inline int fill_transformer_weights( TransformerLayer_Weights *weights, T
    weights->batch_norm_biases = tensor_array + test_data_index++;
    weights->batch_norm_running_mean = tensor_array + test_data_index++;
    weights->batch_norm_running_var = tensor_array + test_data_index++;
+
+   return test_data_index;
+}
+
+static inline int fill_encoder_weights(Encoder_Weights *encoder_weights, TestTensor *tensor_array)
+{
+   int test_data_index = 0;
+
+   encoder_weights->l1_conv_stride = 2;
+   encoder_weights->l2_conv_stride = 2;
+   encoder_weights->l3_conv_stride = 1;
+   encoder_weights->l4_conv_stride = 1;
+
+
+   test_data_index += fill_transformer_weights( &encoder_weights->l1, tensor_array + test_data_index, true );
+   test_data_index += fill_transformer_weights( &encoder_weights->l2, tensor_array + test_data_index, true );
+   test_data_index += fill_transformer_weights( &encoder_weights->l3, tensor_array + test_data_index, false );
+   test_data_index += fill_transformer_weights( &encoder_weights->l4, tensor_array + test_data_index, true );
 
    return test_data_index;
 }
@@ -1102,69 +1083,24 @@ TestResult transformer_layers_1_2_3_4_test()
       return test_result;
    }
 
-   Assert( res.tensor_count == (24 + 24 + 22 + 24 + 2) );
-
-   TransformerLayer_Weights transformer_weights_l1 = {0};
-   TransformerLayer_Weights transformer_weights_l2 = {0};
-   TransformerLayer_Weights transformer_weights_l3 = {0};
-   TransformerLayer_Weights transformer_weights_l4 = {0};
+   int encoder_weights_count = 24 + 24 + 22 + 24;
+   Assert( res.tensor_count == (encoder_weights_count + 2) );
 
    int test_data_index = 0;
-   test_data_index += fill_transformer_weights( &transformer_weights_l1, res.tensor_array + test_data_index, true );
-   test_data_index += fill_transformer_weights( &transformer_weights_l2, res.tensor_array + test_data_index, true );
-   test_data_index += fill_transformer_weights( &transformer_weights_l3, res.tensor_array + test_data_index, false );
-   test_data_index += fill_transformer_weights( &transformer_weights_l4, res.tensor_array + test_data_index, true );
 
+   // NOTE(irwin): encoder weights
+   Encoder_Weights encoder_weights = {0};
+   int encoder_weights_read = fill_encoder_weights( &encoder_weights, res.tensor_array + test_data_index );
+   Assert( encoder_weights_read == encoder_weights_count );
+   test_data_index += encoder_weights_read;
 
    TestTensor *input = res.tensor_array + test_data_index++;
    TestTensor *result = res.tensor_array + test_data_index++;
 
-   TestTensor *l1_output = 0;
-   {
-      ConvOutputShape conv_block_out_shape = conv_block_output_shape( input, transformer_weights_l1.dw_conv_weights, transformer_weights_l1.pw_conv_weights );
-      ConvOutputShape l1_output_required_shape = conv_output_shape_shape( conv_block_out_shape, transformer_weights_l1.conv_weights, 2 );
-      l1_output = tensor_zeros_3d( debug_arena, l1_output_required_shape.batch_size, l1_output_required_shape.channels_out, l1_output_required_shape.sequence_length );
-   }
+   ConvOutputShape l4_output_required_shape = shape_for_encoder( input, encoder_weights );
+   TestTensor *output = tensor_zeros_3d( debug_arena, l4_output_required_shape.batch_size, l4_output_required_shape.channels_out, l4_output_required_shape.sequence_length );
 
-   TestTensor *l2_output = 0;
-   {
-      ConvOutputShape conv_block_out_shape = conv_block_output_shape( l1_output, transformer_weights_l2.dw_conv_weights, transformer_weights_l2.pw_conv_weights );
-      ConvOutputShape l2_output_required_shape = conv_output_shape_shape( conv_block_out_shape, transformer_weights_l2.conv_weights, 2 );
-      l2_output = tensor_zeros_3d( debug_arena, l2_output_required_shape.batch_size, l2_output_required_shape.channels_out, l2_output_required_shape.sequence_length );
-   }
-   
-   TestTensor *l3_output = 0;
-   {
-      ConvOutputShape conv_block_out_shape = conv_block_output_shape( l2_output, transformer_weights_l3.dw_conv_weights, transformer_weights_l3.pw_conv_weights );
-      ConvOutputShape l3_output_required_shape = conv_output_shape_shape( conv_block_out_shape, transformer_weights_l3.conv_weights, 1 );
-      l3_output = tensor_zeros_3d( debug_arena, l3_output_required_shape.batch_size, l3_output_required_shape.channels_out, l3_output_required_shape.sequence_length );
-   }
-
-   TestTensor *output = tensor_zeros_like( debug_arena, result );
-
-   transformer_layer( debug_arena,
-                      input,
-                      transformer_weights_l1,
-                      2,
-                      l1_output );
-
-   transformer_layer( debug_arena,
-                      l1_output,
-                      transformer_weights_l2,
-                      2,
-                      l2_output );
-
-   transformer_layer( debug_arena,
-                      l2_output,
-                      transformer_weights_l3,
-                      1,
-                      l3_output );
-
-   transformer_layer( debug_arena,
-                      l3_output,
-                      transformer_weights_l4,
-                      1,
-                      output );
+   encoder( debug_arena, input, encoder_weights, output );
 
    float atol = 1e-4f;
 
@@ -1189,19 +1125,17 @@ TestResult adaptive_normalization_encoder_test()
       return test_result;
    }
 
-   Assert( res.tensor_count == (24 + 24 + 22 + 24 + 2) );
+   int encoder_weights_count = 24 + 24 + 22 + 24;
+   Assert( res.tensor_count == (encoder_weights_count + 2) );
 
-   TransformerLayer_Weights transformer_weights_l1 = {0};
-   TransformerLayer_Weights transformer_weights_l2 = {0};
-   TransformerLayer_Weights transformer_weights_l3 = {0};
-   TransformerLayer_Weights transformer_weights_l4 = {0};
 
    int test_data_index = 0;
-   test_data_index += fill_transformer_weights( &transformer_weights_l1, res.tensor_array + test_data_index, true );
-   test_data_index += fill_transformer_weights( &transformer_weights_l2, res.tensor_array + test_data_index, true );
-   test_data_index += fill_transformer_weights( &transformer_weights_l3, res.tensor_array + test_data_index, false );
-   test_data_index += fill_transformer_weights( &transformer_weights_l4, res.tensor_array + test_data_index, true );
 
+   // NOTE(irwin): encoder weights
+   Encoder_Weights encoder_weights = {0};
+   int encoder_weights_read = fill_encoder_weights( &encoder_weights, res.tensor_array + test_data_index );
+   Assert( encoder_weights_read == encoder_weights_count );
+   test_data_index += encoder_weights_read;
 
    TestTensor *input = res.tensor_array + test_data_index++;
    TestTensor *result = res.tensor_array + test_data_index++;
@@ -1209,52 +1143,10 @@ TestResult adaptive_normalization_encoder_test()
    TestTensor *normalization_output = tensor_copy( debug_arena, input );
    adaptive_audio_normalization_inplace( debug_arena, normalization_output );
 
-   TestTensor *l1_output = 0;
-   {
-      ConvOutputShape conv_block_out_shape = conv_block_output_shape( normalization_output, transformer_weights_l1.dw_conv_weights, transformer_weights_l1.pw_conv_weights );
-      ConvOutputShape l1_output_required_shape = conv_output_shape_shape( conv_block_out_shape, transformer_weights_l1.conv_weights, 2 );
-      l1_output = tensor_zeros_3d( debug_arena, l1_output_required_shape.batch_size, l1_output_required_shape.channels_out, l1_output_required_shape.sequence_length );
-   }
+   ConvOutputShape l4_output_required_shape = shape_for_encoder( normalization_output, encoder_weights );
+   TestTensor *output = tensor_zeros_3d( debug_arena, l4_output_required_shape.batch_size, l4_output_required_shape.channels_out, l4_output_required_shape.sequence_length );
 
-   TestTensor *l2_output = 0;
-   {
-      ConvOutputShape conv_block_out_shape = conv_block_output_shape( l1_output, transformer_weights_l2.dw_conv_weights, transformer_weights_l2.pw_conv_weights );
-      ConvOutputShape l2_output_required_shape = conv_output_shape_shape( conv_block_out_shape, transformer_weights_l2.conv_weights, 2 );
-      l2_output = tensor_zeros_3d( debug_arena, l2_output_required_shape.batch_size, l2_output_required_shape.channels_out, l2_output_required_shape.sequence_length );
-   }
-   
-   TestTensor *l3_output = 0;
-   {
-      ConvOutputShape conv_block_out_shape = conv_block_output_shape( l2_output, transformer_weights_l3.dw_conv_weights, transformer_weights_l3.pw_conv_weights );
-      ConvOutputShape l3_output_required_shape = conv_output_shape_shape( conv_block_out_shape, transformer_weights_l3.conv_weights, 1 );
-      l3_output = tensor_zeros_3d( debug_arena, l3_output_required_shape.batch_size, l3_output_required_shape.channels_out, l3_output_required_shape.sequence_length );
-   }
-
-   TestTensor *output = tensor_zeros_like( debug_arena, result );
-
-   transformer_layer( debug_arena,
-                      normalization_output,
-                      transformer_weights_l1,
-                      2,
-                      l1_output );
-
-   transformer_layer( debug_arena,
-                      l1_output,
-                      transformer_weights_l2,
-                      2,
-                      l2_output );
-
-   transformer_layer( debug_arena,
-                      l2_output,
-                      transformer_weights_l3,
-                      1,
-                      l3_output );
-
-   transformer_layer( debug_arena,
-                      l3_output,
-                      transformer_weights_l4,
-                      1,
-                      output );
+   encoder( debug_arena, normalization_output, encoder_weights, output );
 
    float atol = 1e-4f;
 
@@ -1279,21 +1171,18 @@ TestResult stft_normalization_encoder_test()
       return test_result;
    }
 
-   Assert( res.tensor_count == (1 + 24 + 24 + 22 + 24 + 2) );
+   int encoder_weights_count = 24 + 24 + 22 + 24;
+   Assert( res.tensor_count == (1 + encoder_weights_count + 2) );
 
-   TransformerLayer_Weights transformer_weights_l1 = {0};
-   TransformerLayer_Weights transformer_weights_l2 = {0};
-   TransformerLayer_Weights transformer_weights_l3 = {0};
-   TransformerLayer_Weights transformer_weights_l4 = {0};
 
    int test_data_index = 0;
    TestTensor *forward_basis_buffer = res.tensor_array + test_data_index++;
 
-   test_data_index += fill_transformer_weights( &transformer_weights_l1, res.tensor_array + test_data_index, true );
-   test_data_index += fill_transformer_weights( &transformer_weights_l2, res.tensor_array + test_data_index, true );
-   test_data_index += fill_transformer_weights( &transformer_weights_l3, res.tensor_array + test_data_index, false );
-   test_data_index += fill_transformer_weights( &transformer_weights_l4, res.tensor_array + test_data_index, true );
-
+   // NOTE(irwin): encoder weights
+   Encoder_Weights encoder_weights = {0};
+   int encoder_weights_read = fill_encoder_weights( &encoder_weights, res.tensor_array + test_data_index );
+   Assert( encoder_weights_read == encoder_weights_count );
+   test_data_index += encoder_weights_read;
 
    TestTensor *input = res.tensor_array + test_data_index++;
    TestTensor *result = res.tensor_array + test_data_index++;
@@ -1313,52 +1202,10 @@ TestResult stft_normalization_encoder_test()
    TestTensor *normalization_output = tensor_copy( debug_arena, stft_output );
    adaptive_audio_normalization_inplace( debug_arena, normalization_output );
 
-   TestTensor *l1_output = 0;
-   {
-      ConvOutputShape conv_block_out_shape = conv_block_output_shape( normalization_output, transformer_weights_l1.dw_conv_weights, transformer_weights_l1.pw_conv_weights );
-      ConvOutputShape l1_output_required_shape = conv_output_shape_shape( conv_block_out_shape, transformer_weights_l1.conv_weights, 2 );
-      l1_output = tensor_zeros_3d( debug_arena, l1_output_required_shape.batch_size, l1_output_required_shape.channels_out, l1_output_required_shape.sequence_length );
-   }
+   ConvOutputShape l4_output_required_shape = shape_for_encoder( normalization_output, encoder_weights );
+   TestTensor *output = tensor_zeros_3d( debug_arena, l4_output_required_shape.batch_size, l4_output_required_shape.channels_out, l4_output_required_shape.sequence_length );
 
-   TestTensor *l2_output = 0;
-   {
-      ConvOutputShape conv_block_out_shape = conv_block_output_shape( l1_output, transformer_weights_l2.dw_conv_weights, transformer_weights_l2.pw_conv_weights );
-      ConvOutputShape l2_output_required_shape = conv_output_shape_shape( conv_block_out_shape, transformer_weights_l2.conv_weights, 2 );
-      l2_output = tensor_zeros_3d( debug_arena, l2_output_required_shape.batch_size, l2_output_required_shape.channels_out, l2_output_required_shape.sequence_length );
-   }
-   
-   TestTensor *l3_output = 0;
-   {
-      ConvOutputShape conv_block_out_shape = conv_block_output_shape( l2_output, transformer_weights_l3.dw_conv_weights, transformer_weights_l3.pw_conv_weights );
-      ConvOutputShape l3_output_required_shape = conv_output_shape_shape( conv_block_out_shape, transformer_weights_l3.conv_weights, 1 );
-      l3_output = tensor_zeros_3d( debug_arena, l3_output_required_shape.batch_size, l3_output_required_shape.channels_out, l3_output_required_shape.sequence_length );
-   }
-
-   TestTensor *output = tensor_zeros_like( debug_arena, result );
-
-   transformer_layer( debug_arena,
-                      normalization_output,
-                      transformer_weights_l1,
-                      2,
-                      l1_output );
-
-   transformer_layer( debug_arena,
-                      l1_output,
-                      transformer_weights_l2,
-                      2,
-                      l2_output );
-
-   transformer_layer( debug_arena,
-                      l2_output,
-                      transformer_weights_l3,
-                      1,
-                      l3_output );
-
-   transformer_layer( debug_arena,
-                      l3_output,
-                      transformer_weights_l4,
-                      1,
-                      output );
+   encoder( debug_arena, normalization_output, encoder_weights, output );
 
    float atol = 1e-4f;
 
@@ -1387,21 +1234,18 @@ TestResult stft_normalization_encoder_lstm_test()
       return test_result;
    }
 
-   Assert( res.tensor_count == (1 + 24 + 24 + 22 + 24 + 2) );
+   int encoder_weights_count = 24 + 24 + 22 + 24;
+   Assert( res.tensor_count == (1 + encoder_weights_count + 2) );
 
-   TransformerLayer_Weights transformer_weights_l1 = {0};
-   TransformerLayer_Weights transformer_weights_l2 = {0};
-   TransformerLayer_Weights transformer_weights_l3 = {0};
-   TransformerLayer_Weights transformer_weights_l4 = {0};
 
    int test_data_index = 0;
    TestTensor *forward_basis_buffer = res.tensor_array + test_data_index++;
 
-   test_data_index += fill_transformer_weights( &transformer_weights_l1, res.tensor_array + test_data_index, true );
-   test_data_index += fill_transformer_weights( &transformer_weights_l2, res.tensor_array + test_data_index, true );
-   test_data_index += fill_transformer_weights( &transformer_weights_l3, res.tensor_array + test_data_index, false );
-   test_data_index += fill_transformer_weights( &transformer_weights_l4, res.tensor_array + test_data_index, true );
-
+   // NOTE(irwin): encoder weights
+   Encoder_Weights encoder_weights = {0};
+   int encoder_weights_read = fill_encoder_weights( &encoder_weights, res.tensor_array + test_data_index );
+   Assert( encoder_weights_read == encoder_weights_count );
+   test_data_index += encoder_weights_read;
 
    TestTensor *input = res.tensor_array + test_data_index++;
    TestTensor *result = res.tensor_array + test_data_index++;
@@ -1409,6 +1253,8 @@ TestResult stft_normalization_encoder_lstm_test()
    TestTensor *lstm_weights = lstm_weights_res.tensor_array + 0;
    TestTensor *lstm_biases = lstm_weights_res.tensor_array + 1;
    
+   TestTensor *output = tensor_zeros_like( debug_arena, result );
+
    int cutoff;
    {
       int filter_length = tdim( forward_basis_buffer, 2 );
@@ -1424,59 +1270,10 @@ TestResult stft_normalization_encoder_lstm_test()
    TestTensor *normalization_output = tensor_copy( debug_arena, stft_output );
    adaptive_audio_normalization_inplace( debug_arena, normalization_output );
 
-   TestTensor *l1_output = 0;
-   {
-      ConvOutputShape conv_block_out_shape = conv_block_output_shape( normalization_output, transformer_weights_l1.dw_conv_weights, transformer_weights_l1.pw_conv_weights );
-      ConvOutputShape l1_output_required_shape = conv_output_shape_shape( conv_block_out_shape, transformer_weights_l1.conv_weights, 2 );
-      l1_output = tensor_zeros_3d( debug_arena, l1_output_required_shape.batch_size, l1_output_required_shape.channels_out, l1_output_required_shape.sequence_length );
-   }
+   ConvOutputShape l4_output_required_shape = shape_for_encoder( normalization_output, encoder_weights );
+   TestTensor *l4_output = tensor_zeros_3d( debug_arena, l4_output_required_shape.batch_size, l4_output_required_shape.channels_out, l4_output_required_shape.sequence_length );
 
-   TestTensor *l2_output = 0;
-   {
-      ConvOutputShape conv_block_out_shape = conv_block_output_shape( l1_output, transformer_weights_l2.dw_conv_weights, transformer_weights_l2.pw_conv_weights );
-      ConvOutputShape l2_output_required_shape = conv_output_shape_shape( conv_block_out_shape, transformer_weights_l2.conv_weights, 2 );
-      l2_output = tensor_zeros_3d( debug_arena, l2_output_required_shape.batch_size, l2_output_required_shape.channels_out, l2_output_required_shape.sequence_length );
-   }
-   
-   TestTensor *l3_output = 0;
-   {
-      ConvOutputShape conv_block_out_shape = conv_block_output_shape( l2_output, transformer_weights_l3.dw_conv_weights, transformer_weights_l3.pw_conv_weights );
-      ConvOutputShape l3_output_required_shape = conv_output_shape_shape( conv_block_out_shape, transformer_weights_l3.conv_weights, 1 );
-      l3_output = tensor_zeros_3d( debug_arena, l3_output_required_shape.batch_size, l3_output_required_shape.channels_out, l3_output_required_shape.sequence_length );
-   }
-
-   TestTensor *l4_output = 0;
-   {
-      ConvOutputShape conv_block_out_shape = conv_block_output_shape( l3_output, transformer_weights_l4.dw_conv_weights, transformer_weights_l4.pw_conv_weights );
-      ConvOutputShape l4_output_required_shape = conv_output_shape_shape( conv_block_out_shape, transformer_weights_l4.conv_weights, 1 );
-      l4_output = tensor_zeros_3d( debug_arena, l4_output_required_shape.batch_size, l4_output_required_shape.channels_out, l4_output_required_shape.sequence_length );
-   }
-
-   TestTensor *output = tensor_zeros_like( debug_arena, result );
-
-   transformer_layer( debug_arena,
-                      normalization_output,
-                      transformer_weights_l1,
-                      2,
-                      l1_output );
-
-   transformer_layer( debug_arena,
-                      l1_output,
-                      transformer_weights_l2,
-                      2,
-                      l2_output );
-
-   transformer_layer( debug_arena,
-                      l2_output,
-                      transformer_weights_l3,
-                      1,
-                      l3_output );
-
-   transformer_layer( debug_arena,
-                      l3_output,
-                      transformer_weights_l4,
-                      1,
-                      l4_output );
+   encoder( debug_arena, normalization_output, encoder_weights, l4_output );
 
    TestTensor *l4_output_t = tensor_transpose_2d(debug_arena, l4_output);
 
@@ -1533,20 +1330,18 @@ TestResult stft_normalization_encoder_lstm_decoder_test()
       return test_result;
    }
 
-   Assert( res.tensor_count == (1 + 24 + 24 + 22 + 24 + 2 + 2) );
+   int encoder_weights_count = 24 + 24 + 22 + 24;
+   Assert( res.tensor_count == (1 + encoder_weights_count + 2 + 2) );
 
-   TransformerLayer_Weights transformer_weights_l1 = {0};
-   TransformerLayer_Weights transformer_weights_l2 = {0};
-   TransformerLayer_Weights transformer_weights_l3 = {0};
-   TransformerLayer_Weights transformer_weights_l4 = {0};
-
+   
    int test_data_index = 0;
    TestTensor *forward_basis_buffer = res.tensor_array + test_data_index++;
 
-   test_data_index += fill_transformer_weights( &transformer_weights_l1, res.tensor_array + test_data_index, true );
-   test_data_index += fill_transformer_weights( &transformer_weights_l2, res.tensor_array + test_data_index, true );
-   test_data_index += fill_transformer_weights( &transformer_weights_l3, res.tensor_array + test_data_index, false );
-   test_data_index += fill_transformer_weights( &transformer_weights_l4, res.tensor_array + test_data_index, true );
+   // NOTE(irwin): encoder weights
+   Encoder_Weights encoder_weights = {0};
+   int encoder_weights_read = fill_encoder_weights( &encoder_weights, res.tensor_array + test_data_index );
+   Assert( encoder_weights_read == encoder_weights_count );
+   test_data_index += encoder_weights_read;
 
    TestTensor *decoder_weights = res.tensor_array + test_data_index++;
    TestTensor *decoder_biases = res.tensor_array + test_data_index++;
@@ -1557,6 +1352,8 @@ TestResult stft_normalization_encoder_lstm_decoder_test()
    TestTensor *lstm_weights = lstm_weights_res.tensor_array + 0;
    TestTensor *lstm_biases = lstm_weights_res.tensor_array + 1;
    
+   TestTensor *output = tensor_zeros_like( debug_arena, result );
+
    int cutoff;
    {
       int filter_length = tdim( forward_basis_buffer, 2 );
@@ -1572,59 +1369,10 @@ TestResult stft_normalization_encoder_lstm_decoder_test()
    TestTensor *normalization_output = tensor_copy( debug_arena, stft_output );
    adaptive_audio_normalization_inplace( debug_arena, normalization_output );
 
-   TestTensor *l1_output = 0;
-   {
-      ConvOutputShape conv_block_out_shape = conv_block_output_shape( normalization_output, transformer_weights_l1.dw_conv_weights, transformer_weights_l1.pw_conv_weights );
-      ConvOutputShape l1_output_required_shape = conv_output_shape_shape( conv_block_out_shape, transformer_weights_l1.conv_weights, 2 );
-      l1_output = tensor_zeros_3d( debug_arena, l1_output_required_shape.batch_size, l1_output_required_shape.channels_out, l1_output_required_shape.sequence_length );
-   }
+   ConvOutputShape l4_output_required_shape = shape_for_encoder( normalization_output, encoder_weights );
+   TestTensor *l4_output = tensor_zeros_3d( debug_arena, l4_output_required_shape.batch_size, l4_output_required_shape.channels_out, l4_output_required_shape.sequence_length );
 
-   TestTensor *l2_output = 0;
-   {
-      ConvOutputShape conv_block_out_shape = conv_block_output_shape( l1_output, transformer_weights_l2.dw_conv_weights, transformer_weights_l2.pw_conv_weights );
-      ConvOutputShape l2_output_required_shape = conv_output_shape_shape( conv_block_out_shape, transformer_weights_l2.conv_weights, 2 );
-      l2_output = tensor_zeros_3d( debug_arena, l2_output_required_shape.batch_size, l2_output_required_shape.channels_out, l2_output_required_shape.sequence_length );
-   }
-   
-   TestTensor *l3_output = 0;
-   {
-      ConvOutputShape conv_block_out_shape = conv_block_output_shape( l2_output, transformer_weights_l3.dw_conv_weights, transformer_weights_l3.pw_conv_weights );
-      ConvOutputShape l3_output_required_shape = conv_output_shape_shape( conv_block_out_shape, transformer_weights_l3.conv_weights, 1 );
-      l3_output = tensor_zeros_3d( debug_arena, l3_output_required_shape.batch_size, l3_output_required_shape.channels_out, l3_output_required_shape.sequence_length );
-   }
-
-   TestTensor *l4_output = 0;
-   {
-      ConvOutputShape conv_block_out_shape = conv_block_output_shape( l3_output, transformer_weights_l4.dw_conv_weights, transformer_weights_l4.pw_conv_weights );
-      ConvOutputShape l4_output_required_shape = conv_output_shape_shape( conv_block_out_shape, transformer_weights_l4.conv_weights, 1 );
-      l4_output = tensor_zeros_3d( debug_arena, l4_output_required_shape.batch_size, l4_output_required_shape.channels_out, l4_output_required_shape.sequence_length );
-   }
-
-   TestTensor *output = tensor_zeros_like( debug_arena, result );
-
-   transformer_layer( debug_arena,
-                      normalization_output,
-                      transformer_weights_l1,
-                      2,
-                      l1_output );
-
-   transformer_layer( debug_arena,
-                      l1_output,
-                      transformer_weights_l2,
-                      2,
-                      l2_output );
-
-   transformer_layer( debug_arena,
-                      l2_output,
-                      transformer_weights_l3,
-                      1,
-                      l3_output );
-
-   transformer_layer( debug_arena,
-                      l3_output,
-                      transformer_weights_l4,
-                      1,
-                      l4_output );
+   encoder( debug_arena, normalization_output, encoder_weights, l4_output );
 
    TestTensor *l4_output_t = tensor_transpose_2d(debug_arena, l4_output);
 
@@ -1690,31 +1438,27 @@ TestResult silero_test()
       TestResult test_result = {0};
       return test_result;
    }
-
-   Assert( res.tensor_count == (1 + 24 + 24 + 22 + 24 + 2 + 2) );
-
-   Encoder_Weights encoder_weights = {0};
-
-   encoder_weights.l1_conv_stride = 2;
-   encoder_weights.l2_conv_stride = 2;
-   encoder_weights.l3_conv_stride = 1;
-   encoder_weights.l4_conv_stride = 1;
-
+   
+   int encoder_weights_count = 24 + 24 + 22 + 24;
+   Assert( res.tensor_count == (1 + encoder_weights_count + 2 + 2) );
 
    int test_data_index = 0;
    TestTensor *forward_basis_buffer = res.tensor_array + test_data_index++;
 
-   test_data_index += fill_transformer_weights( &encoder_weights.l1, res.tensor_array + test_data_index, true );
-   test_data_index += fill_transformer_weights( &encoder_weights.l2, res.tensor_array + test_data_index, true );
-   test_data_index += fill_transformer_weights( &encoder_weights.l3, res.tensor_array + test_data_index, false );
-   test_data_index += fill_transformer_weights( &encoder_weights.l4, res.tensor_array + test_data_index, true );
+   // NOTE(irwin): encoder weights
+   Encoder_Weights encoder_weights = {0};
+   int encoder_weights_read = fill_encoder_weights( &encoder_weights, res.tensor_array + test_data_index );
+   Assert( encoder_weights_read == encoder_weights_count );
+   test_data_index += encoder_weights_read;
 
+   // NOTE(irwin): decoder weights
    TestTensor *decoder_weights = res.tensor_array + test_data_index++;
    TestTensor *decoder_biases = res.tensor_array + test_data_index++;
 
    TestTensor *input_batches = res.tensor_array + test_data_index++;
    TestTensor *result = res.tensor_array + test_data_index++;
 
+   // NOTE(irwin): lstm weights
    TestTensor *lstm_weights = lstm_weights_res.tensor_array + 0;
    TestTensor *lstm_biases = lstm_weights_res.tensor_array + 1;
 
@@ -1723,11 +1467,6 @@ TestResult silero_test()
    
    TestTensor *lstm_output_h = tensor_zeros_like( debug_arena, lstm_input_h );
    TestTensor *lstm_output_c = tensor_zeros_like( debug_arena, lstm_input_h );
-
-   VAR_UNUSED( lstm_input_h );
-   VAR_UNUSED( lstm_input_c );
-   VAR_UNUSED( lstm_output_h );
-   VAR_UNUSED( lstm_output_c );
 
    TestTensor *output = tensor_zeros_like( debug_arena, result );
 
