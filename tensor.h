@@ -16,6 +16,61 @@ struct TestTensor
    float *data;
 };
 
+typedef struct TransformerLayer_Weights TransformerLayer_Weights;
+struct TransformerLayer_Weights
+{
+   // NOTE(irwin): ConvBlock
+
+   TestTensor *dw_conv_weights;
+   TestTensor *dw_conv_biases;
+   TestTensor *pw_conv_weights;
+   TestTensor *pw_conv_biases;
+   // NOTE(irwin): optional proj
+   TestTensor *proj_weights;
+   TestTensor *proj_biases;
+
+
+   // NOTE(irwin): attention
+   TestTensor *attention_weights;
+   TestTensor *attention_biases;
+   TestTensor *attention_proj_weights;
+   TestTensor *attention_proj_biases;
+
+   // NOTE(irwin): transformer rest
+   TestTensor *norm1_weights;
+   TestTensor *norm1_biases;
+   TestTensor *linear1_weights;
+   TestTensor *linear1_biases;
+   TestTensor *linear2_weights;
+   TestTensor *linear2_biases;
+   TestTensor *norm2_weights;
+   TestTensor *norm2_biases;
+
+   // NOTE(irwin): conv1d
+   TestTensor *conv_weights;
+   TestTensor *conv_biases;
+
+   // NOTE(irwin): batch norm
+   TestTensor *batch_norm_weights;
+   TestTensor *batch_norm_biases;
+   TestTensor *batch_norm_running_mean;
+   TestTensor *batch_norm_running_var;
+};
+
+typedef struct Encoder_Weights Encoder_Weights;
+struct Encoder_Weights
+{
+   TransformerLayer_Weights l1;
+   TransformerLayer_Weights l2;
+   TransformerLayer_Weights l3;
+   TransformerLayer_Weights l4;
+
+   int l1_conv_stride;
+   int l2_conv_stride;
+   int l3_conv_stride;
+   int l4_conv_stride;
+};
+
 static inline int tdimindex( TestTensor *tensor, int idx );
 static inline int tdim( TestTensor *tensor, int idx );
 
@@ -425,18 +480,10 @@ static inline ConvOutputShape conv_output_shape( TestTensor *input, TestTensor *
 
 static inline ConvOutputShape conv_output_shape_shape( ConvOutputShape input_shape, TestTensor *weights, int stride )
 {
-   Assert( weights->ndim == 3 );
-
-   ConvOutputShape out = {0};
-   out.batch_size = input_shape.batch_size;
-   out.channels_out = tdim( weights, 0 );
-
-   int sequence_count_in = input_shape.sequence_length;
-   int kernel_size = tdim( weights, -1 );
-   int hop_length = stride;
-   out.sequence_length = 1 + (sequence_count_in - kernel_size) / hop_length;
-
-   return out;
+   int fake_dims[3] = {input_shape.batch_size, input_shape.channels_out, input_shape.sequence_length};
+   TestTensor fake_input = {.ndim = 3, .dims = fake_dims};
+   
+   return conv_output_shape( &fake_input, weights, stride );
 }
 
 static inline ConvOutputShape conv_block_output_shape( TestTensor *input, TestTensor *dw_conv_weights, TestTensor *pw_conv_weights )
@@ -458,6 +505,33 @@ static inline ConvOutputShape conv_block_output_shape( TestTensor *input, TestTe
    out.sequence_length = 1 + (out_sequence_length_dw - kernel_size_pw);
 
    return out;
+}
+
+
+static inline ConvOutputShape shape_for_transformer( TestTensor *input, TransformerLayer_Weights weights, int stride )
+{
+   ConvOutputShape conv_block_out_shape = conv_block_output_shape( input, weights.dw_conv_weights, weights.pw_conv_weights );
+   return conv_output_shape_shape( conv_block_out_shape, weights.conv_weights, stride );
+}
+
+static inline ConvOutputShape shape_for_transformer_shape( ConvOutputShape input_shape, TransformerLayer_Weights weights, int stride )
+{
+   TestTensor fake_input_tensor = {0};
+   int dims[3] = {input_shape.batch_size, input_shape.channels_out, input_shape.sequence_length};
+   fake_input_tensor.dims = &dims[0];
+   fake_input_tensor.ndim = 3;
+
+   return shape_for_transformer( &fake_input_tensor, weights, stride );
+}
+
+static inline ConvOutputShape shape_for_encoder( TestTensor *input, Encoder_Weights encoder_weights )
+{
+   ConvOutputShape l1_output_required_shape = shape_for_transformer( input, encoder_weights.l1, encoder_weights.l1_conv_stride );
+   ConvOutputShape l2_output_required_shape = shape_for_transformer_shape( l1_output_required_shape, encoder_weights.l2, encoder_weights.l2_conv_stride );
+   ConvOutputShape l3_output_required_shape = shape_for_transformer_shape( l2_output_required_shape, encoder_weights.l3, encoder_weights.l3_conv_stride );
+   ConvOutputShape l4_output_required_shape = shape_for_transformer_shape( l3_output_required_shape, encoder_weights.l4, encoder_weights.l4_conv_stride );
+   
+   return l4_output_required_shape;
 }
 
 static inline TestTensor *tensor_zeros_for_conv( MemoryArena *arena, TestTensor *input, TestTensor *weights, int stride )

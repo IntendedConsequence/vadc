@@ -327,46 +327,6 @@ static void transformer_block_batch( MemoryArena *arena, TestTensor *input,
    }
 }
 
-typedef struct TransformerLayer_Weights TransformerLayer_Weights;
-struct TransformerLayer_Weights
-{
-   // NOTE(irwin): ConvBlock
-
-   TestTensor *dw_conv_weights;
-   TestTensor *dw_conv_biases;
-   TestTensor *pw_conv_weights;
-   TestTensor *pw_conv_biases;
-   // NOTE(irwin): optional proj
-   TestTensor *proj_weights;
-   TestTensor *proj_biases;
-
-
-   // NOTE(irwin): attention
-   TestTensor *attention_weights;
-   TestTensor *attention_biases;
-   TestTensor *attention_proj_weights;
-   TestTensor *attention_proj_biases;
-
-   // NOTE(irwin): transformer rest
-   TestTensor *norm1_weights;
-   TestTensor *norm1_biases;
-   TestTensor *linear1_weights;
-   TestTensor *linear1_biases;
-   TestTensor *linear2_weights;
-   TestTensor *linear2_biases;
-   TestTensor *norm2_weights;
-   TestTensor *norm2_biases;
-
-   // NOTE(irwin): conv1d
-   TestTensor *conv_weights;
-   TestTensor *conv_biases;
-
-   // NOTE(irwin): batch norm
-   TestTensor *batch_norm_weights;
-   TestTensor *batch_norm_biases;
-   TestTensor *batch_norm_running_mean;
-   TestTensor *batch_norm_running_var;
-};
 
 static void transformer_layer( MemoryArena *arena, TestTensor *input, TransformerLayer_Weights weights, int conv_stride, TestTensor *output )
 {
@@ -420,6 +380,65 @@ static void transformer_layer( MemoryArena *arena, TestTensor *input, Transforme
    // NOTE(irwin): 4 - ReLU
    tensor_relu_inplace( output );
 
+
+   endTemporaryMemory( mark );
+}
+
+static void encoder(MemoryArena *arena, TestTensor *input, Encoder_Weights encoder_weights, TestTensor *output)
+{
+   TemporaryMemory mark = beginTemporaryMemory( arena );
+
+   TestTensor *l1_output = 0;
+   {
+      ConvOutputShape l1_output_required_shape = shape_for_transformer( input, encoder_weights.l1, encoder_weights.l1_conv_stride );
+      l1_output = tensor_zeros_3d( arena, l1_output_required_shape.batch_size, l1_output_required_shape.channels_out, l1_output_required_shape.sequence_length );
+   }
+
+   TestTensor *l2_output = 0;
+   {
+      ConvOutputShape l2_output_required_shape = shape_for_transformer( l1_output, encoder_weights.l2, encoder_weights.l2_conv_stride );
+      l2_output = tensor_zeros_3d( arena, l2_output_required_shape.batch_size, l2_output_required_shape.channels_out, l2_output_required_shape.sequence_length );
+   }
+
+   TestTensor *l3_output = 0;
+   {
+      ConvOutputShape l3_output_required_shape = shape_for_transformer( l2_output, encoder_weights.l3, encoder_weights.l3_conv_stride );
+      l3_output = tensor_zeros_3d( arena, l3_output_required_shape.batch_size, l3_output_required_shape.channels_out, l3_output_required_shape.sequence_length );
+   }
+
+   TestTensor *l4_output = output;
+   {
+      ConvOutputShape l4_output_required_shape = shape_for_transformer( l3_output, encoder_weights.l4, encoder_weights.l4_conv_stride );
+
+      Assert( output->ndim == 3 );
+      Assert( tdim( output, 0 ) == l4_output_required_shape.batch_size );
+      Assert( tdim( output, 1 ) == l4_output_required_shape.channels_out );
+      Assert( tdim( output, 2 ) == l4_output_required_shape.sequence_length );
+   }
+
+   transformer_layer( arena,
+                      input,
+                      encoder_weights.l1,
+                      encoder_weights.l1_conv_stride,
+                      l1_output );
+
+   transformer_layer( arena,
+                      l1_output,
+                      encoder_weights.l2,
+                      encoder_weights.l2_conv_stride,
+                      l2_output );
+
+   transformer_layer( arena,
+                      l2_output,
+                      encoder_weights.l3,
+                      encoder_weights.l3_conv_stride,
+                      l3_output );
+
+   transformer_layer( arena,
+                      l3_output,
+                      encoder_weights.l4,
+                      encoder_weights.l4_conv_stride,
+                      l4_output );
 
    endTemporaryMemory( mark );
 }
