@@ -269,10 +269,9 @@ static void adaptive_audio_normalization_inplace(MemoryArena *arena, TestTensor 
       0.03663284704089164733887f
    };
 
-   static int dims[3] = {1, 1, 7};
    static TestTensor filter_tensor = {
       .ndim = 3,
-      .dims = dims,
+      .dims = {1, 1, 7},
       .data = filter,
       .size = 7,
       .nbytes = 7 * sizeof(float),

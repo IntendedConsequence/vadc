@@ -165,10 +165,10 @@ static void dual_head_attention( TestTensor *input,
    TestTensor *QKV_result_T = tensor_transpose_2d( debug_arena, QKV_result );
    int head_size = seq_length * head_length;
 
-   TestTensor head_ref = {0};
-   int head_ref_dims[2] = {head_length, seq_length};
-   head_ref.dims = head_ref_dims;
-   head_ref.ndim = 2;
+   TestTensor head_ref = {.ndim = 2, .dims = {head_length, seq_length}};
+   //int head_ref_dims[2] = {head_length, seq_length};
+   //head_ref.dims = head_ref_dims;
+   //head_ref.ndim = 2;
    head_ref.size = head_size;
    head_ref.nbytes = head_size * sizeof( float );
 

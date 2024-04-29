@@ -9,7 +9,7 @@ struct TestTensor
    // int dummy_;
    // int dummy2_;
    int ndim;
-   int *dims;
+   int dims[8];
    int size;
    int nbytes;
    const char *name;
@@ -107,6 +107,7 @@ static inline b32 tensor_is_valid( TestTensor *tensor )
 
 static inline TestTensor tensor_unsqueeze( MemoryArena *arena, TestTensor *tensor, int dim )
 {
+   VAR_UNUSED( arena );
    Assert( tensor_is_valid( tensor ) );
 
    dim = tdimindex( tensor, dim );
@@ -114,7 +115,6 @@ static inline TestTensor tensor_unsqueeze( MemoryArena *arena, TestTensor *tenso
    TestTensor result = {0};
 
    result.ndim = tensor->ndim + 1;
-   result.dims = pushArray( arena, result.ndim, int );
    for (int i = 0; i < dim; ++i)
    {
       result.dims[i] = tensor->dims[i];
@@ -135,6 +135,7 @@ static inline TestTensor tensor_unsqueeze( MemoryArena *arena, TestTensor *tenso
 
 static inline TestTensor tensor_squeeze( MemoryArena *arena, TestTensor *tensor, int dim )
 {
+   VAR_UNUSED( arena );
    Assert( tensor_is_valid( tensor ) );
 
    dim = tdimindex( tensor, dim );
@@ -145,7 +146,6 @@ static inline TestTensor tensor_squeeze( MemoryArena *arena, TestTensor *tensor,
    TestTensor result = {0};
 
    result.ndim = tensor->ndim - 1;
-   result.dims = pushArray( arena, result.ndim, int );
    for (int i = 0; i < dim; ++i)
    {
       result.dims[i] = tensor->dims[i];
@@ -180,12 +180,12 @@ static inline TestTensor tensor_slice_first_dim( TestTensor *tensor_to_slice, in
       if ( tensor_to_slice->ndim == 1 )
       {
          result.ndim = 1;
-         result.dims = tensor_to_slice->dims;
+         result.dims[0] = tensor_to_slice->dims[0];
       }
       else
       {
          result.ndim = tensor_to_slice->ndim - 1;
-         result.dims = tensor_to_slice->dims + 1;
+         for ( int i = 0; i < result.ndim; ++i ) result.dims[i] = tensor_to_slice->dims[i+1];
       }
 
       result.size = first_dimension_stride;
@@ -207,7 +207,6 @@ static inline TestTensor *tensor_zeros( MemoryArena *arena, int ndim, int dims[]
    result->ndim = ndim;
 
    static_assert(sizeof( result->dims[0] ) == sizeof( int ), "ERROR");
-   result->dims = pushArray( arena, result->ndim, int );
    int size = 1;
    for ( int i = 0; i < result->ndim; ++i )
    {
@@ -265,7 +264,6 @@ static inline TestTensor *tensor_zeros_like( MemoryArena *arena, TestTensor *ref
    result->ndim = reference->ndim;
 
    static_assert(sizeof( result->dims[0] ) == sizeof( int ), "ERROR");
-   result->dims = pushArray( arena, result->ndim, int );
    for ( int i = 0; i < result->ndim; ++i )
    {
       result->dims[i] = reference->dims[i];
@@ -480,8 +478,7 @@ static inline ConvOutputShape conv_output_shape( TestTensor *input, TestTensor *
 
 static inline ConvOutputShape conv_output_shape_shape( ConvOutputShape input_shape, TestTensor *weights, int stride )
 {
-   int fake_dims[3] = {input_shape.batch_size, input_shape.channels_out, input_shape.sequence_length};
-   TestTensor fake_input = {.ndim = 3, .dims = fake_dims};
+   TestTensor fake_input = {.ndim = 3, .dims = {input_shape.batch_size, input_shape.channels_out, input_shape.sequence_length}};
    
    return conv_output_shape( &fake_input, weights, stride );
 }
@@ -516,10 +513,8 @@ static inline ConvOutputShape shape_for_transformer( TestTensor *input, Transfor
 
 static inline ConvOutputShape shape_for_transformer_shape( ConvOutputShape input_shape, TransformerLayer_Weights weights, int stride )
 {
-   TestTensor fake_input_tensor = {0};
-   int dims[3] = {input_shape.batch_size, input_shape.channels_out, input_shape.sequence_length};
-   fake_input_tensor.dims = &dims[0];
-   fake_input_tensor.ndim = 3;
+   TestTensor fake_input_tensor = {.ndim = 3, .dims = {input_shape.batch_size, input_shape.channels_out, input_shape.sequence_length}};
+
 
    return shape_for_transformer( &fake_input_tensor, weights, stride );
 }

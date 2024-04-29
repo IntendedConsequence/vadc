@@ -82,7 +82,7 @@ LoadTesttensorResult load_testtensor( const char *path )
       Assert( fread_result );
       if ( tensor->ndim )
       {
-         tensor->dims = pushArray( debug_arena, tensor->ndim, int );
+         //tensor->dims = pushArray( debug_arena, tensor->ndim, int );
          fread_result = fread( tensor->dims, sizeof( tensor->dims[0] ), tensor->ndim, f );
          Assert( fread_result );
       }
