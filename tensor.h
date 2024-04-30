@@ -347,23 +347,45 @@ static inline void tensor_linear( TestTensor *input,
                                   TestTensor *weights, TestTensor *biases,
                                   TestTensor *output )
 {
-   Assert( input->ndim == 2 );
+   Assert( input->ndim == 2 || input->ndim == 3 );
+   int batches = input->ndim == 3 ? tdim( input, -3 ) : 1;
    int mata_rows = input->dims[input->ndim - 2];
    int mata_cols = input->dims[input->ndim - 1];
 
    Assert( weights->ndim == 2 );
    int matb_rows = weights->dims[weights->ndim - 2];
    int matb_cols = weights->dims[weights->ndim - 1];
-   mymatmul( input->data, mata_rows, mata_cols, weights->data, matb_rows, matb_cols, output->data );
 
-   Assert( output->ndim == 2 );
-   Assert( output->dims[0] == mata_rows && output->dims[1] == matb_rows );
+   int batch_stride_input = input->size / batches;
+   int batch_stride_output = output->size / batches;
+
+   Assert( output->ndim == input->ndim );
+   Assert( tdim(output, -2) == mata_rows && tdim(output, -1) == matb_rows );
+
+   for (int batch_index = 0; batch_index < batches; ++batch_index)
+   {
+      float *input_batch = input->data + batch_index * batch_stride_input;
+      float *output_batch = output->data + batch_index * batch_stride_output;
+
+      mymatmul( input_batch, mata_rows, mata_cols,
+                weights->data, matb_rows, matb_cols,
+                output_batch );
+   }
+
+   
    if ( biases )
    {
-      Assert( matb_rows == output->dims[1] && matb_rows == biases->size );
-      for ( int i = 0; i < mata_rows; ++i )
+      Assert( matb_rows == tdim(output, -1) && matb_rows == biases->size );
+
+      for ( int batch_index = 0; batch_index < batches; ++batch_index )
       {
-         add_arrays_inplace( index2d( output, i, 0 ), biases->size, biases->data );
+         float *output_batch = output->data + batch_index * batch_stride_output;
+
+         for ( int i = 0; i < mata_rows; ++i )
+         {
+            float *output_row = output_batch + i * matb_rows;
+            add_arrays_inplace( output_row, biases->size, biases->data );
+         }
       }
    }
 }
