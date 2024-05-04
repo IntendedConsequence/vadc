@@ -347,6 +347,8 @@ static inline void tensor_linear( TestTensor *input,
                                   TestTensor *weights, TestTensor *biases,
                                   TestTensor *output )
 {
+   TracyCZone(tensor_linear, true);
+
    Assert( input->ndim == 2 || input->ndim == 3 );
    int batches = input->ndim == 3 ? tdim( input, -3 ) : 1;
    int mata_rows = input->dims[input->ndim - 2];
@@ -388,6 +390,7 @@ static inline void tensor_linear( TestTensor *input,
          }
       }
    }
+   TracyCZoneEnd(tensor_linear);
 }
 
 static inline int tdimindex( TestTensor *tensor, int idx )

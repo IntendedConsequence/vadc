@@ -31,6 +31,8 @@ static void debugprint_array( const float *arr, int count, FILE *file_out )
 VADC_API
 void lstm_cell ( const float *input_x, int input_x_count, const float *hidden_state_previous, const float *cell_state_previous, const float *weights_transposed, const float *biases, float *output_hc )
 {
+   TracyCZone(lstm_cell, true);
+
 #if DEBUG_PRINT
    FILE *debugout = fopen( "lstm_debug.txt", "w" );
 #endif // DEBUG_PRINT
@@ -82,6 +84,7 @@ void lstm_cell ( const float *input_x, int input_x_count, const float *hidden_st
 #if DEBUG_PRINT
    fclose( debugout );
 #endif // DEBUG_PRINT
+   TracyCZoneEnd(lstm_cell);
 }
 
 // IMPORTANT(irwin): biases are expected to be shared for both input data and hidden state. Since pytorch uses separate biases
@@ -90,6 +93,9 @@ void lstm_cell ( const float *input_x, int input_x_count, const float *hidden_st
 VADC_API
 void lstm ( const float *input_x, int input_x_count, const float *hidden_state_previous, const float *cell_state_previous, const float *weights_transposed, const float *biases, float *output_hc )
 {
+   TracyCZone(lstm, true);
+
+
    // int combined_count = input_x_count * 2;
    int hidden_state_stride = input_x_count;
    int cell_state_stride = input_x_count;
@@ -118,6 +124,7 @@ void lstm ( const float *input_x, int input_x_count, const float *hidden_state_p
    memcpy( output_hc + hidden_state_stride + cell_state_stride + hidden_state_stride, output_hc_unordered + hidden_state_stride + cell_state_stride + hidden_state_stride, cell_state_stride * sizeof( float ) );
 
    endTemporaryMemory( mark );
+   TracyCZoneEnd(lstm);
 }
 
 // IMPORTANT(irwin): biases are expected to be shared for both input data and hidden state. Since pytorch uses separate biases
@@ -128,6 +135,8 @@ void lstm ( const float *input_x, int input_x_count, const float *hidden_state_p
 __declspec(dllexport)
 void lstm_seq ( const float *input_x, int input_x_seq_count, int input_x_count, const float *hidden_state_previous, const float *cell_state_previous, const float *weights_transposed, const float *biases, float *output )
 {
+   TracyCZone(lstm_seq, true);
+
    int input_size = input_x_count;
    int hidden_size = input_x_count;
 
@@ -154,4 +163,5 @@ void lstm_seq ( const float *input_x, int input_x_seq_count, int input_x_count, 
    memcpy( output + input_x_seq_count * input_x_count, output_hc, (input_size + hidden_size) * 2 * sizeof( float ) );
 
    endTemporaryMemory( mark );
+   TracyCZoneEnd(lstm_seq);
 }

@@ -129,6 +129,8 @@ static void dual_head_attention( TestTensor *input,
                                  TestTensor *proj_weights, TestTensor *proj_biases,
                                  TestTensor *output )
 {
+   TracyCZone(dual_head_attention, true);
+
    Assert( input->ndim == 2 );
    Assert( output->ndim == 2 );
 
@@ -241,6 +243,7 @@ static void dual_head_attention( TestTensor *input,
    tensor_linear( attention, proj_weights, proj_biases, output );
 
    endTemporaryMemory( mark );
+   TracyCZoneEnd(dual_head_attention);
 }
 
 
@@ -256,6 +259,8 @@ static void transformer_block( MemoryArena *arena, TestTensor *input,
                                TestTensor *norm2_weights, TestTensor *norm2_biases,
                                TestTensor *output )
 {
+   TracyCZone(transformer_block, true);
+
    Assert( input->ndim == 2 );
    Assert( output->ndim == 2 );
 
@@ -296,6 +301,7 @@ static void transformer_block( MemoryArena *arena, TestTensor *input,
    memmove( output->data, output_copy_source->data, output->nbytes );
 
    endTemporaryMemory( mark );
+   TracyCZoneEnd(transformer_block);
 }
 
 static void transformer_block_batch( MemoryArena *arena, TestTensor *input,
@@ -307,6 +313,8 @@ static void transformer_block_batch( MemoryArena *arena, TestTensor *input,
                                      TestTensor *norm2_weights, TestTensor *norm2_biases,
                                      TestTensor *output )
 {
+   TracyCZone(transformer_block_batch, true);
+
    Assert( input->ndim == 3 );
    Assert( output->ndim == 3 );
 
@@ -325,11 +333,15 @@ static void transformer_block_batch( MemoryArena *arena, TestTensor *input,
                          norm2_weights, norm2_biases, 
                          &output_slice );
    }
+   TracyCZoneEnd(transformer_block_batch);
 }
 
 
 static void transformer_layer( MemoryArena *arena, TestTensor *input, TransformerLayer_Weights weights, int conv_stride, TestTensor *output )
 {
+   TracyCZone(transformer_layer, true);
+
+
    TemporaryMemory mark = beginTemporaryMemory( arena );
 
    ConvOutputShape conv_block_out_shape = conv_block_output_shape( input, weights.dw_conv_weights, weights.pw_conv_weights );
@@ -382,10 +394,13 @@ static void transformer_layer( MemoryArena *arena, TestTensor *input, Transforme
 
 
    endTemporaryMemory( mark );
+   TracyCZoneEnd(transformer_layer);
 }
 
 static void encoder(MemoryArena *arena, TestTensor *input, Encoder_Weights encoder_weights, TestTensor *output)
 {
+   TracyCZone(encoder, true);
+
    TemporaryMemory mark = beginTemporaryMemory( arena );
 
    TestTensor *l1_output = 0;
@@ -441,4 +456,5 @@ static void encoder(MemoryArena *arena, TestTensor *input, Encoder_Weights encod
                       l4_output );
 
    endTemporaryMemory( mark );
+   TracyCZoneEnd(encoder);
 }

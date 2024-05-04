@@ -60,6 +60,8 @@ void convolve_k5_pad2 ( const float *arr, int count, const float *kernel_flipped
 // but for dw_conv, in_channels/groups == 1 and it's squeezed out, leaving (out_channels, kernel_size)
 static void dw_conv_tensor ( TestTensor *input, TestTensor *filters, TestTensor *biases, TestTensor *output )
 {
+   TracyCZone(dw_conv_tensor, true);
+
    Assert( tensor_is_valid( input ) );
    Assert( tensor_is_valid( filters ) );
    Assert( tensor_is_valid( biases ) );
@@ -102,10 +104,14 @@ static void dw_conv_tensor ( TestTensor *input, TestTensor *filters, TestTensor 
          convolve_k5_pad2( arr_in, sequence_length_in, arr_filters, arr_out, bias );
       }
    }
+
+   TracyCZoneEnd(dw_conv_tensor);
 }
 
 static void conv_tensor ( TestTensor *input, TestTensor *filters, TestTensor *biases, int hop_length, TestTensor *output )
 {
+   TracyCZone(conv_tensor, true);
+
    Assert( tensor_is_valid( input ) );
    Assert( tensor_is_valid(filters ) );
    if (biases)
@@ -184,29 +190,44 @@ static void conv_tensor ( TestTensor *input, TestTensor *filters, TestTensor *bi
          }
       }
    }
+
+   TracyCZoneEnd(conv_tensor);
 }
 
 
 static inline TestTensor *conv_tensor_out ( MemoryArena *arena, TestTensor *input, TestTensor *filters, TestTensor *biases, int hop_length )
 {
+   TracyCZone(conv_tensor_out, true);
+
    TestTensor *output = tensor_zeros_for_conv( arena, input, filters, hop_length );
    conv_tensor( input, filters, biases, hop_length, output );
+
+   TracyCZoneEnd(conv_tensor_out);
    return output;
 }
 
 static void pw_conv_tensor ( TestTensor *input, TestTensor *filters, TestTensor *biases, TestTensor *output )
 {
+   TracyCZone(pw_conv_tensor, true);
+
    conv_tensor( input, filters, biases, 1, output );
+
+   TracyCZoneEnd(pw_conv_tensor);
 }
 
 static inline TestTensor *pw_conv_tensor_out ( MemoryArena *arena, TestTensor *input, TestTensor *filters, TestTensor *biases )
 {
+   TracyCZone(pw_conv_tensor_out, true);
    return conv_tensor_out( arena, input, filters, biases, 1 );
+
+   TracyCZoneEnd(pw_conv_tensor_out);
 }
 
 
 static void conv_tensor_stride64_nobias ( MemoryArena *arena, TestTensor *input, TestTensor *filters, TestTensor *output )
 {
+   TracyCZone(conv_tensor_stride64_nobias, true);
+
    TemporaryMemory mark = beginTemporaryMemory( arena );
 
    // int mock_biases_dims[1] = { filters->dims[0] };
@@ -215,6 +236,7 @@ static void conv_tensor_stride64_nobias ( MemoryArena *arena, TestTensor *input,
    conv_tensor( input, filters, NULL, 64, output );
 
    endTemporaryMemory( mark );
+   TracyCZoneEnd(conv_tensor_stride64_nobias);
 }
 
 static TestTensor *tensor_reflect_pad_last_dim( MemoryArena *arena, TestTensor *input, int padding )
@@ -259,6 +281,8 @@ static TestTensor *tensor_reflect_pad_last_dim( MemoryArena *arena, TestTensor *
 
 static void adaptive_audio_normalization_inplace(MemoryArena *arena, TestTensor *input)
 {
+   TracyCZone(adaptive_audio_normalization_inplace, true);
+
    static float filter[7] = {
       0.03663284704089164733887f,
       0.11128076165914535522461f,
@@ -376,6 +400,8 @@ static void adaptive_audio_normalization_inplace(MemoryArena *arena, TestTensor 
         spect = spect.add(-mean_mean)
         return spect
    */
+
+   TracyCZoneEnd(adaptive_audio_normalization_inplace);
 }
 
 static inline int compute_stft_output_feature_count( TestTensor *input, TestTensor *filters, int hop_length )
@@ -389,6 +415,8 @@ static inline int compute_stft_output_feature_count( TestTensor *input, TestTens
 
 static void my_stft ( MemoryArena *arena, TestTensor *input, TestTensor *filters, TestTensor *output )
 {
+   TracyCZone(my_stft, true);
+
    Assert(filters->ndim == 3);
    Assert(output->ndim == filters->ndim);
 
@@ -467,6 +495,7 @@ static void my_stft ( MemoryArena *arena, TestTensor *input, TestTensor *filters
    */
 
    endTemporaryMemory( mark );
+   TracyCZoneEnd(my_stft);
 }
 
 
@@ -477,6 +506,9 @@ static void conv_block( TestTensor *input, b32 has_out_proj,
                         TestTensor *proj_weights, TestTensor *proj_biases,
                         TestTensor *output )
 {
+   TracyCZone(conv_block, true);
+
+
    Assert( tensor_is_valid( input ) );
    Assert( tensor_is_valid( dw_weights ) );
    Assert( tensor_is_valid( dw_biases ) );
@@ -519,4 +551,6 @@ static void conv_block( TestTensor *input, b32 has_out_proj,
 
 
    endTemporaryMemory( mark );
+
+   TracyCZoneEnd(conv_block);
 }

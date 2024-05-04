@@ -145,11 +145,14 @@ float dotproduct ( const float *arr, int count, const float *arr2, int count2 )
 VADC_API
 void mydot_arrarr ( const float *arr, int count, const float *arr2, int arr2_rows, float *arr_out )
 {
+   TracyCZone(mydot_arrarr, true);
+
    for ( int i = 0; i < arr2_rows; ++i )
    {
       float value = dotproduct( arr, count, arr2 + i * count, count );
       arr_out[i] = value;
    }
+   TracyCZoneEnd(mydot_arrarr);
 }
 
 // mata:        matb:
@@ -164,6 +167,8 @@ void mydot_arrarr ( const float *arr, int count, const float *arr2, int arr2_row
 VADC_API
 void mymatmul ( float *mata, int mata_rows, int mata_cols, float *matb_transposed, int matb_transposed_rows, int matb_transposed_cols, float *out_result )
 {
+   TracyCZone(mymatmul, true);
+
    VAR_UNUSED( matb_transposed_cols );
    int mata_stride = mata_cols;
    int out_stride = matb_transposed_rows;
@@ -172,6 +177,8 @@ void mymatmul ( float *mata, int mata_rows, int mata_cols, float *matb_transpose
    {
       mydot_arrarr( mata + i * mata_stride, mata_cols, matb_transposed, matb_transposed_rows, out_result + i * out_stride );
    }
+
+   TracyCZoneEnd(mymatmul);
 }
 
 VADC_API
