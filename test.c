@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <tracy\TracyC.h>
+
 #include "utils.h"
 #include "tensor.h"
 
