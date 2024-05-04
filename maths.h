@@ -4,6 +4,8 @@
 #include "utils.h"
 #include <math.h> //expf
 
+#include <immintrin.h>
+
 static inline float sigmoid_one( float value )
 {
    return 1.0f / (1.0f + expf( -value ));
@@ -38,7 +40,7 @@ static void add_arrays_inplace ( float *array_a, int count, const float *array_b
 // result:
 // ad + be + cf
 
-VADC_API
+VADC_API inline
 float dotproduct ( const float *arr, int count, const float *arr2, int count2 );
 
 // mat1_row:    mat2_transposed:
@@ -120,18 +122,88 @@ float mean ( float *arr, int arr_count )
 // result:
 // ad + be + cf
 
-VADC_API
+VADC_API inline
 float dotproduct ( const float *arr, int count, const float *arr2, int count2 )
 {
-   int mincount = count > count2 ? count2 : count;
+   VAR_UNUSED(count2);
+   // TracyCZone(dotproduct, true);
 
+   // Assert(count == count2);
+   // int mincount = count > count2 ? count2 : count;
+   int mincount = count;
+   int wide = 16;
+
+   __m256 r = _mm256_setzero_ps();
    float result = 0.0f;
-   for ( int i = 0; i < mincount; ++i )
+   for ( int i = 0; i < (mincount / wide) * wide; i += wide )
+   {
+      #if 0
+      float value0 = arr[i+0] * arr2[i+0];
+      float value1 = arr[i+1] * arr2[i+1];
+      float value2 = arr[i+2] * arr2[i+2];
+      float value3 = arr[i+3] * arr2[i+3];
+      float value4 = arr[i+4] * arr2[i+4];
+      float value5 = arr[i+5] * arr2[i+5];
+      float value6 = arr[i+6] * arr2[i+6];
+      float value7 = arr[i+7] * arr2[i+7];
+
+      float value01 = value0 + value1;
+      float value23 = value2 + value3;
+      float value45 = value4 + value5;
+      float value67 = value6 + value7;
+
+      float value0123 = value01 + value23;
+      float value4567 = value45 + value67;
+
+      result = result + value0123 + value4567;
+      #elseif 0
+      float value01 = arr[i+0] * arr2[i+0] + arr[i+1] * arr2[i+1];
+      float value23 = arr[i+2] * arr2[i+2] + arr[i+3] * arr2[i+3];
+      float value45 = arr[i+4] * arr2[i+4] + arr[i+5] * arr2[i+5];
+      float value67 = arr[i+6] * arr2[i+6] + arr[i+7] * arr2[i+7];
+
+      float value0123 = value01 + value23;
+      float value4567 = value45 + value67;
+
+      result = result + value0123 + value4567;
+      #elseif 0
+      float value01 = arr[i+0] * arr2[i+0] + arr[i+1] * arr2[i+1];
+      float value23 = arr[i+2] * arr2[i+2] + arr[i+3] * arr2[i+3];
+      float value45 = arr[i+4] * arr2[i+4] + arr[i+5] * arr2[i+5];
+      float value67 = arr[i+6] * arr2[i+6] + arr[i+7] * arr2[i+7];
+      float value89 = arr[i+8] * arr2[i+8] + arr[i+9] * arr2[i+9];
+      float valueab = arr[i+10] * arr2[i+10] + arr[i+11] * arr2[i+11];
+      float valuecd = arr[i+12] * arr2[i+12] + arr[i+13] * arr2[i+13];
+      float valueef = arr[i+14] * arr2[i+14] + arr[i+15] * arr2[i+15];
+
+      float value0123 = value01 + value23;
+      float value4567 = value45 + value67;
+      float value89ab = value89 + valueab;
+      float valuecdef = valuecd + valueef;
+
+      result = result + value0123 + value4567 + value89ab + valuecdef;
+      #else
+      __m256 a = _mm256_load_ps(arr + i);
+      __m256 b = _mm256_load_ps(arr2 + i);
+      __m256 c = _mm256_load_ps(arr + i + 8);
+      __m256 d = _mm256_load_ps(arr2 + i + 8);
+
+      __m256 ab = _mm256_mul_ps(a, b);
+      __m256 cd = _mm256_mul_ps(c, d);
+      __m256 abcd = _mm256_hadd_ps(ab, cd);
+      r = _mm256_add_ps(r, abcd);
+      #endif
+   }
+
+   result = result + ((float *)&r)[0] + ((float *)&r)[1] + ((float *)&r)[2] + ((float *)&r)[3] + ((float *)&r)[4] + ((float *)&r)[5] + ((float *)&r)[6] + ((float *)&r)[7];
+
+   for ( int i = (mincount / wide) * wide; i < mincount; ++i )
    {
       float value = arr[i] * arr2[i];
       result += value;
    }
 
+   // TracyCZoneEnd(dotproduct);
    return result;
 }
 
