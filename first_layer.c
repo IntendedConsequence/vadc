@@ -163,6 +163,8 @@ static void conv_tensor ( TestTensor *input, TestTensor *filters, TestTensor *bi
    int batch_stride_input = input->size / batch_size;
    int batch_stride_output = output->size / batch_size;
 
+   // float *to_sum = pushArray(DEBUG_getDebugArena(), kernel_size, float);
+
    for ( int batch_index = 0; batch_index < batch_size; ++batch_index )
    {
       float *input_data_batch = input->data + batch_index * batch_stride_input;
@@ -186,7 +188,71 @@ static void conv_tensor ( TestTensor *input, TestTensor *filters, TestTensor *bi
             float *channel = input_data_batch + channel_index * array_count;
             for ( int index = 0; index < output_array_count; ++index )
             {
-               output_filter_channel[index] += dotproduct( channel + index * hop_length, kernel_size, kernel, kernel_size );
+               #if 0
+               output_filter_channel[index] += dotproduct_slow( channel + index * hop_length, kernel_size, kernel, kernel_size );
+               #elif 0
+               float *channel_sub = channel + index * hop_length;
+               float out_channel = output_filter_channel[index];
+
+               __m256 s = _mm256_setzero_ps();
+               int i;
+               for (i = 0; i < kernel_size - 7; i += 8)
+               {
+                  __m256 a = _mm256_loadu_ps(channel_sub + i);
+                  __m256 b = _mm256_loadu_ps(kernel + i);
+                  __m256 r = _mm256_mul_ps(a, b);
+                  s = _mm256_add_ps(s, r);
+               }
+
+               s = _mm256_hadd_ps(s, s);
+               s = _mm256_hadd_ps(s, s);
+               s = _mm256_hadd_ps(s, s);
+
+               out_channel += ((float *)&s)[0];
+               // float v;
+               // _MM_EXTRACT_FLOAT(v, _mm256_extractf128_ps(s, 0), 0);
+               // out_channel += v;
+
+
+               for (; i < kernel_size; ++i)
+               {
+                  out_channel += channel_sub[i] * kernel[i];
+               }
+
+               output_filter_channel[index] = out_channel;
+               #else
+               int wide = 8;
+               int wide_parts = kernel_size / wide;
+               float sub = 0.0f;
+               float *channel_sub = channel + index * hop_length;
+               for (int i = 0; i < wide_parts; ++i)
+               {
+                  float *channel_sub_sub = channel_sub + i * wide;
+                  float *kernel_sub = kernel + i * wide;
+
+                  float subsub = 0.0f;
+                  for (int j = 0; j < wide; ++j)
+                  {
+                     subsub += channel_sub_sub[j] * kernel_sub[j];
+                  }
+                  sub += subsub;
+               }
+
+               float sub2 = 0.0f;
+               for (int i = wide_parts * wide; i < kernel_size; ++i)
+               {
+                  float vala = channel_sub[i];
+                  float valb = kernel[i];
+                  float muled = vala * valb;
+                  float added = sub2 + muled;
+                  sub2 = added;
+               }
+
+               float sum = sub + sub2;
+               float read = output_filter_channel[index];
+               output_filter_channel[index] = sum + read;
+
+               #endif
             }
          }
       }
