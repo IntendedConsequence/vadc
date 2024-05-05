@@ -108,7 +108,7 @@ static void dw_conv_tensor ( TestTensor *input, TestTensor *filters, TestTensor 
    TracyCZoneEnd(dw_conv_tensor);
 }
 
-static void conv_tensor ( TestTensor *input, TestTensor *filters, TestTensor *biases, int hop_length, TestTensor *output )
+static inline void conv_tensor ( TestTensor *input, TestTensor *filters, TestTensor *biases, int hop_length, TestTensor *output )
 {
    TracyCZone(conv_tensor, true);
 
@@ -273,7 +273,7 @@ static inline TestTensor *conv_tensor_out ( MemoryArena *arena, TestTensor *inpu
    return output;
 }
 
-static void pw_conv_tensor ( TestTensor *input, TestTensor *filters, TestTensor *biases, TestTensor *output )
+static inline void pw_conv_tensor ( TestTensor *input, TestTensor *filters, TestTensor *biases, TestTensor *output )
 {
    TracyCZone(pw_conv_tensor, true);
 
