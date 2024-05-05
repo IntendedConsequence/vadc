@@ -49,6 +49,9 @@ VADC_API inline
 float dotproduct_unrolled ( const float *arr, int count, const float *arr2, int count2 );
 
 VADC_API inline
+float dotproduct_unrolled2 ( const float *arr, int count, const float *arr2, int count2 );
+
+VADC_API inline
 float dotproduct_simd ( const float *arr, int count, const float *arr2, int count2 );
 
 
@@ -59,7 +62,7 @@ float dotproduct_simd ( const float *arr, int count, const float *arr2, int coun
 // result:
 // [aj+bl+cn ak+bm+co]
 
-VADC_API
+VADC_API inline
 void mydot_arrarr ( const float *arr, int count, const float *arr2, int arr2_rows, float *arr_out );
 
 // mata:        matb:
@@ -71,7 +74,7 @@ void mydot_arrarr ( const float *arr, int count, const float *arr2, int arr2_row
 // [aj+bl+cn ak+bm+co]
 // [dj+el+fn dk+em+fo]
 // [gj+hl+in gk+hm+io]
-VADC_API
+VADC_API inline
 void mymatmul ( float *mata, int mata_rows, int mata_cols, float *matb_transposed, int matb_transposed_rows, int matb_transposed_cols, float *out_result );
 
 
@@ -210,6 +213,51 @@ float dotproduct_unrolled ( const float *arr, int count, const float *arr2, int 
 }
 
 VADC_API inline
+float dotproduct_unrolled2 ( const float *arr, int count, const float *arr2, int count2 )
+{
+   VAR_UNUSED(count2);
+
+   int mincount = count;
+   int wide = 8;
+
+   float value01 = 0.0f;
+   float value23 = 0.0f;
+   float value45 = 0.0f;
+   float value67 = 0.0f;
+
+   int i;
+   for ( i = 0; i < mincount - 7; i += wide )
+   {
+      float value0 = arr[i+0] * arr2[i+0];
+      float value1 = arr[i+1] * arr2[i+1];
+      float value2 = arr[i+2] * arr2[i+2];
+      float value3 = arr[i+3] * arr2[i+3];
+      float value4 = arr[i+4] * arr2[i+4];
+      float value5 = arr[i+5] * arr2[i+5];
+      float value6 = arr[i+6] * arr2[i+6];
+      float value7 = arr[i+7] * arr2[i+7];
+
+      value01 += value0 + value1;
+      value23 += value2 + value3;
+      value45 += value4 + value5;
+      value67 += value6 + value7;
+
+   }
+   float value0123 = value01 + value23;
+   float value4567 = value45 + value67;
+
+   float result = value0123 + value4567;
+
+   for ( ; i < mincount; ++i )
+   {
+      float value = arr[i] * arr2[i];
+      result += value;
+   }
+
+   return result;
+}
+
+VADC_API inline
 float dotproduct_slow ( const float *arr, int count, const float *arr2, int count2 )
 {
    VAR_UNUSED(count2);
@@ -232,14 +280,14 @@ float dotproduct_slow ( const float *arr, int count, const float *arr2, int coun
 // result:
 // [aj+bl+cn ak+bm+co]
 
-VADC_API
+VADC_API inline
 void mydot_arrarr ( const float *arr, int count, const float *arr2, int arr2_rows, float *arr_out )
 {
    TracyCZone(mydot_arrarr, true);
 
    for ( int i = 0; i < arr2_rows; ++i )
    {
-      float value = dotproduct( arr, count, arr2 + i * count, count );
+      float value = dotproduct_simd( arr, count, arr2 + i * count, count );
       arr_out[i] = value;
    }
    TracyCZoneEnd(mydot_arrarr);
@@ -254,7 +302,7 @@ void mydot_arrarr ( const float *arr, int count, const float *arr2, int arr2_row
 // [aj+bl+cn ak+bm+co]
 // [dj+el+fn dk+em+fo]
 // [gj+hl+in gk+hm+io]
-VADC_API
+VADC_API inline
 void mymatmul ( float *mata, int mata_rows, int mata_cols, float *matb_transposed, int matb_transposed_rows, int matb_transposed_cols, float *out_result )
 {
    TracyCZone(mymatmul, true);
