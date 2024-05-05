@@ -1473,6 +1473,28 @@ TestResult silero_test()
    TestTensor *output = tensor_zeros_like( debug_arena, result );
 
    int batch_count = tdim( input_batches, 0 );
+#if 0
+   int cutoff;
+   {
+      int filter_length = tdim( forward_basis_buffer, 2 );
+      int half_filter_length = filter_length / 2;
+      cutoff = half_filter_length + 1;
+   }
+   // TODO(irwin): dehardcode 64 hop_length
+   int stft_out_features_count = compute_stft_output_feature_count( input_batches, forward_basis_buffer, 64 );
+   TestTensor *stft_output = tensor_zeros_3d( debug_arena, tdim( input_batches, -2 ), cutoff, stft_out_features_count );
+
+   my_stft( debug_arena, input_batches, forward_basis_buffer, stft_output );
+
+   for ( int batch_index = 0; batch_index < batch_count; ++batch_index )
+   {
+      TemporaryMemory batch_mark = beginTemporaryMemory( debug_arena );
+
+      TestTensor input_one_batch = tensor_index_first_dim( stft_output, batch_index, true );
+
+
+      TestTensor *normalization_output = tensor_copy( debug_arena, &input_one_batch );
+#else
    for ( int batch_index = 0; batch_index < batch_count; ++batch_index )
    {
       TemporaryMemory batch_mark = beginTemporaryMemory( debug_arena );
@@ -1492,6 +1514,7 @@ TestResult silero_test()
       my_stft( debug_arena, &input_one_batch, forward_basis_buffer, stft_output );
 
       TestTensor *normalization_output = tensor_copy( debug_arena, stft_output );
+#endif
       adaptive_audio_normalization_inplace( debug_arena, normalization_output );
 
       ConvOutputShape l4_output_required_shape = shape_for_encoder( normalization_output, encoder_weights );
