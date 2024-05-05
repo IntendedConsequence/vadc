@@ -264,12 +264,12 @@ static void conv_tensor ( TestTensor *input, TestTensor *filters, TestTensor *bi
 
 static inline TestTensor *conv_tensor_out ( MemoryArena *arena, TestTensor *input, TestTensor *filters, TestTensor *biases, int hop_length )
 {
-   TracyCZone(conv_tensor_out, true);
+   // TracyCZone(conv_tensor_out, true);
 
    TestTensor *output = tensor_zeros_for_conv( arena, input, filters, hop_length );
    conv_tensor( input, filters, biases, hop_length, output );
 
-   TracyCZoneEnd(conv_tensor_out);
+   // TracyCZoneEnd(conv_tensor_out);
    return output;
 }
 
@@ -308,6 +308,7 @@ static void conv_tensor_stride64_nobias ( MemoryArena *arena, TestTensor *input,
 
 static TestTensor *tensor_reflect_pad_last_dim( MemoryArena *arena, TestTensor *input, int padding )
 {
+   TracyCZone(tensor_reflect_pad_last_dim, true);
    int last_dim_index = tdimindex( input, -1 );
    int last_dim = input->dims[last_dim_index];
    int last_dim_padded = last_dim + 2 * padding;
@@ -343,6 +344,7 @@ static TestTensor *tensor_reflect_pad_last_dim( MemoryArena *arena, TestTensor *
       }
    }
 
+   TracyCZoneEnd(tensor_reflect_pad_last_dim);
    return new_tensor;
 }
 
