@@ -53,10 +53,13 @@ rem cl.exe /nologo test.c /link /PDB:test_%datetime_stamp%.pdb
 
 rem set CL=%CL% /fsanitize=address
 rem set CL=%CL% /fp:contract
+rem set CL=%CL% /fp:fast
+set CL=%CL% /fp:precise
 set CL=%CL% /O2 /arch:AVX2
 set CL=%CL% /DTRACY_ENABLE /DTRACY_NO_SAMPLING
 set CL=%CL% /DNDEBUG
-rem set CL=%CL% -Qvec-report:2
+set CL=%CL% /DVADC_API=
+set CL=%CL% -Qvec-report:2
 del test.pdb >nul & cl.exe /nologo /MP /Itracy test.c tracy\TracyClient.cpp /link
 
 @REM cl.exe /nologo /MD decoder.c /link /DLL /OUT:decoder.dll
