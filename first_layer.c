@@ -172,9 +172,10 @@ static void conv_tensor ( TestTensor *input, TestTensor *filters, TestTensor *bi
          float *output_filter_channel = output_data_batch + filter_index * output_array_count;
          if (biases)
          {
+            float bias_value = biases->data[filter_index];
             for (int i = 0; i < output_array_count; ++i)
             {
-               output_filter_channel[i] = biases->data[filter_index];
+               output_filter_channel[i] = bias_value;
             }
          }
 
