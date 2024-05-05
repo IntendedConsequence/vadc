@@ -146,10 +146,10 @@ float dotproduct_simd ( const float *arr, int count, const float *arr2, int coun
    float result = 0.0f;
    for ( int i = 0; i < (mincount / wide) * wide; i += wide )
    {
-      __m256 a = _mm256_load_ps(arr + i);
-      __m256 b = _mm256_load_ps(arr2 + i);
-      __m256 c = _mm256_load_ps(arr + i + 8);
-      __m256 d = _mm256_load_ps(arr2 + i + 8);
+      __m256 a = _mm256_loadu_ps(arr + i);
+      __m256 b = _mm256_loadu_ps(arr2 + i);
+      __m256 c = _mm256_loadu_ps(arr + i + 8);
+      __m256 d = _mm256_loadu_ps(arr2 + i + 8);
 
       __m256 ab = _mm256_mul_ps(a, b);
       __m256 cd = _mm256_mul_ps(c, d);
