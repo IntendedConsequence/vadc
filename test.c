@@ -1429,44 +1429,51 @@ TestResult silero_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   LoadTesttensorResult lstm_weights_res = {0};
+   LoadTesttensorResult silero_weights_res = {0};
 
    res = load_testtensor( "testdata\\untracked\\silero.testtensor" );
-   lstm_weights_res = load_testtensor( "testdata\\untracked\\lstm_silero_3.1_16k_for_c.testtensor" );
+   silero_weights_res = load_testtensor( "testdata\\silero_v31_16k.testtensor" );
 
-   if ( res.tensor_count == 0 || lstm_weights_res.tensor_count == 0 )
+   if ( res.tensor_count == 0 || silero_weights_res.tensor_count == 0 )
    {
       endTemporaryMemory( mark );
       TestResult test_result = {0};
       return test_result;
    }
-   
+
    int encoder_weights_count = 24 + 24 + 22 + 24;
    Assert( res.tensor_count == (1 + encoder_weights_count + 2 + 2) );
+   Assert( silero_weights_res.tensor_count == (1 + encoder_weights_count + 2 + 2) );
 
-   int test_data_index = 0;
-   TestTensor *forward_basis_buffer = res.tensor_array + test_data_index++;
+   int silero_weights_index = 0;
+   TestTensor *forward_basis_buffer = silero_weights_res.tensor_array + silero_weights_index++;
 
    // NOTE(irwin): encoder weights
    Encoder_Weights encoder_weights = {0};
-   int encoder_weights_read = fill_encoder_weights( &encoder_weights, res.tensor_array + test_data_index );
+   int encoder_weights_read = fill_encoder_weights( &encoder_weights, silero_weights_res.tensor_array + silero_weights_index );
    Assert( encoder_weights_read == encoder_weights_count );
-   test_data_index += encoder_weights_read;
+   silero_weights_index += encoder_weights_read;
+
+   // NOTE(irwin): lstm weights
+   TestTensor *lstm_weights = silero_weights_res.tensor_array + silero_weights_index++;
+   TestTensor *lstm_biases = silero_weights_res.tensor_array + silero_weights_index++;
 
    // NOTE(irwin): decoder weights
-   TestTensor *decoder_weights = res.tensor_array + test_data_index++;
-   TestTensor *decoder_biases = res.tensor_array + test_data_index++;
+   TestTensor *decoder_weights = silero_weights_res.tensor_array + silero_weights_index++;
+   TestTensor *decoder_biases = silero_weights_res.tensor_array + silero_weights_index++;
+
+   int test_data_index = 0;
+   test_data_index++; // skip forward_basis_buffer
+   test_data_index += encoder_weights_count; // skip encoder weights
+   test_data_index += 2; // skip decoder weights
 
    TestTensor *input_batches = res.tensor_array + test_data_index++;
    TestTensor *result = res.tensor_array + test_data_index++;
 
-   // NOTE(irwin): lstm weights
-   TestTensor *lstm_weights = lstm_weights_res.tensor_array + 0;
-   TestTensor *lstm_biases = lstm_weights_res.tensor_array + 1;
 
    TestTensor *lstm_input_h = tensor_zeros_3d(debug_arena, 2, 1, 64);
    TestTensor *lstm_input_c = tensor_zeros_like(debug_arena, lstm_input_h);
-   
+
    TestTensor *lstm_output_h = tensor_zeros_like( debug_arena, lstm_input_h );
    TestTensor *lstm_output_c = tensor_zeros_like( debug_arena, lstm_input_h );
 
