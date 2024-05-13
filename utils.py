@@ -1,5 +1,8 @@
+from pathlib import Path
 import numpy as np
 import struct
+
+import torch
 
 def serialize_numpy_array(arr):
     try:
@@ -86,3 +89,144 @@ def state_dict_from_bytes(serialized_data):
 # arr = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
 # serialized_data = serialize_multiple_arrays(state_dict)
 # Path('test.testtensor').write_bytes(serialized_data)
+
+def prepare_lstm_weights_and_biases_for_c(state_dict):
+    ih_hh_l0 = np.concatenate([state_dict['_model1.lstm.weight_ih_l0'], state_dict['_model1.lstm.weight_hh_l0']], -1)
+    ih_hh_l1 = np.concatenate([state_dict['_model1.lstm.weight_ih_l1'], state_dict['_model1.lstm.weight_hh_l1']], -1)
+
+    weights = np.stack([ih_hh_l0, ih_hh_l1])
+    # NOTE(irwin): we add biases since in vanilla LSTM they are fused, but in torch they are separate for CUDA compatibility
+    biases_l0 = state_dict['_model1.lstm.bias_ih_l0'] + state_dict['_model1.lstm.bias_hh_l0']
+    biases_l1 = state_dict['_model1.lstm.bias_ih_l1'] + state_dict['_model1.lstm.bias_hh_l1']
+    biases = np.stack([biases_l0, biases_l1])
+    lstm_weights_dict = {
+        'weights': weights,
+        'biases': biases,
+    }
+
+    return lstm_weights_dict
+
+def serialize_lstm_weights_and_biases_for_c(state_dict):
+    lstm_dict = prepare_lstm_weights_and_biases_for_c(state_dict)
+    lstm_bytes = serialize_multiple_arrays(lstm_dict)
+    Path('lstm_silero_3.1_16k_for_c.testtensor').write_bytes(lstm_bytes)
+
+def transformer_l1_key_map():
+    map = {}
+    i = 0
+    map['dw_conv_weights'] = '_model1.first_layer.0.dw_conv.0.weight'
+    map['dw_conv_biases'] = '_model1.first_layer.0.dw_conv.0.bias'
+    map['pw_conv_weights'] = '_model1.first_layer.0.pw_conv.0.weight'
+    map['pw_conv_biases'] = '_model1.first_layer.0.pw_conv.0.bias'
+    map['proj_weights'] = '_model1.first_layer.0.proj.weight'
+    map['proj_biases'] = '_model1.first_layer.0.proj.bias'
+
+    map['attention_weights'] = f'_model1.encoder.{i}.attention.QKV.weight'
+    map['attention_biases'] = f'_model1.encoder.{i}.attention.QKV.bias'
+    map['attention_proj_weights'] = f'_model1.encoder.{i}.attention.out_proj.weight'
+    map['attention_proj_biases'] = f'_model1.encoder.{i}.attention.out_proj.bias'
+
+    map['norm1_weights'] = f'_model1.encoder.{i}.norm1.weight'
+    map['norm1_biases'] = f'_model1.encoder.{i}.norm1.bias'
+    map['linear1_weights'] = f'_model1.encoder.{i}.linear1.weight'
+    map['linear1_biases'] = f'_model1.encoder.{i}.linear1.bias'
+    map['linear2_weights'] = f'_model1.encoder.{i}.linear2.weight'
+    map['linear2_biases'] = f'_model1.encoder.{i}.linear2.bias'
+    map['norm2_weights'] = f'_model1.encoder.{i}.norm2.weight'
+    map['norm2_biases'] = f'_model1.encoder.{i}.norm2.bias'
+
+    i += 1
+    map['conv_weights'] = f'_model1.encoder.{i}.weight'
+    map['conv_biases'] = f'_model1.encoder.{i}.bias'
+
+    i += 1
+    map['batch_norm_weights'] = f'_model1.encoder.{i}.weight'
+    map['batch_norm_biases'] = f'_model1.encoder.{i}.bias'
+    map['batch_norm_running_mean'] = f'_model1.encoder.{i}.running_mean'
+    map['batch_norm_running_var'] = f'_model1.encoder.{i}.running_var'
+
+    return map
+
+def transformer_l2_key_map(i):
+    map = {}
+
+    map['dw_conv_weights'] = f'_model1.encoder.{i}.0.dw_conv.0.weight'
+    map['dw_conv_biases'] = f'_model1.encoder.{i}.0.dw_conv.0.bias'
+    map['pw_conv_weights'] = f'_model1.encoder.{i}.0.pw_conv.0.weight'
+    map['pw_conv_biases'] = f'_model1.encoder.{i}.0.pw_conv.0.bias'
+    map['proj_weights'] = f'_model1.encoder.{i}.0.proj.weight'
+    map['proj_biases'] = f'_model1.encoder.{i}.0.proj.bias'
+
+    i += 1
+    map['attention_weights'] = f'_model1.encoder.{i}.attention.QKV.weight'
+    map['attention_biases'] = f'_model1.encoder.{i}.attention.QKV.bias'
+    map['attention_proj_weights'] = f'_model1.encoder.{i}.attention.out_proj.weight'
+    map['attention_proj_biases'] = f'_model1.encoder.{i}.attention.out_proj.bias'
+
+    map['norm1_weights'] = f'_model1.encoder.{i}.norm1.weight'
+    map['norm1_biases'] = f'_model1.encoder.{i}.norm1.bias'
+    map['linear1_weights'] = f'_model1.encoder.{i}.linear1.weight'
+    map['linear1_biases'] = f'_model1.encoder.{i}.linear1.bias'
+    map['linear2_weights'] = f'_model1.encoder.{i}.linear2.weight'
+    map['linear2_biases'] = f'_model1.encoder.{i}.linear2.bias'
+    map['norm2_weights'] = f'_model1.encoder.{i}.norm2.weight'
+    map['norm2_biases'] = f'_model1.encoder.{i}.norm2.bias'
+
+    i += 1
+    map['conv_weights'] = f'_model1.encoder.{i}.weight'
+    map['conv_biases'] = f'_model1.encoder.{i}.bias'
+
+    i += 1
+    map['batch_norm_weights'] = f'_model1.encoder.{i}.weight'
+    map['batch_norm_biases'] = f'_model1.encoder.{i}.bias'
+    map['batch_norm_running_mean'] = f'_model1.encoder.{i}.running_mean'
+    map['batch_norm_running_var'] = f'_model1.encoder.{i}.running_var'
+
+    return map
+
+def transformer_l3_key_map(i):
+    map = transformer_l2_key_map(i)
+    del map["proj_weights"]
+    del map["proj_biases"]
+
+    return map
+
+def prepare_silero_v31_weights(state_dict):
+    weight_dict = {}
+
+    weight_dict['forward_basis_buffer'] = state_dict['_model1.feature_extractor.forward_basis_buffer']
+
+    l1_key_map = transformer_l1_key_map()
+    l2_key_map = transformer_l2_key_map(4)
+    l3_key_map = transformer_l3_key_map(9)
+    l4_key_map = transformer_l2_key_map(14)
+
+    for key in l1_key_map:
+        weight_dict[f"transformer_l1.{key}"] = state_dict[l1_key_map[key]]
+
+    for key in l2_key_map:
+        weight_dict[f"transformer_l2.{key}"] = state_dict[l2_key_map[key]]
+
+    for key in l3_key_map:
+        weight_dict[f"transformer_l3.{key}"] = state_dict[l3_key_map[key]]
+
+    for key in l4_key_map:
+        weight_dict[f"transformer_l4.{key}"] = state_dict[l4_key_map[key]]
+
+    lstm_weights = prepare_lstm_weights_and_biases_for_c(state_dict)
+    weight_dict.update(lstm_weights)
+
+    weight_dict['decoder_weights'] = state_dict['_model1.decoder.1.weight']
+    weight_dict['decoder_biases'] = state_dict['_model1.decoder.1.bias']
+
+    return weight_dict
+
+
+def serialize_silero_v31_weights_16k():
+    jit_model = torch.jit.load(r"silero-vad-models\v3.1\silero_vad.jit")
+    jit_model.eval()
+
+    sd = prepare_silero_v31_weights(jit_model.state_dict())
+    ser = serialize_multiple_arrays(sd)
+    print(len(ser))
+    Path('testdata/silero_v31_16k.testtensor').write_bytes(ser)
