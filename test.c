@@ -1188,7 +1188,7 @@ TestResult stft_normalization_encoder_test()
 
    TestTensor *input = res.tensor_array + test_data_index++;
    TestTensor *result = res.tensor_array + test_data_index++;
-   
+
    int cutoff;
    {
       int filter_length = tdim( forward_basis_buffer, 2 );
@@ -1254,7 +1254,7 @@ TestResult stft_normalization_encoder_lstm_test()
 
    TestTensor *lstm_weights = lstm_weights_res.tensor_array + 0;
    TestTensor *lstm_biases = lstm_weights_res.tensor_array + 1;
-   
+
    TestTensor *output = tensor_zeros_like( debug_arena, result );
 
    int cutoff;
@@ -1335,7 +1335,7 @@ TestResult stft_normalization_encoder_lstm_decoder_test()
    int encoder_weights_count = 24 + 24 + 22 + 24;
    Assert( res.tensor_count == (1 + encoder_weights_count + 2 + 2) );
 
-   
+
    int test_data_index = 0;
    TestTensor *forward_basis_buffer = res.tensor_array + test_data_index++;
 
@@ -1353,7 +1353,7 @@ TestResult stft_normalization_encoder_lstm_decoder_test()
 
    TestTensor *lstm_weights = lstm_weights_res.tensor_array + 0;
    TestTensor *lstm_biases = lstm_weights_res.tensor_array + 1;
-   
+
    TestTensor *output = tensor_zeros_like( debug_arena, result );
 
    int cutoff;
@@ -1586,7 +1586,7 @@ TestResult silero_test()
       endTemporaryMemory( batch_mark );
 
       output->data[batch_index * decoder_results + 0] = diarization_maybe;
-      output->data[batch_index * decoder_results + 1] = speech_probability;      
+      output->data[batch_index * decoder_results + 1] = speech_probability;
 
       memmove( lstm_input_h->data, lstm_output_h->data, lstm_input_h->nbytes );
       memmove( lstm_input_c->data, lstm_output_c->data, lstm_input_c->nbytes );
