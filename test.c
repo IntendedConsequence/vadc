@@ -875,6 +875,27 @@ static inline int fill_encoder_weights(Encoder_Weights *encoder_weights, TestTen
    return test_data_index;
 }
 
+static inline Silero_Weights silero_weights_init( LoadTesttensorResult res )
+{
+   Silero_Weights weights = {0};
+   int encoder_weights_count = 24 + 24 + 22 + 24;
+
+   int silero_weights_index = 0;
+   weights.forward_basis_buffer = res.tensor_array + silero_weights_index++;
+
+   int encoder_weights_read = fill_encoder_weights( &weights.encoder_weights, res.tensor_array + silero_weights_index );
+   Assert( encoder_weights_read == encoder_weights_count );
+   silero_weights_index += encoder_weights_read;
+
+   weights.lstm_weights = res.tensor_array + silero_weights_index++;
+   weights.lstm_biases = res.tensor_array + silero_weights_index++;
+
+   weights.decoder_weights = res.tensor_array + silero_weights_index++;
+   weights.decoder_biases = res.tensor_array + silero_weights_index++;
+
+   return weights;
+}
+
 TestResult transformer_first_layer_test()
 {
    MemoryArena *debug_arena = DEBUG_getDebugArena();
@@ -1442,31 +1463,12 @@ TestResult silero_test()
    }
 
    int encoder_weights_count = 24 + 24 + 22 + 24;
-   Assert( res.tensor_count == (1 + encoder_weights_count + 2 + 2) );
+   Assert( res.tensor_count == 2 );
    Assert( silero_weights_res.tensor_count == (1 + encoder_weights_count + 2 + 2) );
 
-   int silero_weights_index = 0;
-   TestTensor *forward_basis_buffer = silero_weights_res.tensor_array + silero_weights_index++;
-
-   // NOTE(irwin): encoder weights
-   Encoder_Weights encoder_weights = {0};
-   int encoder_weights_read = fill_encoder_weights( &encoder_weights, silero_weights_res.tensor_array + silero_weights_index );
-   Assert( encoder_weights_read == encoder_weights_count );
-   silero_weights_index += encoder_weights_read;
-
-   // NOTE(irwin): lstm weights
-   TestTensor *lstm_weights = silero_weights_res.tensor_array + silero_weights_index++;
-   TestTensor *lstm_biases = silero_weights_res.tensor_array + silero_weights_index++;
-
-   // NOTE(irwin): decoder weights
-   TestTensor *decoder_weights = silero_weights_res.tensor_array + silero_weights_index++;
-   TestTensor *decoder_biases = silero_weights_res.tensor_array + silero_weights_index++;
+   Silero_Weights silero_weights = silero_weights_init( silero_weights_res );
 
    int test_data_index = 0;
-   test_data_index++; // skip forward_basis_buffer
-   test_data_index += encoder_weights_count; // skip encoder weights
-   test_data_index += 2; // skip decoder weights
-
    TestTensor *input_batches = res.tensor_array + test_data_index++;
    TestTensor *result = res.tensor_array + test_data_index++;
 
@@ -1510,34 +1512,34 @@ TestResult silero_test()
 
       int cutoff;
       {
-         int filter_length = tdim( forward_basis_buffer, 2 );
+         int filter_length = tdim( silero_weights.forward_basis_buffer, 2 );
          int half_filter_length = filter_length / 2;
          cutoff = half_filter_length + 1;
       }
       // TODO(irwin): dehardcode 64 hop_length
-      int stft_out_features_count = compute_stft_output_feature_count( &input_one_batch, forward_basis_buffer, 64 );
+      int stft_out_features_count = compute_stft_output_feature_count( &input_one_batch, silero_weights.forward_basis_buffer, 64 );
       TestTensor *stft_output = tensor_zeros_3d( debug_arena, tdim( &input_one_batch, -2 ), cutoff, stft_out_features_count );
 
-      my_stft( debug_arena, &input_one_batch, forward_basis_buffer, stft_output );
+      my_stft( debug_arena, &input_one_batch, silero_weights.forward_basis_buffer, stft_output );
 
       TestTensor *normalization_output = tensor_copy( debug_arena, stft_output );
 #endif
       adaptive_audio_normalization_inplace( debug_arena, normalization_output );
 
-      ConvOutputShape l4_output_required_shape = shape_for_encoder( normalization_output, encoder_weights );
+      ConvOutputShape l4_output_required_shape = shape_for_encoder( normalization_output, silero_weights.encoder_weights );
       TestTensor *l4_output = tensor_zeros_3d( debug_arena, l4_output_required_shape.batch_size, l4_output_required_shape.channels_out, l4_output_required_shape.sequence_length );
 
-      encoder( debug_arena, normalization_output, encoder_weights, l4_output );
+      encoder( debug_arena, normalization_output, silero_weights.encoder_weights, l4_output );
 
       TestTensor *l4_output_t = tensor_transpose_last_2d( debug_arena, l4_output );
 
       int batches = tdim( l4_output_t, -3 );
       int seq_length = tdim( l4_output_t, -2 );
       int input_size = tdim( l4_output_t, -1 );
-      int layer_count = tdim( lstm_weights, 0 );
-      int hidden_size = tdim( lstm_weights, -1 ) / 2;
+      int layer_count = tdim( silero_weights.lstm_weights, 0 );
+      int hidden_size = tdim( silero_weights.lstm_weights, -1 ) / 2;
       Assert( hidden_size == input_size );
-      Assert( hidden_size == tdim( lstm_biases, -1 ) / 4 );
+      Assert( hidden_size == tdim( silero_weights.lstm_biases, -1 ) / 4 );
       int batch_stride = seq_length * input_size;
       int lstm_output_size = batch_stride * batches + (input_size * layer_count * 2);
 
@@ -1552,8 +1554,8 @@ TestResult silero_test()
                 input_size,
                 lstm_input_h->data,
                 lstm_input_c->data,
-                lstm_weights->data,
-                lstm_biases->data,
+                silero_weights.lstm_weights->data,
+                silero_weights.lstm_biases->data,
                 lstm_output
       );
 
@@ -1571,13 +1573,13 @@ TestResult silero_test()
 
       TestTensor *lstm_output_tensor_t = tensor_transpose_last_2d( debug_arena, lstm_output_tensor );
 
-      int decoder_output_size = batches * tdim( decoder_weights, 0 );
+      int decoder_output_size = batches * tdim( silero_weights.decoder_weights, 0 );
 
-      int decoder_results = tdim( decoder_weights, 0 );
+      int decoder_results = tdim( silero_weights.decoder_weights, 0 );
       TestTensor *output_decoder = tensor_zeros_3d( debug_arena, 1, decoder_results, 1 );
       Assert( decoder_output_size == output_decoder->size );
 
-      int decoder_result = decoder_tensor( lstm_output_tensor_t, decoder_weights, decoder_biases, output_decoder );
+      int decoder_result = decoder_tensor( lstm_output_tensor_t, silero_weights.decoder_weights, silero_weights.decoder_biases, output_decoder );
       VAR_UNUSED( decoder_result );
 
       float diarization_maybe = output_decoder->data[0];
