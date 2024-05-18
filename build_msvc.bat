@@ -45,7 +45,7 @@ rem set CL=%CL% /fsanitize=address
 set LINK=/INCREMENTAL:NO /SUBSYSTEM:CONSOLE kernel32.lib Shlwapi.lib
 
 @REM del vadc.pdb >nul & cl.exe /nologo /O2 vadc.c /link lib\onnxruntime.lib
-del vadc.pdb >nul 2>&1 & cl.exe /nologo vadc.c /link lib\onnxruntime.lib Shell32.lib
+del vadc.pdb >nul 2>&1 & cl.exe /nologo /MP /O2 /arch:AVX2 /DNDEBUG /DONNX_INFERENCE_ENABLED=0 /Itracy vadc.c tracy\TracyClient.cpp /link lib\onnxruntime.lib Shell32.lib
 del filter_script.pdb >nul & cl.exe /nologo filter_script.c /link
 
 rem cl.exe /nologo test.c /Fdtest_%datetime_stamp%d.pdb /link /PDB:test_%datetime_stamp%.pdb
@@ -56,10 +56,10 @@ rem set CL=%CL% /fp:contract
 rem set CL=%CL% /fp:fast
 set CL=%CL% /fp:precise
 set CL=%CL% /O2 /arch:AVX2
-set CL=%CL% /DTRACY_ENABLE /DTRACY_NO_SAMPLING
+@REM set CL=%CL% /DTRACY_ENABLE /DTRACY_NO_SAMPLING
 set CL=%CL% /DNDEBUG
 set CL=%CL% /DVADC_API=
-set CL=%CL% -Qvec-report:2
+@REM set CL=%CL% -Qvec-report:2
 del test.pdb >nul & cl.exe /nologo /MP /Itracy test.c tracy\TracyClient.cpp /link
 
 @REM cl.exe /nologo /MD decoder.c /link /DLL /OUT:decoder.dll
