@@ -31,3 +31,7 @@ void create_tensor_int64( OrtMemoryInfo *memory_info,
                           size_t input_count );
 
 int enable_cuda( OrtSessionOptions *session_options );
+
+static OrtSession *ort_init( MemoryArena * arena, String8 model_path_arg );
+
+s32 ort_get_batch_size_restriction( OrtSession * session, OrtAllocator * ort_allocator );

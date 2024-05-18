@@ -60,9 +60,6 @@ static FILE *getDebugFile()
 #endif
 
 
-static const wchar_t model_filename[] = SILERO_FILENAME;
-
-
 float run_inference_on_single_chunk( VADC_Context context,
                                                  const size_t samples_count,
                                                  const float *samples_buffer_float32,
@@ -713,81 +710,6 @@ static void deinit_buffered_stream_file( Buffered_Stream *s )
       s->buffer_internal_size = 0;
    }
 }
-
-#if ONNX_INFERENCE_ENABLED
-static OrtSession *ort_init( MemoryArena *arena, String8 model_path_arg )
-{
-   g_ort = OrtGetApiBase()->GetApi( ORT_API_VERSION );
-   if ( !g_ort )
-   {
-      fprintf( stderr, "Failed to init ONNX Runtime engine.\n" );
-      return 0;
-   }
-
-   OrtEnv *env;
-   ORT_ABORT_ON_ERROR( g_ort->CreateEnv( ORT_LOGGING_LEVEL_ERROR, "test", &env ) );
-   Assert( env != NULL );
-
-   OrtSessionOptions *session_options;
-   ORT_ABORT_ON_ERROR( g_ort->CreateSessionOptions( &session_options ) );
-   // enable_cuda(session_options);
-   ORT_ABORT_ON_ERROR( g_ort->SetIntraOpNumThreads( session_options, 4 ) );
-   ORT_ABORT_ON_ERROR( g_ort->SetInterOpNumThreads( session_options, 1 ) );
-
-#define MODEL_PATH_BUFFER_SIZE 1024
-   wchar_t *model_path_arg_w = 0;
-   String8_ToWidechar( arena, &model_path_arg_w, model_path_arg );
-
-   const size_t model_path_buffer_size = MODEL_PATH_BUFFER_SIZE;
-   wchar_t model_path[MODEL_PATH_BUFFER_SIZE];
-   GetModuleFileNameW( NULL, model_path, (DWORD)model_path_buffer_size );
-   PathRemoveFileSpecW( model_path );
-   PathAppendW( model_path, model_path_arg_w ? model_path_arg_w : model_filename );
-
-   OrtSession *session;
-   ORT_ABORT_ON_ERROR( g_ort->CreateSession( env, model_path, session_options, &session ) );
-
-   return session;
-}
-
-s32 ort_get_batch_size_restriction( OrtSession *session, OrtAllocator *ort_allocator )
-{
-   s32 batch_size_restriction = 1;
-
-   size_t model_input_count = 0;
-   ORT_ABORT_ON_ERROR( g_ort->SessionGetInputCount( session, &model_input_count ) );
-
-   for ( size_t i = 0; i < model_input_count; i++ )
-   {
-      char *input_name;
-      g_ort->SessionGetInputName( session, i, ort_allocator, &input_name );
-
-      if ( strcmp( input_name, "input" ) == 0 )
-      {
-         OrtTypeInfo *type_info;
-         g_ort->SessionGetInputTypeInfo( session, i, &type_info );
-
-         const OrtTensorTypeAndShapeInfo *tensor_info;
-         g_ort->CastTypeInfoToTensorInfo( type_info, &tensor_info );
-
-         int64_t dim_value;
-         g_ort->GetDimensions( tensor_info, &dim_value, 1 );
-
-         batch_size_restriction = (int)dim_value;
-
-         // fprintf(stderr, "Axis-0 dimension of 'input': %" PRId64 "\n", dim_value);
-
-         g_ort->ReleaseTypeInfo( type_info );
-         break;
-      }
-
-      g_ort->AllocatorFree( ort_allocator, input_name );
-   }
-
-   return batch_size_restriction;
-}
-
-#endif // ONNX_INFERENCE_ENABLED
 
 int run_inference(String8 model_path_arg,
                   MemoryArena *arena,

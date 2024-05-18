@@ -75,15 +75,6 @@ struct VADC_Context
    Silero_Context *silero_context;
 };
 
-typedef struct VADC_Chunk_Result
-{
-   float probability;
-
-   // NOTE(irwin): unused, remove
-   size_t state_count;
-   //float *state_h;
-   //float *state_c;
-} VADC_Chunk_Result;
 
 typedef struct FeedState
 {
