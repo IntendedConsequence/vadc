@@ -47,6 +47,9 @@ const float chunk_duration_ms = SILERO_WINDOW_SIZE_SAMPLES / (float)SILERO_SAMPL
 
 typedef struct VADC_Context VADC_Context;
 
+// NOTE(irwin): forward declare
+typedef struct Silero_Context Silero_Context;
+
 struct VADC_Context
 {
    const OrtValue *const *input_tensors;
@@ -70,12 +73,15 @@ struct VADC_Context
    b32 is_silero_v4;
    s32 silero_probability_out_index;
    const int batch_size;
+
+   Silero_Context *silero_context;
 };
 
 typedef struct VADC_Chunk_Result
 {
    float probability;
 
+   // NOTE(irwin): unused, remove
    size_t state_count;
    float *state_h;
    float *state_c;

@@ -2,8 +2,6 @@
 
 #include <inttypes.h>
 
-#include <inttypes.h>
-
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h> // GetModuleFileNameW
 #include <Shlwapi.h> // PathRemoveFileSpecW, PathAppendW
@@ -12,6 +10,19 @@
 
 #include "string8.c"
 
+#include <tracy\TracyC.h>
+
+#include "utils.h"
+#include "tensor.h"
+
+#include "decoder.c"
+#include "first_layer.c"
+#include "lstm.c"
+#include "transformer.c"
+
+#define MATHS_IMPLEMENTATION
+#include "maths.h"
+
 #define MEMORY_IMPLEMENTATION
 #include "memory.h"
 
@@ -19,6 +30,8 @@
 #ifndef DEBUG_WRITE_STATE_TO_FILE
 #define DEBUG_WRITE_STATE_TO_FILE 0
 #endif
+
+
 
 // TODO(irwin):
 // - move win32-specific stuff to separate file
@@ -84,6 +97,7 @@ VADC_Chunk_Result run_inference_on_single_chunk( VADC_Context context,
    fwrite( &debug_state, sizeof( DEBUG_Silero_State ), 1, debug_file );
 #endif
 
+#if ONNX_INFERENCE_ENABLED
    ORT_ABORT_ON_ERROR( g_ort->Run( context.session,
                                    NULL,
                                    context.input_names,
@@ -104,6 +118,13 @@ VADC_Chunk_Result run_inference_on_single_chunk( VADC_Context context,
 
    result.state_h = context.output_tensor_state_h;
    result.state_c = context.output_tensor_state_c;
+#else
+   float result_probability = silero_run_one_batch_with_context(DEBUG_getDebugArena(),
+                                                                context.silero_context,
+                                                                1536,
+                                                                context.input_tensor_samples);
+   result.probability = result_probability;
+#endif
 
    return result;
 }
@@ -919,6 +940,21 @@ int run_inference(OrtSession* session,
    }
 
 
+   Silero_Context silero_context;
+   {
+      LoadTesttensorResult silero_weights_res = {0};
+
+      silero_weights_res = load_testtensor( "testdata\\silero_v31_16k.testtensor" );
+
+      Assert ( silero_weights_res.tensor_count > 0 );
+      int encoder_weights_count = 24 + 24 + 22 + 24;
+      Assert( silero_weights_res.tensor_count == (1 + encoder_weights_count + 2 + 2) );
+
+      silero_context.weights = silero_weights_init( silero_weights_res );
+      silero_context.state_lstm_h = tensor_zeros_3d(DEBUG_getDebugArena(), 2, 1, 64);
+      silero_context.state_lstm_c = tensor_zeros_3d(DEBUG_getDebugArena(), 2, 1, 64);
+   }
+
 
    VADC_Context context =
    {
@@ -940,7 +976,8 @@ int run_inference(OrtSession* session,
       .outputs_count = 3,
       .is_silero_v4 = is_silero_v4,
       .silero_probability_out_index = is_silero_v4 ? 0 : 1,
-      .batch_size = batch_size
+      .batch_size = batch_size,
+      .silero_context = &silero_context
    };
 
    FeedState state = {0};
