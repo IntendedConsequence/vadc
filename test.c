@@ -9,8 +9,8 @@
 
 #include "decoder.c"
 #include "first_layer.c"
-#include "transformer.c"
 #include "lstm.c"
+#include "transformer.c"
 
 #define MATHS_IMPLEMENTATION
 #include "maths.h"
@@ -22,92 +22,6 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
-typedef struct TestTensor_Header TestTensor_Header;
-struct TestTensor_Header
-{
-   int version;
-   int tensor_count;
-};
-
-
-typedef struct LoadTesttensorResult LoadTesttensorResult;
-struct LoadTesttensorResult
-{
-   int tensor_count;
-   TestTensor *tensor_array;
-};
-
-LoadTesttensorResult load_testtensor( const char *path )
-{
-   MemoryArena *debug_arena = DEBUG_getDebugArena();
-
-   LoadTesttensorResult result = {0};
-
-   // Assert(tensor);
-   // memset(tensor, 0, sizeof(*tensor));
-
-   FILE *f = fopen( path, "rb" );
-   if (!f)
-   {
-      return result;
-   }
-   // AssertMessage( f, "Couldn't open file" );
-
-   TestTensor_Header header = {0};
-   size_t fread_result = fread( &header, sizeof( header ), 1, f );
-   Assert( fread_result );
-   Assert( header.version == 1 );
-
-   int tensor_count = header.tensor_count;
-   Assert( tensor_count > 0 );
-
-   TestTensor *tensor_array = pushArray( debug_arena, tensor_count, TestTensor );
-
-   for ( int i = 0; i < tensor_count; ++i )
-   {
-      TestTensor *tensor = tensor_array + i;
-      int name_len = 0;
-      fread_result = fread( &name_len, sizeof( name_len ), 1, f );
-      Assert( fread_result );
-      Assert( name_len );
-      char *name = pushSizeZeroed( debug_arena, name_len + 1, 1 );
-      fread_result = fread( name, sizeof( char ), name_len, f );
-      Assert( fread_result );
-      tensor->name = name;
-   }
-
-   for ( int i = 0; i < tensor_count; ++i )
-   {
-      TestTensor *tensor = tensor_array + i;
-
-      fread_result = fread( &tensor->ndim, sizeof( tensor->ndim ), 1, f );
-      Assert( fread_result );
-      if ( tensor->ndim )
-      {
-         //tensor->dims = pushArray( debug_arena, tensor->ndim, int );
-         fread_result = fread( tensor->dims, sizeof( tensor->dims[0] ), tensor->ndim, f );
-         Assert( fread_result );
-      }
-      fread_result = fread( &tensor->size, sizeof( tensor->size ), 1, f );
-      Assert( fread_result );
-      fread_result = fread( &tensor->nbytes, sizeof( tensor->nbytes ), 1, f );
-      Assert( fread_result );
-
-      tensor->data = pushSizeZeroed( debug_arena, tensor->nbytes, 1 );
-      fread_result = fread( tensor->data, tensor->nbytes, 1, f );
-      Assert( fread_result );
-   }
-
-   fclose( f );
-
-   result.tensor_array = tensor_array;
-   result.tensor_count = tensor_count;
-
-   Assert( result.tensor_array );
-   Assert( result.tensor_count );
-
-   return result;
-}
 
 static void print_single_tensor( TestTensor *t )
 {
@@ -817,84 +731,6 @@ TestResult transformer_block_16_16_48_test()
    return test_result;
 }
 
-static inline int fill_transformer_weights( TransformerLayer_Weights *weights, TestTensor *tensor_array, b32 has_out_proj )
-{
-   int test_data_index = 0;
-
-   weights->dw_conv_weights = tensor_array + test_data_index++;
-   weights->dw_conv_biases = tensor_array + test_data_index++;
-   weights->pw_conv_weights = tensor_array + test_data_index++;
-   weights->pw_conv_biases = tensor_array + test_data_index++;
-
-   if ( has_out_proj )
-   {
-      weights->proj_weights = tensor_array + test_data_index++;
-      weights->proj_biases = tensor_array + test_data_index++;
-   }
-
-   weights->attention_weights = tensor_array + test_data_index++;
-   weights->attention_biases = tensor_array + test_data_index++;
-   weights->attention_proj_weights = tensor_array + test_data_index++;
-   weights->attention_proj_biases = tensor_array + test_data_index++;
-
-   weights->norm1_weights = tensor_array + test_data_index++;
-   weights->norm1_biases = tensor_array + test_data_index++;
-   weights->linear1_weights = tensor_array + test_data_index++;
-   weights->linear1_biases = tensor_array + test_data_index++;
-   weights->linear2_weights = tensor_array + test_data_index++;
-   weights->linear2_biases = tensor_array + test_data_index++;
-   weights->norm2_weights = tensor_array + test_data_index++;
-   weights->norm2_biases = tensor_array + test_data_index++;
-
-   weights->conv_weights = tensor_array + test_data_index++;
-   weights->conv_biases = tensor_array + test_data_index++;
-
-   weights->batch_norm_weights = tensor_array + test_data_index++;
-   weights->batch_norm_biases = tensor_array + test_data_index++;
-   weights->batch_norm_running_mean = tensor_array + test_data_index++;
-   weights->batch_norm_running_var = tensor_array + test_data_index++;
-
-   return test_data_index;
-}
-
-static inline int fill_encoder_weights(Encoder_Weights *encoder_weights, TestTensor *tensor_array)
-{
-   int test_data_index = 0;
-
-   encoder_weights->l1_conv_stride = 2;
-   encoder_weights->l2_conv_stride = 2;
-   encoder_weights->l3_conv_stride = 1;
-   encoder_weights->l4_conv_stride = 1;
-
-
-   test_data_index += fill_transformer_weights( &encoder_weights->l1, tensor_array + test_data_index, true );
-   test_data_index += fill_transformer_weights( &encoder_weights->l2, tensor_array + test_data_index, true );
-   test_data_index += fill_transformer_weights( &encoder_weights->l3, tensor_array + test_data_index, false );
-   test_data_index += fill_transformer_weights( &encoder_weights->l4, tensor_array + test_data_index, true );
-
-   return test_data_index;
-}
-
-static inline Silero_Weights silero_weights_init( LoadTesttensorResult res )
-{
-   Silero_Weights weights = {0};
-   int encoder_weights_count = 24 + 24 + 22 + 24;
-
-   int silero_weights_index = 0;
-   weights.forward_basis_buffer = res.tensor_array + silero_weights_index++;
-
-   int encoder_weights_read = fill_encoder_weights( &weights.encoder_weights, res.tensor_array + silero_weights_index );
-   Assert( encoder_weights_read == encoder_weights_count );
-   silero_weights_index += encoder_weights_read;
-
-   weights.lstm_weights = res.tensor_array + silero_weights_index++;
-   weights.lstm_biases = res.tensor_array + silero_weights_index++;
-
-   weights.decoder_weights = res.tensor_array + silero_weights_index++;
-   weights.decoder_biases = res.tensor_array + silero_weights_index++;
-
-   return weights;
-}
 
 TestResult transformer_first_layer_test()
 {
