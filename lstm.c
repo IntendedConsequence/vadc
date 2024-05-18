@@ -132,7 +132,7 @@ void lstm ( const float *input_x, int input_x_count, const float *hidden_state_p
 // adding the pytorch separate biases (within each lstm cell) before calling this function.
 // output:
 // [seq, input_x_count], h0,h1, c0,c1
-__declspec(dllexport)
+VADC_API
 void lstm_seq ( const float *input_x, int input_x_seq_count, int input_x_count, const float *hidden_state_previous, const float *cell_state_previous, const float *weights_transposed, const float *biases, float *output )
 {
    TracyCZone(lstm_seq, true);

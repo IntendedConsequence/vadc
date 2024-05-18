@@ -6,7 +6,9 @@
 #include <windows.h> // GetModuleFileNameW
 #include <Shlwapi.h> // PathRemoveFileSpecW, PathAppendW
 
+#if ONNX_INFERENCE_ENABLED
 #include "onnx_helpers.c"
+#endif // ONNX_INFERENCE_ENABLED
 
 #include "string8.c"
 
@@ -61,7 +63,7 @@ static FILE *getDebugFile()
 static const wchar_t model_filename[] = SILERO_FILENAME;
 
 
-VADC_Chunk_Result run_inference_on_single_chunk( VADC_Context context,
+float run_inference_on_single_chunk( VADC_Context context,
                                                  const size_t samples_count,
                                                  const float *samples_buffer_float32,
                                                  float *state_h_in,
@@ -72,7 +74,7 @@ VADC_Chunk_Result run_inference_on_single_chunk( VADC_Context context,
    FILE *debug_file = getDebugFile();
 #endif
 
-   VADC_Chunk_Result result = { 0 };
+   float result = 0.0f;
 
    memmove( context.input_tensor_samples, samples_buffer_float32, samples_count * sizeof( context.input_tensor_samples[0] ) );
 
@@ -114,16 +116,16 @@ VADC_Chunk_Result run_inference_on_single_chunk( VADC_Context context,
    Assert( is_tensor );
 
    float result_probability = context.output_tensor_prob[context.silero_probability_out_index];
-   result.probability = result_probability;
+   result = result_probability;
 
-   result.state_h = context.output_tensor_state_h;
-   result.state_c = context.output_tensor_state_c;
+   //result.state_h = context.output_tensor_state_h;
+   //result.state_c = context.output_tensor_state_c;
 #else
    float result_probability = silero_run_one_batch_with_context(DEBUG_getDebugArena(),
                                                                 context.silero_context,
                                                                 1536,
                                                                 context.input_tensor_samples);
-   result.probability = result_probability;
+   result = result_probability;
 #endif
 
    return result;
@@ -147,15 +149,16 @@ void process_chunks( VADC_Context context,
 
          // IMPORTANT(irwin): hardcoded to use state from previous inference, assumed to be in output tensor memory
          // TODO(irwin): dehardcode
-         VADC_Chunk_Result result = run_inference_on_single_chunk( context,
+         float result = run_inference_on_single_chunk( context,
                                                                   window_size,
                                                                   samples_buffer_float32 + offset,
                                                                   context.output_tensor_state_h,
                                                                   context.output_tensor_state_c );
 
-         *probabilities_buffer++ = result.probability;
+         *probabilities_buffer++ = result;
       }
    }
+#if ONNX_INFERENCE_ENABLED
    else
    {
       Assert(!context.is_silero_v4);
@@ -205,6 +208,7 @@ void process_chunks( VADC_Context context,
          }
       }
    }
+#endif
 }
 
 
@@ -710,8 +714,82 @@ static void deinit_buffered_stream_file( Buffered_Stream *s )
    }
 }
 
+#if ONNX_INFERENCE_ENABLED
+static OrtSession *ort_init( MemoryArena *arena, String8 model_path_arg )
+{
+   g_ort = OrtGetApiBase()->GetApi( ORT_API_VERSION );
+   if ( !g_ort )
+   {
+      fprintf( stderr, "Failed to init ONNX Runtime engine.\n" );
+      return 0;
+   }
 
-int run_inference(OrtSession* session,
+   OrtEnv *env;
+   ORT_ABORT_ON_ERROR( g_ort->CreateEnv( ORT_LOGGING_LEVEL_ERROR, "test", &env ) );
+   Assert( env != NULL );
+
+   OrtSessionOptions *session_options;
+   ORT_ABORT_ON_ERROR( g_ort->CreateSessionOptions( &session_options ) );
+   // enable_cuda(session_options);
+   ORT_ABORT_ON_ERROR( g_ort->SetIntraOpNumThreads( session_options, 4 ) );
+   ORT_ABORT_ON_ERROR( g_ort->SetInterOpNumThreads( session_options, 1 ) );
+
+#define MODEL_PATH_BUFFER_SIZE 1024
+   wchar_t *model_path_arg_w = 0;
+   String8_ToWidechar( arena, &model_path_arg_w, model_path_arg );
+
+   const size_t model_path_buffer_size = MODEL_PATH_BUFFER_SIZE;
+   wchar_t model_path[MODEL_PATH_BUFFER_SIZE];
+   GetModuleFileNameW( NULL, model_path, (DWORD)model_path_buffer_size );
+   PathRemoveFileSpecW( model_path );
+   PathAppendW( model_path, model_path_arg_w ? model_path_arg_w : model_filename );
+
+   OrtSession *session;
+   ORT_ABORT_ON_ERROR( g_ort->CreateSession( env, model_path, session_options, &session ) );
+
+   return session;
+}
+
+s32 ort_get_batch_size_restriction( OrtSession *session, OrtAllocator *ort_allocator )
+{
+   s32 batch_size_restriction = 1;
+
+   size_t model_input_count = 0;
+   ORT_ABORT_ON_ERROR( g_ort->SessionGetInputCount( session, &model_input_count ) );
+
+   for ( size_t i = 0; i < model_input_count; i++ )
+   {
+      char *input_name;
+      g_ort->SessionGetInputName( session, i, ort_allocator, &input_name );
+
+      if ( strcmp( input_name, "input" ) == 0 )
+      {
+         OrtTypeInfo *type_info;
+         g_ort->SessionGetInputTypeInfo( session, i, &type_info );
+
+         const OrtTensorTypeAndShapeInfo *tensor_info;
+         g_ort->CastTypeInfoToTensorInfo( type_info, &tensor_info );
+
+         int64_t dim_value;
+         g_ort->GetDimensions( tensor_info, &dim_value, 1 );
+
+         batch_size_restriction = (int)dim_value;
+
+         // fprintf(stderr, "Axis-0 dimension of 'input': %" PRId64 "\n", dim_value);
+
+         g_ort->ReleaseTypeInfo( type_info );
+         break;
+      }
+
+      g_ort->AllocatorFree( ort_allocator, input_name );
+   }
+
+   return batch_size_restriction;
+}
+
+#endif // ONNX_INFERENCE_ENABLED
+
+int run_inference(String8 model_path_arg,
                   MemoryArena *arena,
                   float min_silence_duration_ms,
                   float min_speech_duration_ms,
@@ -726,18 +804,39 @@ int run_inference(OrtSession* session,
                   int audio_source,
                   float start_seconds )
 {
+#if ONNX_INFERENCE_ENABLED
+
+   OrtSession *session = ort_init( arena, model_path_arg );
+   if ( !session )
+   {
+      return -1;
+   }
+#else
+   VAR_UNUSED( model_path_arg );
+#endif // ONNX_INFERENCE_ENABLED
+
    size_t model_input_count = 0;
-   ORT_ABORT_ON_ERROR(g_ort->SessionGetInputCount( session, &model_input_count ));
-   Assert( model_input_count == 3 || model_input_count == 4 );
+#if ONNX_INFERENCE_ENABLED
+   {
+      ORT_ABORT_ON_ERROR( g_ort->SessionGetInputCount( session, &model_input_count ) );
+      Assert( model_input_count == 3 || model_input_count == 4 );
+   }
+#endif // ONNX_INFERENCE_ENABLED
    const b32 is_silero_v4 = model_input_count == 4;
 
-   OrtMemoryInfo* memory_info;
-   ORT_ABORT_ON_ERROR(g_ort->CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &memory_info));
-   OrtAllocator* ort_allocator;
-   ORT_ABORT_ON_ERROR(g_ort->CreateAllocator(session, memory_info, &ort_allocator));
+#if ONNX_INFERENCE_ENABLED
+   OrtMemoryInfo *memory_info;
+   ORT_ABORT_ON_ERROR( g_ort->CreateCpuMemoryInfo( OrtArenaAllocator, OrtMemTypeDefault, &memory_info ) );
+   OrtAllocator *ort_allocator;
+   ORT_ABORT_ON_ERROR( g_ort->CreateAllocator( session, memory_info, &ort_allocator ) );
+#endif // ONNX_INFERENCE_ENABLED
 
-   size_t model_output_count = 0;
-   ORT_ABORT_ON_ERROR(g_ort->SessionGetOutputCount( session, &model_output_count ));
+#if ONNX_INFERENCE_ENABLED
+   {
+      size_t model_output_count = 0;
+      ORT_ABORT_ON_ERROR( g_ort->SessionGetOutputCount( session, &model_output_count ) );
+   }
+#endif // ONNX_INFERENCE_ENABLED
 
    b32 model_is_hardcoded_batch32 = 0;
 #if 0
@@ -756,31 +855,10 @@ int run_inference(OrtSession* session,
 
    s32 batch_size_restriction = 1;
 
-   for (size_t i = 0; i < model_input_count; i++)
-   {
-      char* input_name;
-      g_ort->SessionGetInputName(session, i, ort_allocator, &input_name);
+#if ONNX_INFERENCE_ENABLED
+   batch_size_restriction = ort_get_batch_size_restriction( session, ort_allocator );
+#endif // ONNX_INFERENCE_ENABLED
 
-      if (strcmp(input_name, "input") == 0) {
-         OrtTypeInfo* type_info;
-         g_ort->SessionGetInputTypeInfo(session, i, &type_info);
-
-         const OrtTensorTypeAndShapeInfo* tensor_info;
-         g_ort->CastTypeInfoToTensorInfo(type_info, &tensor_info);
-
-         int64_t dim_value;
-         g_ort->GetDimensions(tensor_info, &dim_value, 1);
-
-         batch_size_restriction = (int)dim_value;
-
-         // fprintf(stderr, "Axis-0 dimension of 'input': %" PRId64 "\n", dim_value);
-
-         g_ort->ReleaseTypeInfo(type_info);
-         break;
-      }
-
-      g_ort->AllocatorFree(ort_allocator, input_name);
-   }
 
    if (batch_size_restriction == 32)
    {
@@ -820,13 +898,16 @@ int run_inference(OrtSession* session,
    // int batch_size = 1;
    // float *input_tensor_samples = (float *)malloc(input_count * batch_size * sizeof(float));
    float *input_tensor_samples = pushArray(arena, input_count * batch_size, float);
-   int64_t input_tensor_samples_shape[] = {batch_size, input_count};
-   const size_t input_tensor_samples_shape_count = ArrayCount(input_tensor_samples_shape);
 
    const size_t silero_input_tensor_count = is_silero_v4 ? 4 : 3;
-   OrtValue* input_tensors[4];
+
+#if ONNX_INFERENCE_ENABLED
+   int64_t input_tensor_samples_shape[] = {batch_size, input_count};
+   const size_t input_tensor_samples_shape_count = ArrayCount( input_tensor_samples_shape );
+   OrtValue *input_tensors[4];
 
    create_tensor(memory_info, &input_tensors[0], input_tensor_samples_shape, input_tensor_samples_shape_count, input_tensor_samples, input_count * batch_size);
+#endif // ONNX_INFERENCE_ENABLED
 
    const size_t state_count = 128;
    // float *state_h = (float *)malloc(state_count * sizeof(float));
@@ -845,22 +926,26 @@ int run_inference(OrtSession* session,
    float *state_c_out = pushArray(arena, state_count, float);
    memset(state_c_out, 0, state_count * sizeof(float));
 
-   int64_t state_shape[] = {2, 1, 64};
-   const size_t state_shape_count = ArrayCount(state_shape);
 
-   OrtValue** state_h_tensor = &input_tensors[1];
+#if ONNX_INFERENCE_ENABLED
+   int64_t state_shape[] = {2, 1, 64};
+   const size_t state_shape_count = ArrayCount( state_shape );
+   OrtValue **state_h_tensor = &input_tensors[1];
    create_tensor(memory_info, state_h_tensor, state_shape, state_shape_count, state_h, state_count);
 
    OrtValue** state_c_tensor = &input_tensors[2];
    create_tensor(memory_info, state_c_tensor, state_shape, state_shape_count, state_c, state_count);
+#endif // ONNX_INFERENCE_ENABLED
 
    if ( is_silero_v4 )
    {
+#if ONNX_INFERENCE_ENABLED
       int64_t sr = 16000;
-      int64_t sr_shape[] = { 1, 1 };
+      int64_t sr_shape[] = {1, 1};
       const size_t sr_shape_count = ArrayCount( sr_shape );
       OrtValue **sr_tensor = &input_tensors[3];
       create_tensor_int64( memory_info, sr_tensor, sr_shape, sr_shape_count, &sr, 1 );
+#endif // ONNX_INFERENCE_ENABLED
    }
 
    const char *input_names_v4[] = { "input", "h", "c", "sr" };
@@ -886,8 +971,10 @@ int run_inference(OrtSession* session,
    const char *output_names_normal[] = { "output", "hn", "cn" };
    // const char *output_names_batch32[] = { "5804", "5732", "5733" };
 
+#if ONNX_INFERENCE_ENABLED
    OrtValue *output_tensors[3] = { 0 };
    OrtValue **output_prob_tensor = &output_tensors[0];
+#endif // ONNX_INFERENCE_ENABLED
 
    const size_t prob_shape_count = is_silero_v4 ? prob_shape_count_v4 : prob_shape_count_v3;
    size_t prob_tensor_element_count = 1;
@@ -899,6 +986,7 @@ int run_inference(OrtSession* session,
    // float *prob = malloc(prob_tensor_element_count * sizeof(float));
    float *prob = pushArray(arena, prob_tensor_element_count, float);
 
+#if ONNX_INFERENCE_ENABLED
    create_tensor(memory_info, output_prob_tensor, prob_shape, prob_shape_count, prob, prob_tensor_element_count);
 
    OrtValue** state_h_out_tensor = &output_tensors[1];
@@ -906,6 +994,7 @@ int run_inference(OrtSession* session,
 
    OrtValue** state_c_out_tensor = &output_tensors[2];
    create_tensor(memory_info, state_c_out_tensor, state_shape, state_shape_count, state_c_out, state_count);
+#endif // ONNX_INFERENCE_ENABLED
 
    // g_ort->ReleaseMemoryInfo(memory_info);
 
@@ -958,9 +1047,11 @@ int run_inference(OrtSession* session,
 
    VADC_Context context =
    {
+#if ONNX_INFERENCE_ENABLED
       .input_tensors = input_tensors,
       .output_tensors = output_tensors,
       .session = session,
+#endif
       .input_names = input_names,
       .output_names = output_names_normal,
       .state_count = state_count,
@@ -1255,6 +1346,7 @@ ArgOption options[] = {
    {String8FromLiteral("--model"),                    0.0f  },
 };
 
+
 int main()
 {
    MemoryArena arena = {0};
@@ -1366,32 +1458,6 @@ int main()
 
    neg_threshold           = threshold - neg_threshold_relative;
 
-   g_ort = OrtGetApiBase()->GetApi(ORT_API_VERSION);
-   if (!g_ort)
-   {
-      fprintf(stderr, "Failed to init ONNX Runtime engine.\n");
-      return -1;
-   }
-
-   OrtEnv* env;
-   ORT_ABORT_ON_ERROR(g_ort->CreateEnv(ORT_LOGGING_LEVEL_ERROR, "test", &env));
-   Assert(env != NULL);
-
-   OrtSessionOptions* session_options;
-   ORT_ABORT_ON_ERROR(g_ort->CreateSessionOptions(&session_options));
-   // enable_cuda(session_options);
-   ORT_ABORT_ON_ERROR(g_ort->SetIntraOpNumThreads(session_options, 1));
-   ORT_ABORT_ON_ERROR(g_ort->SetInterOpNumThreads(session_options, 1));
-
-#define MODEL_PATH_BUFFER_SIZE 1024
-   wchar_t *model_path_arg_w = 0;
-   String8_ToWidechar(&arena, &model_path_arg_w, model_path_arg);
-
-   const size_t model_path_buffer_size = MODEL_PATH_BUFFER_SIZE;
-   wchar_t model_path[MODEL_PATH_BUFFER_SIZE];
-   GetModuleFileNameW(NULL, model_path, (DWORD)model_path_buffer_size);
-   PathRemoveFileSpecW( model_path );
-   PathAppendW( model_path, model_path_arg_w ? model_path_arg_w : model_filename );
 
 //    if ( model_path_arg )
 //    {
@@ -1399,12 +1465,10 @@ int main()
 //    }
 
    {
-      OrtSession* session;
-      ORT_ABORT_ON_ERROR(g_ort->CreateSession(env, model_path, session_options, &session));
 
       // verify_input_output_count(session);
 
-      run_inference(session,
+      run_inference( model_path_arg,
                     &arena,
                     min_silence_duration_ms,
                     min_speech_duration_ms,

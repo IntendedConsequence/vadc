@@ -1,5 +1,17 @@
 #pragma once
-#include "vadc.h"
+#include "include/onnxruntime_c_api.h"
+
+
+#define ORT_ABORT_ON_ERROR(expr)                             \
+  do {                                                       \
+    OrtStatus* onnx_status = (expr);                         \
+    if (onnx_status != NULL) {                               \
+      const char* msg = g_ort->GetErrorMessage(onnx_status); \
+      fprintf(stderr, "%s\n", msg);                          \
+      g_ort->ReleaseStatus(onnx_status);                     \
+      abort();                                               \
+    }                                                        \
+  } while (0);
 
 
 void verify_input_output_count( OrtSession *session );

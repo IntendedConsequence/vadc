@@ -3,8 +3,15 @@
 #include "memory.h"
 #include "string8.h"
 
+#if !defined(ONNX_INFERENCE_ENABLED)
+#define ONNX_INFERENCE_ENABLED 1
+#endif // ONNX_INFERENCE_ENABLED
+
+#if ONNX_INFERENCE_ENABLED
+#include "onnx_helpers.h"
+#endif // ONNX_INFERENCE_ENABLED
+
 #include <stdio.h>
-#include "include/onnxruntime_c_api.h"
 
 #define SILERO_V4 0
 
@@ -34,17 +41,6 @@ const float chunks_per_second = (float)SILERO_SAMPLE_RATE / SILERO_WINDOW_SIZE_S
 const float chunk_duration_ms = SILERO_WINDOW_SIZE_SAMPLES / (float)SILERO_SAMPLE_RATE * 1000.0f;
 
 
-#define ORT_ABORT_ON_ERROR(expr)                             \
-  do {                                                       \
-    OrtStatus* onnx_status = (expr);                         \
-    if (onnx_status != NULL) {                               \
-      const char* msg = g_ort->GetErrorMessage(onnx_status); \
-      fprintf(stderr, "%s\n", msg);                          \
-      g_ort->ReleaseStatus(onnx_status);                     \
-      abort();                                               \
-    }                                                        \
-  } while (0);
-
 typedef struct VADC_Context VADC_Context;
 
 // NOTE(irwin): forward declare
@@ -52,9 +48,11 @@ typedef struct Silero_Context Silero_Context;
 
 struct VADC_Context
 {
+#if ONNX_INFERENCE_ENABLED
    const OrtValue *const *input_tensors;
    OrtValue **output_tensors;
    OrtSession *session;
+#endif
    const char **input_names;
    const char **output_names;
    const size_t inputs_count;
@@ -83,8 +81,8 @@ typedef struct VADC_Chunk_Result
 
    // NOTE(irwin): unused, remove
    size_t state_count;
-   float *state_h;
-   float *state_c;
+   //float *state_h;
+   //float *state_c;
 } VADC_Chunk_Result;
 
 typedef struct FeedState
@@ -125,7 +123,7 @@ enum Segment_Output_Format
 };
 
 
-int run_inference( OrtSession *session,
+int run_inference( String8 model_path_arg,
                   MemoryArena *arena,
                   float min_silence_duration_ms,
                   float min_speech_duration_ms,
@@ -145,7 +143,7 @@ void process_chunks( VADC_Context context,
                     const float *samples_buffer_float32,
                     float *probabilities_buffer );
 
-VADC_Chunk_Result run_inference_on_single_chunk( VADC_Context context,
+float run_inference_on_single_chunk( VADC_Context context,
                                                 const size_t samples_count,
                                                 const float *samples_buffer_float32,
                                                 float *state_h_in,
