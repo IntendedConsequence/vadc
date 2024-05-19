@@ -42,12 +42,37 @@ rem )
 
 set CL=/W4 /WX /Zi /Od /Gm- /diagnostics:caret /options:strict /DWIN32 /D_CRT_SECURE_NO_WARNINGS
 rem set CL=%CL% /fsanitize=address
-set LINK=/INCREMENTAL:NO /SUBSYSTEM:CONSOLE kernel32.lib Shlwapi.lib
+set LINK=/INCREMENTAL:NO /SUBSYSTEM:CONSOLE kernel32.lib
+
+
+rem
+rem cembed
+rem
+
+del cembed.pdb cembed.exe >nul 2>&1 & cl.exe /nologo cembed.c /link
+del silero_v31_16k_weights.c >nul 2>&1
+cembed.exe testdata\silero_v31_16k.testtensor > silero_v31_16k_weights.c
+
+
+rem
+rem vadc
+rem
 
 @REM del vadc.pdb >nul & cl.exe /nologo /O2 vadc.c /link lib\onnxruntime.lib
 del vadc.pdb >nul 2>&1 & cl.exe /nologo /MD /MP /O2 /arch:AVX2 /DNDEBUG /DONNX_INFERENCE_ENABLED=0 /DVADC_API= /Itracy vadc.c tracy\TracyClient.cpp /link Shell32.lib
 rem del vadc.pdb >nul 2>&1 & cl.exe /nologo /MD /MP /O2 /arch:AVX2 /DNDEBUG /DONNX_INFERENCE_ENABLED=1 /DVADC_API= /Itracy vadc.c tracy\TracyClient.cpp /link lib\onnxruntime.lib Shell32.lib
+
+
+rem
+rem fiter_script
+rem
+
 del filter_script.pdb >nul & cl.exe /nologo filter_script.c /link
+
+
+rem
+rem test
+rem 
 
 rem cl.exe /nologo test.c /Fdtest_%datetime_stamp%d.pdb /link /PDB:test_%datetime_stamp%.pdb
 rem cl.exe /nologo test.c /link /PDB:test_%datetime_stamp%.pdb

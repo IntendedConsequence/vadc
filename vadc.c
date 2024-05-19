@@ -34,6 +34,10 @@
 #endif
 
 
+#if !ONNX_INFERENCE_ENABLED
+#include "silero_v31_16k_weights.c"
+#endif
+
 
 // TODO(irwin):
 // - move win32-specific stuff to separate file
@@ -955,7 +959,8 @@ int run_inference(String8 model_path_arg,
    {
       LoadTesttensorResult silero_weights_res = {0};
 
-      silero_weights_res = load_testtensor( "testdata\\silero_v31_16k.testtensor" );
+      //File_Contents contents = read_entire_file( arena, "testdata\\silero_v31_16k.testtensor" );
+      silero_weights_res = load_testtensor_from_bytes(arena, sizeof(silero_v31_16k_weights), silero_v31_16k_weights );
 
       Assert ( silero_weights_res.tensor_count > 0 );
       int encoder_weights_count = 24 + 24 + 22 + 24;

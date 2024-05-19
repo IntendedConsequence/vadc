@@ -1,6 +1,7 @@
 #pragma once
 #include "maths.h"
 #include "memory.h"
+#include "platform.h"
 
 typedef struct TestTensor TestTensor;
 
@@ -187,6 +188,68 @@ static inline Silero_Weights silero_weights_init( LoadTesttensorResult res )
    weights.decoder_biases = res.tensor_array + silero_weights_index++;
 
    return weights;
+}
+
+
+static inline u64 read_size_bytes(void *destination, const void *source, u64 bytes_count)
+{
+   memmove( destination, source, bytes_count );
+   
+   return bytes_count;
+}
+
+static inline LoadTesttensorResult load_testtensor_from_bytes( MemoryArena *arena, u64 bytes_count, const u8 *raw_bytes )
+{
+   LoadTesttensorResult result = {0};
+
+
+   TestTensor_Header header = {0};
+   
+   u64 offset = 0;
+   offset += read_size_bytes( &header, raw_bytes + offset, sizeof( header ) );
+   Assert( header.version == 1 );
+
+   int tensor_count = header.tensor_count;
+   Assert( tensor_count > 0 );
+
+   TestTensor *tensor_array = pushArray( arena, tensor_count, TestTensor );
+
+   for ( int i = 0; i < tensor_count; ++i )
+   {
+      TestTensor *tensor = tensor_array + i;
+      int name_len = 0;
+      offset += read_size_bytes( &name_len, raw_bytes + offset, sizeof( name_len ) );
+      Assert( name_len );
+      char *name = pushSizeZeroed( arena, name_len + 1, 1 );
+      offset += read_size_bytes( name, raw_bytes + offset, sizeof( char ) * name_len );
+      tensor->name = name;
+   }
+
+   for ( int i = 0; i < tensor_count; ++i )
+   {
+      TestTensor *tensor = tensor_array + i;
+
+      offset += read_size_bytes( &tensor->ndim, raw_bytes + offset, sizeof( tensor->ndim ) );
+      if ( tensor->ndim )
+      {
+         //tensor->dims = pushArray( debug_arena, tensor->ndim, int );
+         offset += read_size_bytes( tensor->dims, raw_bytes + offset, sizeof( tensor->dims[0] ) * tensor->ndim );
+      }
+      offset += read_size_bytes( &tensor->size, raw_bytes + offset, sizeof( tensor->size ) );
+      offset += read_size_bytes( &tensor->nbytes, raw_bytes + offset, sizeof( tensor->nbytes ) );
+
+      tensor->data = pushSizeZeroed( arena, tensor->nbytes, 1 );
+      offset += read_size_bytes( tensor->data, raw_bytes + offset, tensor->nbytes );
+   }
+
+   result.tensor_array = tensor_array;
+   result.tensor_count = tensor_count;
+
+   Assert( result.tensor_array );
+   Assert( result.tensor_count );
+   Assert( bytes_count == offset );
+
+   return result;
 }
 
 static inline LoadTesttensorResult load_testtensor( const char *path )

@@ -108,7 +108,7 @@ typedef enum Segment_Output_Format Segment_Output_Format;
 enum Segment_Output_Format
 {
    Segment_Output_Format_Seconds = 0,
-   Segment_Output_Format_CentiSeconds, // NOTE(irwin): hundreths of seconds, 500 -> 5 seconds
+   Segment_Output_Format_CentiSeconds, // NOTE(irwin): hundredths of seconds, 500 -> 5 seconds
 
    Segment_Output_Format_COUNT
 };

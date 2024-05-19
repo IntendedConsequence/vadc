@@ -7,3 +7,5 @@ silero-vad-models/
 silero_vad_v3_16k/
 /traces/
 /testdata/untracked/
+
+silero_v31_16k_weights.c
