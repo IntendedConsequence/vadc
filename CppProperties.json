@@ -8,7 +8,8 @@
       "includePath": [
         "${env.INCLUDE}",
         "${workspaceRoot}\\include\\**",
-        "${workspaceRoot}\\**"
+        "${workspaceRoot}\\tracy\\**",
+        "${workspaceRoot}\\*"
       ],
       "defines": [
         "WIN32",

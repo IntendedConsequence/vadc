@@ -1,0 +1,14 @@
+{
+    "files.associations": {
+        "utils.h": "c",
+        "math.h": "c",
+        "random": "c",
+        "maths.h": "c",
+        "assert.h": "c",
+        "vadc.h": "c",
+        "tracyc.h": "c"
+    },
+    "files.exclude": {
+        "venv": true,
+    }
+}
