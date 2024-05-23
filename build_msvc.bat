@@ -59,8 +59,8 @@ rem vadc
 rem
 
 @REM del vadc.pdb >nul & cl.exe /nologo /O2 vadc.c /link lib\onnxruntime.lib
-del vadc.pdb >nul 2>&1 & cl.exe /nologo /MD /MP /O2 /arch:AVX2 /DNDEBUG /DONNX_INFERENCE_ENABLED=0 /DVADC_API= /Itracy vadc.c tracy\TracyClient.cpp /link Shell32.lib
-rem del vadc.pdb >nul 2>&1 & cl.exe /nologo /MD /MP /O2 /arch:AVX2 /DNDEBUG /DONNX_INFERENCE_ENABLED=1 /DVADC_API= /Itracy vadc.c tracy\TracyClient.cpp /link lib\onnxruntime.lib Shell32.lib
+del vadc.pdb >nul 2>&1 & cl.exe /nologo /MD /MP /O2 /arch:AVX2 /DNDEBUG /DONNX_INFERENCE_ENABLED=0 /Itracy vadc.c tracy\TracyClient.cpp /link Shell32.lib
+rem del vadc.pdb >nul 2>&1 & cl.exe /nologo /MD /MP /O2 /arch:AVX2 /DNDEBUG /DONNX_INFERENCE_ENABLED=1 /Itracy vadc.c tracy\TracyClient.cpp /link lib\onnxruntime.lib Shell32.lib
 
 
 rem
@@ -84,7 +84,6 @@ set CL=%CL% /fp:precise
 set CL=%CL% /O2 /arch:AVX2
 @REM set CL=%CL% /DTRACY_ENABLE /DTRACY_NO_SAMPLING
 set CL=%CL% /DNDEBUG
-set CL=%CL% /DVADC_API=
 @REM set CL=%CL% -Qvec-report:2
 del test.pdb >nul & cl.exe /nologo /MP /Itracy test.c tracy\TracyClient.cpp /link
 

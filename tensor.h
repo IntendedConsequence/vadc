@@ -109,7 +109,7 @@ struct LoadTesttensorResult
    TestTensor *tensor_array;
 };
 
-static inline LoadTesttensorResult load_testtensor( const char *path );
+static inline LoadTesttensorResult load_testtensor(MemoryArena *arena, const char *path );
 
 static inline int fill_transformer_weights( TransformerLayer_Weights *weights, TestTensor *tensor_array, b32 has_out_proj )
 {
@@ -194,7 +194,7 @@ static inline Silero_Weights silero_weights_init( LoadTesttensorResult res )
 static inline u64 read_size_bytes(void *destination, const void *source, u64 bytes_count)
 {
    memmove( destination, source, bytes_count );
-   
+
    return bytes_count;
 }
 
@@ -204,7 +204,7 @@ static inline LoadTesttensorResult load_testtensor_from_bytes( MemoryArena *aren
 
 
    TestTensor_Header header = {0};
-   
+
    u64 offset = 0;
    offset += read_size_bytes( &header, raw_bytes + offset, sizeof( header ) );
    Assert( header.version == 1 );
@@ -252,9 +252,9 @@ static inline LoadTesttensorResult load_testtensor_from_bytes( MemoryArena *aren
    return result;
 }
 
-static inline LoadTesttensorResult load_testtensor( const char *path )
+static inline LoadTesttensorResult load_testtensor( MemoryArena *arena, const char *path )
 {
-   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   MemoryArena *debug_arena = arena;
 
    LoadTesttensorResult result = {0};
 

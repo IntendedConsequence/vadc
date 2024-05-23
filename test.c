@@ -165,7 +165,7 @@ TestResult decoder_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "testdata\\decoder_test.testtensor" );
+   res = load_testtensor(debug_arena, "testdata\\decoder_test.testtensor" );
    if (res.tensor_count == 0)
    {
       endTemporaryMemory( mark );
@@ -184,9 +184,8 @@ TestResult decoder_test()
    int output_ndims = result->ndim;
    int *output_dims = pushArray( debug_arena, result->ndim, int );
 
-   int result_ok = decoder( input->data, input->dims, input->ndim, weights->data, weights->dims, weights->ndim, biases->data, biases->dims, biases->ndim, output, output_dims, output_ndims );
-   Assert( result_ok );
-   VAR_UNUSED( result_ok );
+   decoder(debug_arena, input->data, input->dims, input->ndim, weights->data, weights->dims, weights->ndim, biases->data, biases->dims, biases->ndim, output, output_dims, output_ndims );
+
 
    float atol = 1e-10f;
 
@@ -203,7 +202,7 @@ TestResult lstm_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult lstm_res = {0};
-   lstm_res = load_testtensor( "testdata\\lstm_nito_reference_randn.testtensor" );
+   lstm_res = load_testtensor(debug_arena, "testdata\\lstm_nito_reference_randn.testtensor" );
    if (lstm_res.tensor_count == 0)
    {
       endTemporaryMemory( mark );
@@ -230,7 +229,7 @@ TestResult lstm_test()
 
    float *output_combined = pushArray( debug_arena, lstm_output_size, float );
 
-   lstm_seq( input_x->data,
+   lstm_seq( debug_arena, input_x->data,
              seq_length,
              input_size,
              input_h->data,
@@ -256,9 +255,9 @@ TestResult lstm_test_RED()
    LoadTesttensorResult lstm_weights = {0};
    LoadTesttensorResult lstm_output = {0};
 
-   lstm_input = load_testtensor( "testdata\\untracked\\RED600_all_before_lstm.testtensor" );
-   lstm_weights = load_testtensor( "testdata\\untracked\\lstm_silero_3.1_16k_for_c.testtensor" );
-   lstm_output = load_testtensor( "testdata\\untracked\\RED600_all_lstm_output_lite.testtensor" );
+   lstm_input = load_testtensor(debug_arena, "testdata\\untracked\\RED600_all_before_lstm.testtensor" );
+   lstm_weights = load_testtensor(debug_arena, "testdata\\untracked\\lstm_silero_3.1_16k_for_c.testtensor" );
+   lstm_output = load_testtensor(debug_arena, "testdata\\untracked\\RED600_all_lstm_output_lite.testtensor" );
 
    if (lstm_input.tensor_count == 0 ||
        lstm_weights.tensor_count == 0 ||
@@ -300,7 +299,7 @@ TestResult lstm_test_RED()
    float *output_single_batch = pushArray( debug_arena, lstm_output_size, float );
    // float *output_combined = pushArray( debug_arena, batches * seq_length * input_size, float );
 
-   lstm_seq( input->data,
+   lstm_seq( debug_arena, input->data,
              seq_length * batches,
              input_size,
              input_h_array,
@@ -325,7 +324,7 @@ TestResult dw_conv_129_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "testdata\\dw_conv_129.testtensor" );
+   res = load_testtensor(debug_arena, "testdata\\dw_conv_129.testtensor" );
    if (res.tensor_count == 0)
    {
       endTemporaryMemory( mark );
@@ -361,7 +360,7 @@ TestResult pw_conv_129_16_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "testdata\\pw_conv_129_16.testtensor" );
+   res = load_testtensor(debug_arena, "testdata\\pw_conv_129_16.testtensor" );
    if (res.tensor_count == 0)
    {
       endTemporaryMemory( mark );
@@ -396,7 +395,7 @@ TestResult first_layer_conv_block_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "testdata\\first_layer_conv_block.testtensor" );
+   res = load_testtensor(debug_arena, "testdata\\first_layer_conv_block.testtensor" );
    if (res.tensor_count == 0)
    {
       endTemporaryMemory( mark );
@@ -416,7 +415,7 @@ TestResult first_layer_conv_block_test()
 
    TestTensor *output_tensor = tensor_zeros_like( debug_arena, result );
 
-   conv_block( input, 1,
+   conv_block( debug_arena, input, 1,
                dw_conv_weights, dw_conv_biases,
                pw_conv_weights, pw_conv_biases,
                proj_weights, proj_biases,
@@ -476,7 +475,7 @@ TestResult softmax_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "testdata\\softmax_test.testtensor" );
+   res = load_testtensor(debug_arena, "testdata\\softmax_test.testtensor" );
    if (res.tensor_count == 0)
    {
       endTemporaryMemory( mark );
@@ -507,7 +506,7 @@ TestResult layer_norm_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "testdata\\layernorm_test.testtensor" );
+   res = load_testtensor(debug_arena, "testdata\\layernorm_test.testtensor" );
    if (res.tensor_count == 0)
    {
       endTemporaryMemory( mark );
@@ -526,7 +525,7 @@ TestResult layer_norm_test()
 
    TestTensor *output = tensor_zeros_like( debug_arena, result );
 
-   layer_norm( input, weight, bias, output );
+   layer_norm( debug_arena, input, weight, bias, output );
 
    float atol = 1e-4f;
    TestResult test_result = all_close( result->data, output->data, result->size, atol );
@@ -542,7 +541,7 @@ TestResult batch_norm_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "testdata\\batchnorm_test.testtensor" );
+   res = load_testtensor(debug_arena, "testdata\\batchnorm_test.testtensor" );
    if (res.tensor_count == 0)
    {
       endTemporaryMemory( mark );
@@ -579,7 +578,7 @@ TestResult stft_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "testdata\\untracked\\stft_test.testtensor" );
+   res = load_testtensor(debug_arena, "testdata\\untracked\\stft_test.testtensor" );
    if (res.tensor_count == 0)
    {
       endTemporaryMemory( mark );
@@ -613,7 +612,7 @@ TestResult adaptive_audio_normalization_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "testdata\\adaptive_audio_normalization_test.testtensor" );
+   res = load_testtensor(debug_arena, "testdata\\adaptive_audio_normalization_test.testtensor" );
    if (res.tensor_count == 0)
    {
       endTemporaryMemory( mark );
@@ -647,7 +646,7 @@ TestResult dual_head_attention_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "testdata\\dual_head_attention_test.testtensor" );
+   res = load_testtensor(debug_arena, "testdata\\dual_head_attention_test.testtensor" );
    if (res.tensor_count == 0)
    {
       endTemporaryMemory( mark );
@@ -665,7 +664,7 @@ TestResult dual_head_attention_test()
 
    TestTensor *output_tensor = tensor_zeros_like( debug_arena, result );
 
-   dual_head_attention( input,
+   dual_head_attention( debug_arena, input,
                         weights, biases,
                         proj_weights, proj_biases,
                         output_tensor );
@@ -685,7 +684,7 @@ TestResult transformer_block_16_16_48_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "testdata\\transformer_block_test_16_16_48.testtensor" );
+   res = load_testtensor(debug_arena, "testdata\\transformer_block_test_16_16_48.testtensor" );
    if (res.tensor_count == 0)
    {
       endTemporaryMemory( mark );
@@ -738,7 +737,7 @@ TestResult transformer_first_layer_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "testdata\\transformer_first_layer.testtensor" );
+   res = load_testtensor(debug_arena, "testdata\\transformer_first_layer.testtensor" );
    if ( res.tensor_count == 0 )
    {
       endTemporaryMemory( mark );
@@ -781,7 +780,7 @@ TestResult transformer_layers_1_2_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "testdata\\transformer_layers_1_2.testtensor" );
+   res = load_testtensor(debug_arena, "testdata\\transformer_layers_1_2.testtensor" );
    if ( res.tensor_count == 0 )
    {
       endTemporaryMemory( mark );
@@ -862,7 +861,7 @@ TestResult transformer_layers_1_2_3_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "testdata\\transformer_layers_1_2_3.testtensor" );
+   res = load_testtensor(debug_arena, "testdata\\transformer_layers_1_2_3.testtensor" );
    if ( res.tensor_count == 0 )
    {
       endTemporaryMemory( mark );
@@ -934,7 +933,7 @@ TestResult transformer_layers_1_2_3_4_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "testdata\\transformer_layers_1_2_3_4.testtensor" );
+   res = load_testtensor(debug_arena, "testdata\\transformer_layers_1_2_3_4.testtensor" );
    if ( res.tensor_count == 0 )
    {
       endTemporaryMemory( mark );
@@ -976,7 +975,7 @@ TestResult adaptive_normalization_encoder_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "testdata\\adaptive_normalization_encoder.testtensor" );
+   res = load_testtensor(debug_arena, "testdata\\adaptive_normalization_encoder.testtensor" );
    if ( res.tensor_count == 0 )
    {
       endTemporaryMemory( mark );
@@ -1022,7 +1021,7 @@ TestResult stft_normalization_encoder_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "testdata\\untracked\\stft_normalization_encoder.testtensor" );
+   res = load_testtensor(debug_arena, "testdata\\untracked\\stft_normalization_encoder.testtensor" );
    if ( res.tensor_count == 0 )
    {
       endTemporaryMemory( mark );
@@ -1083,8 +1082,8 @@ TestResult stft_normalization_encoder_lstm_test()
    LoadTesttensorResult res = {0};
    LoadTesttensorResult lstm_weights_res = {0};
 
-   res = load_testtensor( "testdata\\untracked\\stft_normalization_encoder_lstm.testtensor" );
-   lstm_weights_res = load_testtensor( "testdata\\untracked\\lstm_silero_3.1_16k_for_c.testtensor" );
+   res = load_testtensor(debug_arena, "testdata\\untracked\\stft_normalization_encoder_lstm.testtensor" );
+   lstm_weights_res = load_testtensor(debug_arena, "testdata\\untracked\\lstm_silero_3.1_16k_for_c.testtensor" );
 
    if ( res.tensor_count == 0 || lstm_weights_res.tensor_count == 0)
    {
@@ -1151,7 +1150,7 @@ TestResult stft_normalization_encoder_lstm_test()
    //float *output_single_batch = pushArray( debug_arena, lstm_output_size, float );
    // float *output_combined = pushArray( debug_arena, batches * seq_length * input_size, float );
 
-   lstm_seq( l4_output_t->data,
+   lstm_seq( debug_arena, l4_output_t->data,
              seq_length * batches,
              input_size,
              input_h_array,
@@ -1179,8 +1178,8 @@ TestResult stft_normalization_encoder_lstm_decoder_test()
    LoadTesttensorResult res = {0};
    LoadTesttensorResult lstm_weights_res = {0};
 
-   res = load_testtensor( "testdata\\untracked\\stft_normalization_encoder_lstm_decoder.testtensor" );
-   lstm_weights_res = load_testtensor( "testdata\\untracked\\lstm_silero_3.1_16k_for_c.testtensor" );
+   res = load_testtensor(debug_arena, "testdata\\untracked\\stft_normalization_encoder_lstm_decoder.testtensor" );
+   lstm_weights_res = load_testtensor(debug_arena, "testdata\\untracked\\lstm_silero_3.1_16k_for_c.testtensor" );
 
    if ( res.tensor_count == 0 || lstm_weights_res.tensor_count == 0)
    {
@@ -1250,7 +1249,7 @@ TestResult stft_normalization_encoder_lstm_decoder_test()
    float *lstm_output = pushArray( debug_arena, lstm_output_size, float );
    //float *lstm_output = pushArray( debug_arena, batches * seq_length * input_size, float );
 
-   lstm_seq( l4_output_t->data,
+   lstm_seq( debug_arena, l4_output_t->data,
              seq_length * batches,
              input_size,
              input_h_array,
@@ -1267,8 +1266,7 @@ TestResult stft_normalization_encoder_lstm_decoder_test()
    int decoder_output_size = batches * tdim( decoder_weights, 0 );
    Assert( decoder_output_size == output->size );
 
-   int decoder_result = decoder_tensor( lstm_output_tensor_t, decoder_weights, decoder_biases, output );
-   VAR_UNUSED( decoder_result );
+   decoder_tensor(debug_arena, lstm_output_tensor_t, decoder_weights, decoder_biases, output );
 
    float atol = 1e-4f;
 
@@ -1288,8 +1286,8 @@ TestResult silero_test()
    LoadTesttensorResult res = {0};
    LoadTesttensorResult silero_weights_res = {0};
 
-   res = load_testtensor( "testdata\\untracked\\silero.testtensor" );
-   silero_weights_res = load_testtensor( "testdata\\silero_v31_16k.testtensor" );
+   res = load_testtensor(debug_arena, "testdata\\untracked\\silero.testtensor" );
+   silero_weights_res = load_testtensor(debug_arena, "testdata\\silero_v31_16k.testtensor" );
 
    if ( res.tensor_count == 0 || silero_weights_res.tensor_count == 0 )
    {
@@ -1385,7 +1383,7 @@ TestResult silero_test()
       float *lstm_output = pushArray( debug_arena, lstm_output_size, float );
       //float *lstm_output = pushArray( debug_arena, batches * seq_length * input_size, float );
 
-      lstm_seq( l4_output_t->data,
+      lstm_seq( debug_arena, l4_output_t->data,
                 seq_length * batches,
                 input_size,
                 lstm_input_h->data,
@@ -1415,8 +1413,7 @@ TestResult silero_test()
       TestTensor *output_decoder = tensor_zeros_3d( debug_arena, 1, decoder_results, 1 );
       Assert( decoder_output_size == output_decoder->size );
 
-      int decoder_result = decoder_tensor( lstm_output_tensor_t, silero_weights.decoder_weights, silero_weights.decoder_biases, output_decoder );
-      VAR_UNUSED( decoder_result );
+      decoder_tensor(debug_arena, lstm_output_tensor_t, silero_weights.decoder_weights, silero_weights.decoder_biases, output_decoder );
 
       float diarization_maybe = output_decoder->data[0];
       float speech_probability = output_decoder->data[1];
@@ -1455,7 +1452,7 @@ TestResult transformer_layers_3_test()
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    LoadTesttensorResult res = {0};
-   res = load_testtensor( "testdata\\transformer_layers_3.testtensor" );
+   res = load_testtensor(debug_arena, "testdata\\transformer_layers_3.testtensor" );
    if ( res.tensor_count == 0 )
    {
       endTemporaryMemory( mark );

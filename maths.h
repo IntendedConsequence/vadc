@@ -12,26 +12,22 @@ static inline float sigmoid_one( float value )
 }
 
 
-VADC_API
-void relu_inplace ( float *arr, int array_count );
+static inline void relu_inplace ( float *arr, int array_count );
 
-VADC_API
-float mean ( float *arr, int arr_count );
+static inline float mean ( float *arr, int arr_count );
 
-VADC_API
-void mytanh ( const float *arr, int count, float *out );
+static inline void mytanh ( const float *arr, int count, float *out );
 
 
-static void mytanh_inplace ( float *arr, int count );
+static inline void mytanh_inplace ( float *arr, int count );
 
 
-VADC_API
-void mysigmoid ( const float *arr, int count, float *out );
+static inline void mysigmoid ( const float *arr, int count, float *out );
 
-static void mysigmoid_inplace ( float *arr, int count );
+static inline void mysigmoid_inplace ( float *arr, int count );
 
-static void add_arrays ( const float *array_a, int count, const float *array_b, float *array_out );
-static void add_arrays_inplace ( float *array_a, int count, const float *array_b );
+static inline void add_arrays ( const float *array_a, int count, const float *array_b, float *array_out );
+static inline void add_arrays_inplace ( float *array_a, int count, const float *array_b );
 
 
 // row1:     row2:
@@ -42,17 +38,13 @@ static void add_arrays_inplace ( float *array_a, int count, const float *array_b
 
 #define dotproduct dotproduct_simd
 
-VADC_API inline
-float dotproduct_slow ( const float *arr, int count, const float *arr2, int count2 );
+static inline float dotproduct_slow ( const float *arr, int count, const float *arr2, int count2 );
 
-VADC_API inline
-float dotproduct_unrolled ( const float *arr, int count, const float *arr2, int count2 );
+static inline float dotproduct_unrolled ( const float *arr, int count, const float *arr2, int count2 );
 
-VADC_API inline
-float dotproduct_unrolled2 ( const float *arr, int count, const float *arr2, int count2 );
+static inline float dotproduct_unrolled2 ( const float *arr, int count, const float *arr2, int count2 );
 
-VADC_API inline
-float dotproduct_simd ( const float *arr, int count, const float *arr2, int count2 );
+static inline float dotproduct_simd ( const float *arr, int count, const float *arr2, int count2 );
 
 
 // mat1_row:    mat2_transposed:
@@ -62,8 +54,7 @@ float dotproduct_simd ( const float *arr, int count, const float *arr2, int coun
 // result:
 // [aj+bl+cn ak+bm+co]
 
-VADC_API inline
-void mydot_arrarr ( const float *arr, int count, const float *arr2, int arr2_rows, float *arr_out );
+static inline void mydot_arrarr ( const float *arr, int count, const float *arr2, int arr2_rows, float *arr_out );
 
 // mata:        matb:
 // [a b c]      [j k]
@@ -74,28 +65,21 @@ void mydot_arrarr ( const float *arr, int count, const float *arr2, int arr2_row
 // [aj+bl+cn ak+bm+co]
 // [dj+el+fn dk+em+fo]
 // [gj+hl+in gk+hm+io]
-VADC_API inline
-void mymatmul ( float *mata, int mata_rows, int mata_cols, float *matb_transposed, int matb_transposed_rows, int matb_transposed_cols, float *out_result );
+static inline void mymatmul ( float *mata, int mata_rows, int mata_cols, float *matb_transposed, int matb_transposed_rows, int matb_transposed_cols, float *out_result );
 
 
-VADC_API
-void convolve_muladd ( float *arr, int count, float kernel, float *arr_out );
+static inline void convolve_muladd ( float *arr, int count, float kernel, float *arr_out );
 
-VADC_API
-void convolve_mc ( float *arr, int in_channel_count, int array_count, float *kernels, float *arr_out, float bias );
+static inline void convolve_mc ( float *arr, int in_channel_count, int array_count, float *kernels, float *arr_out, float bias );
 
-VADC_API
-void convolve_mc_mf_bias ( float *arr, int in_channel_count, int array_count, float *kernels, int filter_count, float *arr_out, float *bias );
+static inline void convolve_mc_mf_bias ( float *arr, int in_channel_count, int array_count, float *kernels, int filter_count, float *arr_out, float *bias );
 
-VADC_API
-void convolve_mc_mf ( float *arr, int in_channel_count, int array_count, float *kernels, int filter_count, float *arr_out );
+static inline void convolve_mc_mf ( float *arr, int in_channel_count, int array_count, float *kernels, int filter_count, float *arr_out );
 
 
-VADC_API
-void convolve_mc_mf_batch_bias ( int batch, float *arr, int in_channel_count, int array_count, float *kernels, int filter_count, float *arr_out, float *bias );
+static inline void convolve_mc_mf_batch_bias ( int batch, float *arr, int in_channel_count, int array_count, float *kernels, int filter_count, float *arr_out, float *bias );
 
-VADC_API
-void convolve_mc_mf_batch ( int batch, float *arr, int in_channel_count, int array_count, float *kernels, int filter_count, float *arr_out );
+static inline void convolve_mc_mf_batch ( int batch, float *arr, int in_channel_count, int array_count, float *kernels, int filter_count, float *arr_out );
 
 
 #endif // MATHS_INCLUDE_H
@@ -103,8 +87,7 @@ void convolve_mc_mf_batch ( int batch, float *arr, int in_channel_count, int arr
 
 #if defined(MATHS_IMPLEMENTATION)
 
-VADC_API
-void relu_inplace ( float *arr, int array_count )
+static inline void relu_inplace ( float *arr, int array_count )
 {
    for ( int i = 0; i < array_count; ++i )
    {
@@ -115,8 +98,7 @@ void relu_inplace ( float *arr, int array_count )
    }
 }
 
-VADC_API
-float mean ( float *arr, int arr_count )
+static inline float mean ( float *arr, int arr_count )
 {
    float result = 0.0f;
    float divisor = (float)arr_count;
@@ -134,8 +116,7 @@ float mean ( float *arr, int arr_count )
 // result:
 // ad + be + cf
 
-VADC_API inline
-float dotproduct_simd ( const float *arr, int count, const float *arr2, int count2 )
+static inline float dotproduct_simd ( const float *arr, int count, const float *arr2, int count2 )
 {
    VAR_UNUSED(count2);
    // TracyCZone(dotproduct, true);
@@ -172,8 +153,7 @@ float dotproduct_simd ( const float *arr, int count, const float *arr2, int coun
    return result;
 }
 
-VADC_API inline
-float dotproduct_unrolled ( const float *arr, int count, const float *arr2, int count2 )
+static inline float dotproduct_unrolled ( const float *arr, int count, const float *arr2, int count2 )
 {
    VAR_UNUSED(count2);
 
@@ -212,8 +192,7 @@ float dotproduct_unrolled ( const float *arr, int count, const float *arr2, int 
    return result;
 }
 
-VADC_API inline
-float dotproduct_unrolled2 ( const float *arr, int count, const float *arr2, int count2 )
+static inline float dotproduct_unrolled2 ( const float *arr, int count, const float *arr2, int count2 )
 {
    VAR_UNUSED(count2);
 
@@ -257,8 +236,7 @@ float dotproduct_unrolled2 ( const float *arr, int count, const float *arr2, int
    return result;
 }
 
-VADC_API inline
-float dotproduct_slow ( const float *arr, int count, const float *arr2, int count2 )
+static inline float dotproduct_slow ( const float *arr, int count, const float *arr2, int count2 )
 {
    VAR_UNUSED(count2);
 
@@ -280,8 +258,7 @@ float dotproduct_slow ( const float *arr, int count, const float *arr2, int coun
 // result:
 // [aj+bl+cn ak+bm+co]
 
-VADC_API inline
-void mydot_arrarr ( const float *arr, int count, const float *arr2, int arr2_rows, float *arr_out )
+static inline void mydot_arrarr ( const float *arr, int count, const float *arr2, int arr2_rows, float *arr_out )
 {
    TracyCZone(mydot_arrarr, true);
 
@@ -302,8 +279,7 @@ void mydot_arrarr ( const float *arr, int count, const float *arr2, int arr2_row
 // [aj+bl+cn ak+bm+co]
 // [dj+el+fn dk+em+fo]
 // [gj+hl+in gk+hm+io]
-VADC_API inline
-void mymatmul ( float *mata, int mata_rows, int mata_cols, float *matb_transposed, int matb_transposed_rows, int matb_transposed_cols, float *out_result )
+static inline void mymatmul ( float *mata, int mata_rows, int mata_cols, float *matb_transposed, int matb_transposed_rows, int matb_transposed_cols, float *out_result )
 {
    TracyCZone(mymatmul, true);
 
@@ -319,8 +295,7 @@ void mymatmul ( float *mata, int mata_rows, int mata_cols, float *matb_transpose
    TracyCZoneEnd(mymatmul);
 }
 
-VADC_API
-void mytanh ( const float *arr, int count, float *out )
+static inline void mytanh ( const float *arr, int count, float *out )
 {
    for ( int i = 0; i < count; ++i )
    {
@@ -328,7 +303,7 @@ void mytanh ( const float *arr, int count, float *out )
    }
 }
 
-static void mytanh_inplace ( float *arr, int count )
+static inline void mytanh_inplace ( float *arr, int count )
 {
    for ( int i = 0; i < count; ++i )
    {
@@ -337,8 +312,7 @@ static void mytanh_inplace ( float *arr, int count )
    }
 }
 
-VADC_API
-void mysigmoid ( const float *arr, int count, float *out )
+static inline void mysigmoid ( const float *arr, int count, float *out )
 {
    for ( int i = 0; i < count; ++i )
    {
@@ -346,7 +320,7 @@ void mysigmoid ( const float *arr, int count, float *out )
    }
 }
 
-static void mysigmoid_inplace ( float *arr, int count )
+static inline void mysigmoid_inplace ( float *arr, int count )
 {
    for ( int i = 0; i < count; ++i )
    {
@@ -355,7 +329,7 @@ static void mysigmoid_inplace ( float *arr, int count )
    }
 }
 
-static void add_arrays ( const float *array_a, int count, const float *array_b, float *array_out )
+static inline void add_arrays ( const float *array_a, int count, const float *array_b, float *array_out )
 {
    for ( int i = 0; i < count; ++i )
    {
@@ -363,7 +337,7 @@ static void add_arrays ( const float *array_a, int count, const float *array_b, 
    }
 }
 
-static void add_arrays_inplace ( float *array_a, int count, const float *array_b )
+static inline void add_arrays_inplace ( float *array_a, int count, const float *array_b )
 {
    for ( int i = 0; i < count; ++i )
    {
@@ -371,8 +345,7 @@ static void add_arrays_inplace ( float *array_a, int count, const float *array_b
    }
 }
 
-VADC_API
-void convolve_muladd ( float *arr, int count, float kernel, float *arr_out )
+static inline void convolve_muladd ( float *arr, int count, float kernel, float *arr_out )
 {
    for ( int i = 0; i < count; ++i )
    {
@@ -380,8 +353,7 @@ void convolve_muladd ( float *arr, int count, float kernel, float *arr_out )
    }
 }
 
-VADC_API
-void convolve_mc ( float *arr, int in_channel_count, int array_count, float *kernels, float *arr_out, float bias )
+static inline void convolve_mc ( float *arr, int in_channel_count, int array_count, float *kernels, float *arr_out, float bias )
 {
    memset( arr_out, 0, array_count * sizeof( float ) );
 
@@ -397,8 +369,7 @@ void convolve_mc ( float *arr, int in_channel_count, int array_count, float *ker
    }
 }
 
-VADC_API
-void convolve_mc_mf_bias ( float *arr, int in_channel_count, int array_count, float *kernels, int filter_count, float *arr_out, float *bias )
+static inline void convolve_mc_mf_bias ( float *arr, int in_channel_count, int array_count, float *kernels, int filter_count, float *arr_out, float *bias )
 {
    for ( int i = 0; i < filter_count; ++i )
    {
@@ -407,16 +378,14 @@ void convolve_mc_mf_bias ( float *arr, int in_channel_count, int array_count, fl
    }
 }
 
-VADC_API
-void convolve_mc_mf ( float *arr, int in_channel_count, int array_count, float *kernels, int filter_count, float *arr_out )
+static inline void convolve_mc_mf ( float *arr, int in_channel_count, int array_count, float *kernels, int filter_count, float *arr_out )
 {
    convolve_mc_mf_bias( arr, in_channel_count, array_count, kernels, filter_count, arr_out, 0 );
 }
 
 
 
-VADC_API
-void convolve_mc_mf_batch_bias ( int batch, float *arr, int in_channel_count, int array_count, float *kernels, int filter_count, float *arr_out, float *bias )
+static inline void convolve_mc_mf_batch_bias ( int batch, float *arr, int in_channel_count, int array_count, float *kernels, int filter_count, float *arr_out, float *bias )
 {
    for ( int i = 0; i < batch; ++i )
    {
@@ -426,8 +395,7 @@ void convolve_mc_mf_batch_bias ( int batch, float *arr, int in_channel_count, in
    }
 }
 
-VADC_API
-void convolve_mc_mf_batch ( int batch, float *arr, int in_channel_count, int array_count, float *kernels, int filter_count, float *arr_out )
+static inline void convolve_mc_mf_batch ( int batch, float *arr, int in_channel_count, int array_count, float *kernels, int filter_count, float *arr_out )
 {
    convolve_mc_mf_batch_bias( batch, arr, in_channel_count, array_count, kernels, filter_count, arr_out, 0 );
 }

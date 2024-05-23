@@ -14,8 +14,7 @@
 // when training a CNN, convolution and cross correlation don't have effect
 // on training, but the extra step of flipping the kernels just slows down
 // the process unnecessarily.
-VADC_API
-void convolve_k5_pad2 ( const float *arr, int count, const float *kernel_flipped, float *arr_out, float bias )
+static inline void convolve_k5_pad2 ( const float *arr, int count, const float *kernel_flipped, float *arr_out, float bias )
 {
    int kernel_size = 5;
    int padding = 2;
@@ -478,7 +477,7 @@ static inline int compute_stft_output_feature_count( TestTensor *input, TestTens
    int filter_length = tdim( filters, 2 );
    int padding = filter_length / 2;
    int features_count = (tdim( input, -1 ) + padding * 2 - filter_length) / hop_length + 1; // padded (128 + 1536 + 128) - filter first (256) / hop length (64) + filter first (1)
-   
+
    return features_count;
 }
 
@@ -500,7 +499,7 @@ static void my_stft ( MemoryArena *arena, TestTensor *input, TestTensor *filters
    int cutoff = half_filter_length + 1;
    int hop_length = 64;
    //int features_count = (tdim(input, -1) + padding * 2 - filter_length) / hop_length + 1; // padded (128 + 1536 + 128) - filter first (256) / hop length (64) + filter first (1)
-   
+
    int features_count = compute_stft_output_feature_count( input, filters, hop_length );
 
    Assert(tdim(output, 0) == tdim(input, 0));
@@ -696,7 +695,7 @@ static void my_stft ( MemoryArena *arena, TestTensor *input, TestTensor *filters
 
 
 
-static void conv_block( TestTensor *input, b32 has_out_proj,
+static void conv_block(MemoryArena *arena,  TestTensor *input, b32 has_out_proj,
                         TestTensor *dw_weights, TestTensor *dw_biases,
                         TestTensor *pw_weights, TestTensor *pw_biases,
                         TestTensor *proj_weights, TestTensor *proj_biases,
@@ -717,7 +716,7 @@ static void conv_block( TestTensor *input, b32 has_out_proj,
    }
    Assert( tensor_is_valid( output ) );
 
-   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   MemoryArena *debug_arena = arena;
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    //TestTensor *dw_output = tensor_zeros_2d( debug_arena, input->dims[0], input->dims[1] );

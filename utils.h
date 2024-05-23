@@ -70,7 +70,3 @@ typedef int32_t b32;
 #endif // !defined(NDEBUG)
 
 #define ArrayCount(arr) (sizeof(arr) / sizeof((arr)[0]))
-
-#ifndef VADC_API
-#define VADC_API __declspec(dllexport)
-#endif // VADC_API

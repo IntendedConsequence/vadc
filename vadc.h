@@ -129,12 +129,12 @@ int run_inference( String8 model_path_arg,
                   int audio_source,
                   float start_seconds );
 
-void process_chunks( VADC_Context context,
+void process_chunks( MemoryArena *arena, VADC_Context context,
                     const size_t buffered_samples_count,
                     const float *samples_buffer_float32,
                     float *probabilities_buffer );
 
-float run_inference_on_single_chunk( VADC_Context context,
+float run_inference_on_single_chunk( MemoryArena *arena, VADC_Context context,
                                                 const size_t samples_count,
                                                 const float *samples_buffer_float32,
                                                 float *state_h_in,

@@ -17,8 +17,7 @@
 // input [N, 64, 7]
 // weight [2, 64, 1]
 // bias [2]
-VADC_API
-int decoder ( float *input, int *input_dims, int input_ndims, float *weights, int *weights_dims, int weights_ndims, float *biases, int *biases_dims, int biases_ndims, float *output, int *output_dims, int output_ndims )
+static inline void decoder ( MemoryArena *arena, float *input, int *input_dims, int input_ndims, float *weights, int *weights_dims, int weights_ndims, float *biases, int *biases_dims, int biases_ndims, float *output, int *output_dims, int output_ndims )
 {
    VAR_UNUSED( biases_dims );
    VAR_UNUSED( output_dims );
@@ -26,9 +25,7 @@ int decoder ( float *input, int *input_dims, int input_ndims, float *weights, in
    VAR_UNUSED( output_ndims );
    VAR_UNUSED( weights_ndims );
 
-   int result_ok = 1;
-
-   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   MemoryArena *debug_arena = arena;
 
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
@@ -37,7 +34,6 @@ int decoder ( float *input, int *input_dims, int input_ndims, float *weights, in
    Assert( biases_ndims == 1 );
    Assert( output_ndims == 3 );
 
-   if ( result_ok )
    {
       int input_count = 1;
       for ( int i = 0; i < input_ndims; ++i )
@@ -93,13 +89,11 @@ int decoder ( float *input, int *input_dims, int input_ndims, float *weights, in
    }
 
    endTemporaryMemory( mark );
-
-   return result_ok;
 }
 
-int decoder_tensor ( TestTensor *input, TestTensor *weights, TestTensor *biases, TestTensor *output )
+static inline void decoder_tensor ( MemoryArena *arena, TestTensor *input, TestTensor *weights, TestTensor *biases, TestTensor *output )
 {
-   return decoder( input->data, input->dims, input->ndim,
+   decoder( arena, input->data, input->dims, input->ndim,
                    weights->data, weights->dims, weights->ndim,
                    biases->data, biases->dims, biases->ndim,
                    output->data, output->dims, output->ndim );

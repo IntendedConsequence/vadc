@@ -5,7 +5,7 @@ set CommonCompilerFlags=%CommonCompilerFlags% /arch:AVX2
 rem set CommonCompilerFlags=%CommonCompilerFlags% -fsanitize=address
 set CommonCompilerFlags=%CommonCompilerFlags% /Zi
 set CommonCompilerFlags=%CommonCompilerFlags% /W4
-set CommonCompilerFlags=%CommonCompilerFlags% /DVADC_API= /DWIN32 /D_CRT_SECURE_NO_WARNINGS
+set CommonCompilerFlags=%CommonCompilerFlags% /DWIN32 /D_CRT_SECURE_NO_WARNINGS
 set CommonCompilerFlags=%CommonCompilerFlags% /DNDEBUG
 set CommonCompilerFlags=%CommonCompilerFlags% /DTRACY_ENABLE
 set CommonCompilerFlags=%CommonCompilerFlags% /DTRACY_NO_SAMPLING

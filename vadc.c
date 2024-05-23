@@ -64,7 +64,7 @@ static FILE *getDebugFile()
 #endif
 
 
-float run_inference_on_single_chunk( VADC_Context context,
+float run_inference_on_single_chunk( MemoryArena *arena, VADC_Context context,
                                                  const size_t samples_count,
                                                  const float *samples_buffer_float32,
                                                  float *state_h_in,
@@ -122,9 +122,9 @@ float run_inference_on_single_chunk( VADC_Context context,
    //result.state_h = context.output_tensor_state_h;
    //result.state_c = context.output_tensor_state_c;
 #else
-   float result_probability = silero_run_one_batch_with_context(DEBUG_getDebugArena(),
+   float result_probability = silero_run_one_batch_with_context(arena,
                                                                 context.silero_context,
-                                                                1536,
+                                                                1536, // TODO(irwin): dehardcode sample count
                                                                 context.input_tensor_samples);
    result = result_probability;
 #endif
@@ -133,7 +133,7 @@ float run_inference_on_single_chunk( VADC_Context context,
 }
 
 
-void process_chunks( VADC_Context context,
+void process_chunks( MemoryArena *arena, VADC_Context context,
                     const size_t buffered_samples_count,
                     const float *samples_buffer_float32,
                     float *probabilities_buffer)
@@ -150,7 +150,7 @@ void process_chunks( VADC_Context context,
 
          // IMPORTANT(irwin): hardcoded to use state from previous inference, assumed to be in output tensor memory
          // TODO(irwin): dehardcode
-         float result = run_inference_on_single_chunk( context,
+         float result = run_inference_on_single_chunk( arena, context,
                                                                   window_size,
                                                                   samples_buffer_float32 + offset,
                                                                   context.output_tensor_state_h,
@@ -967,8 +967,8 @@ int run_inference(String8 model_path_arg,
       Assert( silero_weights_res.tensor_count == (1 + encoder_weights_count + 2 + 2) );
 
       silero_context.weights = silero_weights_init( silero_weights_res );
-      silero_context.state_lstm_h = tensor_zeros_3d(DEBUG_getDebugArena(), 2, 1, 64);
-      silero_context.state_lstm_c = tensor_zeros_3d(DEBUG_getDebugArena(), 2, 1, 64);
+      silero_context.state_lstm_h = tensor_zeros_3d(arena, 2, 1, 64);
+      silero_context.state_lstm_c = tensor_zeros_3d(arena, 2, 1, 64);
    }
 
 
@@ -1108,7 +1108,7 @@ int run_inference(String8 model_path_arg,
          break;
       }
 
-      process_chunks( context,
+      process_chunks( arena, context,
                      values_read,
                      samples_buffer_float32,
                      probabilities_buffer);

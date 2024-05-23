@@ -28,8 +28,7 @@ static void debugprint_array( const float *arr, int count, FILE *file_out )
 // IMPORTANT(irwin): biases are expected to be shared for both input data and hidden state. Since pytorch uses separate biases
 // for input data and hidden state for CUDA compatibility, if the caller comes from PyTorch, the caller must take care of
 // adding the pytorch separate biases before calling this function.
-VADC_API
-void lstm_cell ( const float *input_x, int input_x_count, const float *hidden_state_previous, const float *cell_state_previous, const float *weights_transposed, const float *biases, float *output_hc )
+static inline void lstm_cell ( MemoryArena *arena, const float *input_x, int input_x_count, const float *hidden_state_previous, const float *cell_state_previous, const float *weights_transposed, const float *biases, float *output_hc )
 {
    TracyCZone(lstm_cell, true);
 
@@ -37,7 +36,7 @@ void lstm_cell ( const float *input_x, int input_x_count, const float *hidden_st
    FILE *debugout = fopen( "lstm_debug.txt", "w" );
 #endif // DEBUG_PRINT
 
-   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   MemoryArena *debug_arena = arena;
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    int combined_count = input_x_count * 2;
@@ -90,8 +89,7 @@ void lstm_cell ( const float *input_x, int input_x_count, const float *hidden_st
 // IMPORTANT(irwin): biases are expected to be shared for both input data and hidden state. Since pytorch uses separate biases
 // for input data and hidden state for CUDA compatibility, if the caller comes from PyTorch, the caller must take care of
 // adding the pytorch separate biases (within each lstm cell) before calling this function.
-VADC_API
-void lstm ( const float *input_x, int input_x_count, const float *hidden_state_previous, const float *cell_state_previous, const float *weights_transposed, const float *biases, float *output_hc )
+static inline void lstm ( MemoryArena *arena, const float *input_x, int input_x_count, const float *hidden_state_previous, const float *cell_state_previous, const float *weights_transposed, const float *biases, float *output_hc )
 {
    TracyCZone(lstm, true);
 
@@ -102,13 +100,13 @@ void lstm ( const float *input_x, int input_x_count, const float *hidden_state_p
    int weights_stride = (input_x_count * 2) * (input_x_count * 4);
    int biases_stride = (input_x_count * 4);
 
-   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   MemoryArena *debug_arena = arena;
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    float *output_hc_unordered = pushArray( debug_arena, (hidden_state_stride + cell_state_stride) * 2, float );
 
-   lstm_cell( input_x, input_x_count, hidden_state_previous, cell_state_previous, weights_transposed, biases, output_hc_unordered );
-   lstm_cell( output_hc_unordered, input_x_count, hidden_state_previous + hidden_state_stride, cell_state_previous + cell_state_stride, weights_transposed + weights_stride, biases + biases_stride, output_hc_unordered + hidden_state_stride + cell_state_stride );
+   lstm_cell( debug_arena, input_x, input_x_count, hidden_state_previous, cell_state_previous, weights_transposed, biases, output_hc_unordered );
+   lstm_cell( debug_arena, output_hc_unordered, input_x_count, hidden_state_previous + hidden_state_stride, cell_state_previous + cell_state_stride, weights_transposed + weights_stride, biases + biases_stride, output_hc_unordered + hidden_state_stride + cell_state_stride );
 
    // h0,c0 -> h0,h1
    // h1,c1 -> c0,c1
@@ -132,15 +130,14 @@ void lstm ( const float *input_x, int input_x_count, const float *hidden_state_p
 // adding the pytorch separate biases (within each lstm cell) before calling this function.
 // output:
 // [seq, input_x_count], h0,h1, c0,c1
-VADC_API
-void lstm_seq ( const float *input_x, int input_x_seq_count, int input_x_count, const float *hidden_state_previous, const float *cell_state_previous, const float *weights_transposed, const float *biases, float *output )
+static inline void lstm_seq ( MemoryArena *arena, const float *input_x, int input_x_seq_count, int input_x_count, const float *hidden_state_previous, const float *cell_state_previous, const float *weights_transposed, const float *biases, float *output )
 {
    TracyCZone(lstm_seq, true);
 
    int input_size = input_x_count;
    int hidden_size = input_x_count;
 
-   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   MemoryArena *debug_arena = arena;
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    float *input_hc = pushArray( debug_arena, (input_size + hidden_size) * 2, float );
@@ -153,7 +150,7 @@ void lstm_seq ( const float *input_x, int input_x_seq_count, int input_x_count, 
    float *output_hc = pushArray( debug_arena, (input_size + hidden_size) * 2, float );
    for ( int i = 0; i < input_x_seq_count; ++i )
    {
-      lstm( input_x + i * input_x_count, input_x_count, input_h, input_c, weights_transposed, biases, output_hc );
+      lstm( debug_arena, input_x + i * input_x_count, input_x_count, input_h, input_c, weights_transposed, biases, output_hc );
 
       // TODO(irwin): memmove?
       memcpy( input_hc, output_hc, (input_size + hidden_size) * 2 * sizeof( float ) );

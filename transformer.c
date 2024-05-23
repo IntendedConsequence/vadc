@@ -7,7 +7,7 @@
 //       self.QKV = torch.nn.Linear(in_features=qkv_in_features, out_features=qkv_out_features)
 //       self.out_proj = torch.nn.Linear(in_features=qkv_in_features, out_features=qkv_in_features)
 
-static void layer_norm( TestTensor *input, TestTensor *weight, TestTensor *bias, TestTensor *output )
+static void layer_norm( MemoryArena *arena, TestTensor *input, TestTensor *weight, TestTensor *bias, TestTensor *output )
 {
    const float eps = 1e-5f;
 
@@ -27,7 +27,7 @@ static void layer_norm( TestTensor *input, TestTensor *weight, TestTensor *bias,
    Assert( features == tdim( weight, 0 ) );
    Assert( features == tdim( bias, 0 ) );
 
-   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   MemoryArena *debug_arena = arena;
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    float *mean = pushArray( debug_arena, batches, float );
@@ -124,7 +124,7 @@ static void batch_norm1d( TestTensor *input,
    }
 }
 
-static void dual_head_attention( TestTensor *input,
+static void dual_head_attention(MemoryArena *arena, TestTensor *input,
                                  TestTensor *QKV_weights, TestTensor *QKV_biases,
                                  TestTensor *proj_weights, TestTensor *proj_biases,
                                  TestTensor *output )
@@ -158,7 +158,7 @@ static void dual_head_attention( TestTensor *input,
    Assert( tdim( output, -1 ) == in_features );
 
 
-   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   MemoryArena *debug_arena = arena;
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
    TestTensor *QKV_result = tensor_zeros_2d( debug_arena, seq_length, out_features );
@@ -271,7 +271,7 @@ static void transformer_block( MemoryArena *arena, TestTensor *input,
    TestTensor *input_transposed = tensor_transpose_last_2d( arena, input );
    TestTensor *attention_output = tensor_zeros_like( arena, input_transposed );
 
-   dual_head_attention( input_transposed,
+   dual_head_attention( arena, input_transposed,
                         attention_weights, attention_biases,
                         attention_proj_weights, attention_proj_biases,
                         attention_output );
@@ -280,7 +280,7 @@ static void transformer_block( MemoryArena *arena, TestTensor *input,
 
    // TODO(irwin): can zero and reuse attention_output?
    TestTensor *norm1_output = tensor_zeros_like( arena, input_transposed );
-   layer_norm( input_transposed, norm1_weights, norm1_biases, norm1_output );
+   layer_norm( arena, input_transposed, norm1_weights, norm1_biases, norm1_output );
 
    // NOTE(irwin): tdim(input_transposed, -1) == tdim(input, -2)
    // NOTE(irwin): tdim(norm1_output, -1) == tdim(input_transposed, -1)
@@ -294,7 +294,7 @@ static void transformer_block( MemoryArena *arena, TestTensor *input,
    tensor_add_inplace_nd( norm1_output, linear2_output );
 
    TestTensor *norm2_output = tensor_zeros_like( arena, norm1_output );
-   layer_norm( norm1_output, norm2_weights, norm2_biases, norm2_output );
+   layer_norm( arena, norm1_output, norm2_weights, norm2_biases, norm2_output );
 
    TestTensor *output_copy_source = tensor_transpose_last_2d( arena, norm2_output );
    Assert(output->nbytes == output_copy_source->nbytes);
@@ -324,13 +324,13 @@ static void transformer_block_batch( MemoryArena *arena, TestTensor *input,
       TestTensor input_slice = tensor_index_first_dim( input, batch_index, false );
       TestTensor output_slice = tensor_index_first_dim( output, batch_index, false );
 
-      transformer_block( arena, &input_slice, 
-                         attention_weights, attention_biases, 
-                         attention_proj_weights, attention_proj_biases, 
-                         norm1_weights, norm1_biases, 
-                         linear1_weights, linear1_biases, 
-                         linear2_weights, linear2_biases, 
-                         norm2_weights, norm2_biases, 
+      transformer_block( arena, &input_slice,
+                         attention_weights, attention_biases,
+                         attention_proj_weights, attention_proj_biases,
+                         norm1_weights, norm1_biases,
+                         linear1_weights, linear1_biases,
+                         linear2_weights, linear2_biases,
+                         norm2_weights, norm2_biases,
                          &output_slice );
    }
    TracyCZoneEnd(transformer_block_batch);
@@ -355,10 +355,10 @@ static void transformer_layer( MemoryArena *arena, TestTensor *input, Transforme
    }
 
    TestTensor* conv_block_output = tensor_zeros_3d( arena, conv_block_out_shape.batch_size, conv_block_out_shape.channels_out, conv_block_out_shape.sequence_length );
-   
+
    b32 conv_block_has_proj = (weights.proj_weights != 0 && weights.proj_biases != 0);
    // NOTE(irwin): 1 - ConvBlock
-   conv_block( input, conv_block_has_proj,
+   conv_block( arena, input, conv_block_has_proj,
                weights.dw_conv_weights, weights.dw_conv_biases,
                weights.pw_conv_weights, weights.pw_conv_biases,
                weights.proj_weights, weights.proj_biases,
@@ -517,7 +517,7 @@ static float silero_run_one_batch_with_context(MemoryArena *arena, Silero_Contex
       float *lstm_output = pushArray( debug_arena, lstm_output_size, float );
       //float *lstm_output = pushArray( debug_arena, batches * seq_length * input_size, float );
 
-      lstm_seq( l4_output_t->data,
+      lstm_seq( arena, l4_output_t->data,
                 seq_length * batches,
                 input_size,
                 lstm_input_h->data,
@@ -547,8 +547,7 @@ static float silero_run_one_batch_with_context(MemoryArena *arena, Silero_Contex
       TestTensor *output_decoder = tensor_zeros_3d( debug_arena, 1, decoder_results, 1 );
       Assert( decoder_output_size == output_decoder->size );
 
-      int decoder_result = decoder_tensor( lstm_output_tensor_t, context->weights.decoder_weights, context->weights.decoder_biases, output_decoder );
-      VAR_UNUSED( decoder_result );
+      decoder_tensor(debug_arena, lstm_output_tensor_t, context->weights.decoder_weights, context->weights.decoder_biases, output_decoder );
 
       float diarization_maybe = output_decoder->data[0];
       float speech_probability = output_decoder->data[1];
