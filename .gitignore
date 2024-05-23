@@ -9,3 +9,7 @@ silero_vad_v3_16k/
 /testdata/untracked/
 
 silero_v31_16k_weights.c
+*.pdb
+*.raddbg
+*.raddbgi
+*.exp
