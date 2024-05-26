@@ -70,53 +70,54 @@ float run_inference_on_single_chunk( MemoryArena *arena, VADC_Context context,
                                                  float *state_h_in,
                                                  float *state_c_in )
 {
-   Assert( samples_count > 0 && samples_count <= context.window_size_samples );
+   Assert( samples_count > 0 && samples_count <= context.buffers.window_size_samples );
 #if DEBUG_WRITE_STATE_TO_FILE
    FILE *debug_file = getDebugFile();
 #endif
 
    float result = 0.0f;
 
-   memmove( context.input_tensor_samples, samples_buffer_float32, samples_count * sizeof( context.input_tensor_samples[0] ) );
+   memmove( context.buffers.input_samples, samples_buffer_float32, samples_count * sizeof( context.buffers.input_samples[0] ) );
 
    // NOTE(irwin): pad chunks with not enough samples
-   if ( samples_count < context.window_size_samples )
+   if ( samples_count < context.buffers.window_size_samples )
    {
-      for ( size_t pad_index = samples_count; pad_index < context.window_size_samples; ++pad_index )
+      for ( size_t pad_index = samples_count; pad_index < context.buffers.window_size_samples; ++pad_index )
       {
-         context.input_tensor_samples[pad_index] = 0.0f;
+         context.buffers.input_samples[pad_index] = 0.0f;
       }
    }
 
-   memmove( context.input_tensor_state_h, state_h_in, context.state_count * sizeof( context.input_tensor_state_h[0] ) );
-   memmove( context.input_tensor_state_c, state_c_in, context.state_count * sizeof( context.input_tensor_state_c[0] ) );
+   memmove( context.buffers.lstm_h, state_h_in, context.buffers.lstm_count * sizeof( context.buffers.lstm_h[0] ) );
+   memmove( context.buffers.lstm_c, state_c_in, context.buffers.lstm_count * sizeof( context.buffers.lstm_c[0] ) );
 #if DEBUG_WRITE_STATE_TO_FILE
    DEBUG_Silero_State debug_state;
-   float *source = context.input_tensor_samples;
-   size_t source_size_bytes = 1536 * sizeof( context.input_tensor_samples[0] );
+   float *source = context.buffers.input_samples;
+   size_t source_size_bytes = 1536 * sizeof( context.buffers.input_samples[0] );
    memmove( debug_state.samples, source, source_size_bytes );
-   memmove( debug_state.state_h, context.input_tensor_state_h, context.state_count * sizeof( context.input_tensor_state_h[0] ) );
-   memmove( debug_state.state_c, context.input_tensor_state_c, context.state_count * sizeof( context.input_tensor_state_c[0] ) );
+   memmove( debug_state.state_h, context.buffers.lstm_h, context.buffers.lstm_count * sizeof( context.buffers.lstm_h[0] ) );
+   memmove( debug_state.state_c, context.buffers.lstm_c, context.buffers.lstm_count * sizeof( context.buffers.lstm_c[0] ) );
    fwrite( &debug_state, sizeof( DEBUG_Silero_State ), 1, debug_file );
 #endif
 
 #if ONNX_INFERENCE_ENABLED
-   ORT_ABORT_ON_ERROR( g_ort->Run( context.session,
+   VAR_UNUSED(arena);
+   ORT_ABORT_ON_ERROR( g_ort->Run( context.onnx.session,
                                    NULL,
-                                   context.input_names,
-                                   context.input_tensors,
-                                   context.inputs_count,
-                                   context.output_names,
-                                   context.outputs_count,
-                                   context.output_tensors )
+                                   context.onnx.input_names,
+                                   context.onnx.input_tensors,
+                                   context.onnx.inputs_count,
+                                   context.onnx.output_names,
+                                   context.onnx.outputs_count,
+                                   context.onnx.output_tensors )
    );
-   Assert( context.output_tensors[0] != NULL );
+   Assert( context.onnx.output_tensors[0] != NULL );
 
    int is_tensor;
-   ORT_ABORT_ON_ERROR( g_ort->IsTensor( context.output_tensors[0], &is_tensor ) );
+   ORT_ABORT_ON_ERROR( g_ort->IsTensor( context.onnx.output_tensors[0], &is_tensor ) );
    Assert( is_tensor );
 
-   float result_probability = context.output_tensor_prob[context.silero_probability_out_index];
+   float result_probability = context.buffers.output[context.silero_probability_out_index];
    result = result_probability;
 
    //result.state_h = context.output_tensor_state_h;
@@ -124,8 +125,8 @@ float run_inference_on_single_chunk( MemoryArena *arena, VADC_Context context,
 #else
    float result_probability = silero_run_one_batch_with_context(arena,
                                                                 context.silero_context,
-                                                                1536, // TODO(irwin): dehardcode sample count
-                                                                context.input_tensor_samples);
+                                                                context.buffers.window_size_samples,
+                                                                context.buffers.input_samples);
    result = result_probability;
 #endif
 
@@ -142,19 +143,19 @@ void process_chunks( MemoryArena *arena, VADC_Context context,
    {
       for (size_t offset = 0;
          offset < buffered_samples_count;
-         offset += context.window_size_samples)
+         offset += context.buffers.window_size_samples)
       {
          // NOTE(irwin): copy a slice of the buffered samples
          size_t samples_count_left = buffered_samples_count - offset;
-         size_t window_size = samples_count_left > context.window_size_samples ? context.window_size_samples : samples_count_left;
+         size_t window_size = samples_count_left > context.buffers.window_size_samples ? context.buffers.window_size_samples : samples_count_left;
 
          // IMPORTANT(irwin): hardcoded to use state from previous inference, assumed to be in output tensor memory
          // TODO(irwin): dehardcode
          float result = run_inference_on_single_chunk( arena, context,
                                                                   window_size,
                                                                   samples_buffer_float32 + offset,
-                                                                  context.output_tensor_state_h,
-                                                                  context.output_tensor_state_c );
+                                                                  context.buffers.lstm_h_out,
+                                                                  context.buffers.lstm_c_out );
 
          *probabilities_buffer++ = result;
       }
@@ -163,7 +164,7 @@ void process_chunks( MemoryArena *arena, VADC_Context context,
    else
    {
       Assert(!context.is_silero_v4);
-      int stride = (int)context.window_size_samples * context.batch_size;
+      int stride = (int)context.buffers.window_size_samples * context.batch_size;
       for (size_t offset = 0;
          offset < buffered_samples_count;
          offset += stride)
@@ -173,38 +174,38 @@ void process_chunks( MemoryArena *arena, VADC_Context context,
          size_t samples_count = samples_count_left > stride ? stride : samples_count_left;
 
          // TODO(irwin): memset to 0 the entire tensor for simplicity, to avoid manual error-prone padding offset calculations
-         memset( context.input_tensor_samples, 0, stride * sizeof( context.input_tensor_samples[0] ) );
-         memmove( context.input_tensor_samples, samples_buffer_float32 + offset, samples_count * sizeof( context.input_tensor_samples[0] ) );
+         memset( context.buffers.input_samples, 0, stride * sizeof( context.buffers.input_samples[0] ) );
+         memmove( context.buffers.input_samples, samples_buffer_float32 + offset, samples_count * sizeof( context.buffers.input_samples[0] ) );
 
          // NOTE(irwin): pad chunks with not enough samples
          // for ( size_t pad_index = samples_count; pad_index < stride; ++pad_index )
          // {
-         //    context.input_tensor_samples[pad_index] = 0.0f;
+         //    context.buffers.input_samples[pad_index] = 0.0f;
          // }
 
-         memmove( context.input_tensor_state_h, context.output_tensor_state_h, context.state_count * sizeof( context.input_tensor_state_h[0] ) );
-         memmove( context.input_tensor_state_c, context.output_tensor_state_c, context.state_count * sizeof( context.input_tensor_state_c[0] ) );
+         memmove( context.buffers.lstm_h, context.buffers.lstm_h_out, context.buffers.lstm_count * sizeof( context.buffers.lstm_h[0] ) );
+         memmove( context.buffers.lstm_c, context.buffers.lstm_c_out, context.buffers.lstm_count * sizeof( context.buffers.lstm_c[0] ) );
 
-         ORT_ABORT_ON_ERROR( g_ort->Run( context.session,
+         ORT_ABORT_ON_ERROR( g_ort->Run( context.onnx.session,
                                          NULL,
-                                         context.input_names,
-                                         context.input_tensors,
-                                         context.inputs_count,
-                                         context.output_names,
-                                         context.outputs_count,
-                                         context.output_tensors )
+                                         context.onnx.input_names,
+                                         context.onnx.input_tensors,
+                                         context.onnx.inputs_count,
+                                         context.onnx.output_names,
+                                         context.onnx.outputs_count,
+                                         context.onnx.output_tensors )
          );
 
-         Assert( context.output_tensors[0] != NULL );
+         Assert( context.onnx.output_tensors[0] != NULL );
 
          int is_tensor;
-         ORT_ABORT_ON_ERROR( g_ort->IsTensor( context.output_tensors[0], &is_tensor ) );
+         ORT_ABORT_ON_ERROR( g_ort->IsTensor( context.onnx.output_tensors[0], &is_tensor ) );
          Assert( is_tensor );
 
          int output_stride = context.is_silero_v4 ? 1 : 2;
          for (int i = 0; i < context.batch_size; ++i)
          {
-            float result_probability = context.output_tensor_prob[i * output_stride + context.silero_probability_out_index];
+            float result_probability = context.buffers.output[i * output_stride + context.silero_probability_out_index];
             *probabilities_buffer++ = result_probability;
          }
       }
@@ -273,7 +274,7 @@ FeedProbabilityResult feed_probability(FeedState *state,
 
 static inline float to_s(int in_chunks)
 {
-   return in_chunks / chunks_per_second;
+   return in_chunks / HARDCODED_CHUNKS_PER_SECOND;
 }
 
 void emit_speech_segment(FeedProbabilityResult segment,
@@ -715,6 +716,7 @@ static void deinit_buffered_stream_file( Buffered_Stream *s )
    }
 }
 
+
 int run_inference(String8 model_path_arg,
                   MemoryArena *arena,
                   float min_silence_duration_ms,
@@ -730,199 +732,87 @@ int run_inference(String8 model_path_arg,
                   int audio_source,
                   float start_seconds )
 {
-#if ONNX_INFERENCE_ENABLED
-
-   OrtSession *session = ort_init( arena, model_path_arg );
-   if ( !session )
-   {
-      return -1;
-   }
-#else
-   VAR_UNUSED( model_path_arg );
-#endif // ONNX_INFERENCE_ENABLED
-
-   size_t model_input_count = 0;
-#if ONNX_INFERENCE_ENABLED
-   {
-      ORT_ABORT_ON_ERROR( g_ort->SessionGetInputCount( session, &model_input_count ) );
-      Assert( model_input_count == 3 || model_input_count == 4 );
-   }
-#endif // ONNX_INFERENCE_ENABLED
-   const b32 is_silero_v4 = model_input_count == 4;
-
-#if ONNX_INFERENCE_ENABLED
-   OrtMemoryInfo *memory_info;
-   ORT_ABORT_ON_ERROR( g_ort->CreateCpuMemoryInfo( OrtArenaAllocator, OrtMemTypeDefault, &memory_info ) );
-   OrtAllocator *ort_allocator;
-   ORT_ABORT_ON_ERROR( g_ort->CreateAllocator( session, memory_info, &ort_allocator ) );
-#endif // ONNX_INFERENCE_ENABLED
-
-#if ONNX_INFERENCE_ENABLED
-   {
-      size_t model_output_count = 0;
-      ORT_ABORT_ON_ERROR( g_ort->SessionGetOutputCount( session, &model_output_count ) );
-   }
-#endif // ONNX_INFERENCE_ENABLED
-
-   b32 model_is_hardcoded_batch32 = 0;
-#if 0
-   {
-      char *output_name_first = 0;
-      ORT_ABORT_ON_ERROR(g_ort->SessionGetOutputName(session, 0, ort_allocator, &output_name_first));
-
-      String8 nobatch_output_name = String8FromLiteral("output");
-      String8 output_name_first_string8 = String8FromCString(output_name_first);
-      if (!String8_Equal(nobatch_output_name, output_name_first_string8))
-      {
-         model_is_hardcoded_batch32 = 1;
-      }
-   }
-#endif
-
-   s32 batch_size_restriction = 1;
-
-#if ONNX_INFERENCE_ENABLED
-   batch_size_restriction = ort_get_batch_size_restriction( session, ort_allocator );
-#endif // ONNX_INFERENCE_ENABLED
-
-
-   if (batch_size_restriction == 32)
-   {
-      model_is_hardcoded_batch32 = 1;
-   }
-
-
-   // for (int i = 0; i < model_output_count; ++i)
-   // {
-   //    char *output_name = 0;
-   //    ORT_ABORT_ON_ERROR(g_ort->SessionGetOutputName(session, i, ort_allocator, &output_name));
-   //    fprintf(stderr, "output name: %s\n", output_name);
-   // }
-
-   // const float threshold               = 0.5f;
-   // const float neg_threshold           = threshold - 0.15f;
-   // const float min_speech_duration_ms  = 250.0f;
-   // const float min_silence_duration_ms = 100.0f;
-   // const float speech_pad_ms           = 30.0f;
-
-   int min_speech_duration_chunks = (int)(min_speech_duration_ms / chunk_duration_ms + 0.5f);
+   int min_speech_duration_chunks = (int)(min_speech_duration_ms / HARDCODED_CHUNK_DURATION_MS + 0.5f);
    if (min_speech_duration_chunks < 1)
    {
       min_speech_duration_chunks = 1;
    }
 
-   int min_silence_duration_chunks = (int)(min_silence_duration_ms / chunk_duration_ms + 0.5f);
+   int min_silence_duration_chunks = (int)(min_silence_duration_ms / HARDCODED_CHUNK_DURATION_MS + 0.5f);
    if (min_silence_duration_chunks < 1)
    {
       min_silence_duration_chunks = 1;
    }
 
 
+   Silero_Config config = {0};
+   config.batch_size_restriction = 1;
+   config.batch_size = 1;
+   config.input_count = (s32)HARDCODED_WINDOW_SIZE_SAMPLES;
+
+#if ONNX_INFERENCE_ENABLED
+
+   ONNX_Specific onnx = {0};
+
+   {
+      OrtSession *session = ort_init( arena, model_path_arg, &onnx );
+      if ( !session )
+      {
+         return -1;
+      }
+   }
+
+   config.is_silero_v4 = onnx.is_silero_v4;
+   config.batch_size_restriction = onnx.batch_size_restriction;
+#else
+   VAR_UNUSED( model_path_arg );
+   config.is_silero_v4 = false;
+#endif // ONNX_INFERENCE_ENABLED
+
+   config.batch_size = (config.batch_size_restriction == -1) ? preferred_batch_size : config.batch_size_restriction;
+
+
+   {
+      if (config.is_silero_v4)
+      {
+         config.prob_shape_count = 2;
+         config.prob_shape[0] = config.batch_size;
+         config.prob_shape[1] = 1;
+      }
+      else
+      {
+         config.prob_shape_count = 3;
+         config.prob_shape[0] = config.batch_size;
+         config.prob_shape[1] = 2;
+         config.prob_shape[2] = 1;
+      }
+
+      size_t prob_tensor_element_count = 1;
+      for (int i = 0; i < config.prob_shape_count; ++i)
+      {
+         prob_tensor_element_count *= config.prob_shape[i];
+      }
+      config.prob_tensor_element_count = prob_tensor_element_count;
+   }
+
+
    // NOTE(irwin): create tensors and allocate tensors backing memory buffers
-   const size_t input_count = window_size_samples;
-   int batch_size = (batch_size_restriction == -1) ? preferred_batch_size : batch_size_restriction;
-   // int batch_size = 1;
-   // float *input_tensor_samples = (float *)malloc(input_count * batch_size * sizeof(float));
-   float *input_tensor_samples = pushArray(arena, input_count * batch_size, float);
+   Tensor_Buffers buffers = {0};
+   buffers.window_size_samples = (int)HARDCODED_WINDOW_SIZE_SAMPLES;
+   buffers.input_samples = pushArray(arena, HARDCODED_WINDOW_SIZE_SAMPLES * config.batch_size, float);
 
-   const size_t silero_input_tensor_count = is_silero_v4 ? 4 : 3;
+   buffers.output = pushArray(arena, config.prob_tensor_element_count, float);
 
-#if ONNX_INFERENCE_ENABLED
-   int64_t input_tensor_samples_shape[] = {batch_size, input_count};
-   const size_t input_tensor_samples_shape_count = ArrayCount( input_tensor_samples_shape );
-   OrtValue *input_tensors[4];
+   buffers.lstm_count = 128;
+   buffers.lstm_h = pushArray(arena, buffers.lstm_count, float);
+   buffers.lstm_c = pushArray(arena, buffers.lstm_count, float);
 
-   create_tensor(memory_info, &input_tensors[0], input_tensor_samples_shape, input_tensor_samples_shape_count, input_tensor_samples, input_count * batch_size);
-#endif // ONNX_INFERENCE_ENABLED
-
-   const size_t state_count = 128;
-   // float *state_h = (float *)malloc(state_count * sizeof(float));
-   float *state_h = pushArray(arena, state_count, float);
-   memset(state_h, 0, state_count * sizeof(float));
-
-   // float *state_c = (float *)malloc(state_count * sizeof(float));
-   float *state_c = pushArray(arena, state_count, float);
-   memset(state_c, 0, state_count * sizeof(float));
-
-   // float *state_h_out = (float *)malloc(state_count * sizeof(float));
-   float *state_h_out = pushArray(arena, state_count, float);
-   memset(state_h_out, 0, state_count * sizeof(float));
-
-   // float *state_c_out = (float *)malloc(state_count * sizeof(float));
-   float *state_c_out = pushArray(arena, state_count, float);
-   memset(state_c_out, 0, state_count * sizeof(float));
-
+   buffers.lstm_h_out = pushArray(arena, buffers.lstm_count, float);
+   buffers.lstm_c_out = pushArray(arena, buffers.lstm_count, float);
 
 #if ONNX_INFERENCE_ENABLED
-   int64_t state_shape[] = {2, 1, 64};
-   const size_t state_shape_count = ArrayCount( state_shape );
-   OrtValue **state_h_tensor = &input_tensors[1];
-   create_tensor(memory_info, state_h_tensor, state_shape, state_shape_count, state_h, state_count);
-
-   OrtValue** state_c_tensor = &input_tensors[2];
-   create_tensor(memory_info, state_c_tensor, state_shape, state_shape_count, state_c, state_count);
+   ort_create_tensors(config, &onnx, buffers);
 #endif // ONNX_INFERENCE_ENABLED
-
-   if ( is_silero_v4 )
-   {
-#if ONNX_INFERENCE_ENABLED
-      int64_t sr = 16000;
-      int64_t sr_shape[] = {1, 1};
-      const size_t sr_shape_count = ArrayCount( sr_shape );
-      OrtValue **sr_tensor = &input_tensors[3];
-      create_tensor_int64( memory_info, sr_tensor, sr_shape, sr_shape_count, &sr, 1 );
-#endif // ONNX_INFERENCE_ENABLED
-   }
-
-   const char *input_names_v4[] = { "input", "h", "c", "sr" };
-   const char *input_names_v3[] = { "input", "h0", "c0" };
-
-   VAR_UNUSED( input_names_v4 );
-   VAR_UNUSED( input_names_v3 );
-
-   int64_t prob_shape_v4[] = { batch_size, 1 };
-   int64_t prob_shape_v3[] = { batch_size, 2, 1 };
-
-   VAR_UNUSED( prob_shape_v4 );
-   VAR_UNUSED( prob_shape_v3 );
-
-   const size_t prob_shape_count_v4 = ArrayCount( prob_shape_v4 );
-   const size_t prob_shape_count_v3 = ArrayCount( prob_shape_v3 );
-   VAR_UNUSED( prob_shape_count_v4 );
-   VAR_UNUSED( prob_shape_count_v3 );
-
-   const char **input_names = is_silero_v4 ? input_names_v4 : input_names_v3;
-   int64_t *prob_shape = is_silero_v4 ? prob_shape_v4 : prob_shape_v3;
-
-   const char *output_names_normal[] = { "output", "hn", "cn" };
-   // const char *output_names_batch32[] = { "5804", "5732", "5733" };
-
-#if ONNX_INFERENCE_ENABLED
-   OrtValue *output_tensors[3] = { 0 };
-   OrtValue **output_prob_tensor = &output_tensors[0];
-#endif // ONNX_INFERENCE_ENABLED
-
-   const size_t prob_shape_count = is_silero_v4 ? prob_shape_count_v4 : prob_shape_count_v3;
-   size_t prob_tensor_element_count = 1;
-   for (int i = 0; i < prob_shape_count; ++i)
-   {
-      prob_tensor_element_count *= prob_shape[i];
-   }
-
-   // float *prob = malloc(prob_tensor_element_count * sizeof(float));
-   float *prob = pushArray(arena, prob_tensor_element_count, float);
-
-#if ONNX_INFERENCE_ENABLED
-   create_tensor(memory_info, output_prob_tensor, prob_shape, prob_shape_count, prob, prob_tensor_element_count);
-
-   OrtValue** state_h_out_tensor = &output_tensors[1];
-   create_tensor(memory_info, state_h_out_tensor, state_shape, state_shape_count, state_h_out, state_count);
-
-   OrtValue** state_c_out_tensor = &output_tensors[2];
-   create_tensor(memory_info, state_c_out_tensor, state_shape, state_shape_count, state_c_out, state_count);
-#endif // ONNX_INFERENCE_ENABLED
-
-   // g_ort->ReleaseMemoryInfo(memory_info);
 
 
    // NOTE(irwin): read samples from a file or stdin and run inference
@@ -931,13 +821,10 @@ int run_inference(String8 model_path_arg,
    // is purely coincidental
    const int chunks_count = 96;
    // NOTE(irwin): buffered_samples_count is the normalization window size
-   const size_t buffered_samples_count = window_size_samples * chunks_count;
+   const size_t buffered_samples_count = HARDCODED_WINDOW_SIZE_SAMPLES * chunks_count;
 
-   // short *samples_buffer_s16 = (short *)malloc(buffered_samples_count * sizeof(short));
    short *samples_buffer_s16 = pushArray(arena, buffered_samples_count, short);
-   // float *samples_buffer_float32 = (float *)malloc(buffered_samples_count * sizeof(float));
    float *samples_buffer_float32 = pushArray(arena, buffered_samples_count, float);
-   // float *probabilities_buffer = (float *)malloc(chunks_count * sizeof(float));
    float *probabilities_buffer = pushArray(arena, chunks_count, float);
 
    Buffered_Stream read_stream = {0};
@@ -955,6 +842,8 @@ int run_inference(String8 model_path_arg,
    }
 
 
+
+#if !ONNX_INFERENCE_ENABLED
    Silero_Context silero_context;
    {
       LoadTesttensorResult silero_weights_res = {0};
@@ -970,32 +859,22 @@ int run_inference(String8 model_path_arg,
       silero_context.state_lstm_h = tensor_zeros_3d(arena, 2, 1, 64);
       silero_context.state_lstm_c = tensor_zeros_3d(arena, 2, 1, 64);
    }
+#endif // !ONNX_INFERENCE_ENABLED
 
 
    VADC_Context context =
    {
 #if ONNX_INFERENCE_ENABLED
-      .input_tensors = input_tensors,
-      .output_tensors = output_tensors,
-      .session = session,
-#endif
-      .input_names = input_names,
-      .output_names = output_names_normal,
-      .state_count = state_count,
-      .input_tensor_state_h = state_h,
-      .input_tensor_state_c = state_c,
-      .output_tensor_state_h = state_h_out,
-      .output_tensor_state_c = state_c_out,
-      .window_size_samples = window_size_samples,
-      .output_tensor_prob = prob,
-      .input_tensor_samples = input_tensor_samples,
+      .onnx = onnx,
+#endif // ONNX_INFERENCE_ENABLED
+      .buffers = buffers,
 
-      .inputs_count = silero_input_tensor_count,
-      .outputs_count = 3,
-      .is_silero_v4 = is_silero_v4,
-      .silero_probability_out_index = is_silero_v4 ? 0 : 1,
-      .batch_size = batch_size,
+      .is_silero_v4 = config.is_silero_v4,
+      .silero_probability_out_index = config.is_silero_v4 ? 0 : 1,
+      .batch_size = config.batch_size,
+#if !ONNX_INFERENCE_ENABLED
       .silero_context = &silero_context
+#endif // !ONNX_INFERENCE_ENABLED
    };
 
    FeedState state = {0};
@@ -1030,7 +909,7 @@ int run_inference(String8 model_path_arg,
       values_read = (read_stream.end - read_stream.start) / sizeof(short);
       total_samples_read += values_read;
       stats.total_samples = total_samples_read;
-      stats.total_duration = (double)total_samples_read / sample_rate;
+      stats.total_duration = (double)total_samples_read / HARDCODED_SAMPLE_RATE;
 
 
       // values_read = fread(samples_buffer_s16, sizeof(short), buffered_samples_count, read_source);
@@ -1113,7 +992,7 @@ int run_inference(String8 model_path_arg,
                      samples_buffer_float32,
                      probabilities_buffer);
 
-      int probabilities_count = (int)(values_read / window_size_samples);
+      int probabilities_count = (int)(values_read / HARDCODED_WINDOW_SIZE_SAMPLES);
       if (!raw_probabilities)
       {
          for (int i = 0; i < probabilities_count; ++i)
@@ -1159,13 +1038,13 @@ int run_inference(String8 model_path_arg,
       // NOTE(irwin): snap last speech segment to actual audio length
       if (state.triggered)
       {
-         int audio_length_samples = (int)((global_chunk_index - 1) * window_size_samples);
-         if (audio_length_samples - (state.current_speech_start * window_size_samples) > (min_speech_duration_chunks * window_size_samples))
+         int audio_length_samples = (int)((global_chunk_index - 1) * HARDCODED_WINDOW_SIZE_SAMPLES);
+         if (audio_length_samples - (state.current_speech_start * HARDCODED_WINDOW_SIZE_SAMPLES) > (min_speech_duration_chunks * HARDCODED_WINDOW_SIZE_SAMPLES))
          {
             FeedProbabilityResult final_segment;
             final_segment.is_valid = 1;
             final_segment.speech_start = state.current_speech_start;
-            final_segment.speech_end = (int)(audio_length_samples / window_size_samples);
+            final_segment.speech_end = (int)(audio_length_samples / HARDCODED_WINDOW_SIZE_SAMPLES);
 
             buffered = combine_or_emit_speech_segment(buffered, final_segment,
                                                          speech_pad_ms, output_format, &stats);
@@ -1208,7 +1087,7 @@ static inline void print_speech_stats(VADC_Stats stats)
    // samples / 16k * freq
    s64 ticks_worth_total_processed = stats.total_samples * stats.timer_frequency;
    s64 ratio = ticks_worth_total_processed / ticks;
-   double ratio_seconds = ratio / (double)sample_rate;
+   double ratio_seconds = ratio / (double)HARDCODED_SAMPLE_RATE;
 
    int hours = (int)(total_duration / 3600.0);
    int minutes = (int)((total_duration - hours * 3600.0) / 60.0);

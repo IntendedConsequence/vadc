@@ -7,6 +7,34 @@
 #define ONNX_INFERENCE_ENABLED 1
 #endif // ONNX_INFERENCE_ENABLED
 
+typedef struct Silero_Config Silero_Config;
+struct Silero_Config
+{
+   b32 is_silero_v4;
+   s32 batch_size_restriction;
+   s32 batch_size;
+   s32 input_count;
+
+   size_t prob_shape_count;
+   int64_t prob_shape[4];
+   size_t prob_tensor_element_count;
+};
+
+typedef struct Tensor_Buffers Tensor_Buffers;
+struct Tensor_Buffers
+{
+   int window_size_samples;
+   float *input_samples;
+   float *output;
+
+   int lstm_count;
+   float *lstm_h;
+   float *lstm_c;
+
+   float *lstm_h_out;
+   float *lstm_c_out;
+};
+
 #if ONNX_INFERENCE_ENABLED
 #include "onnx_helpers.h"
 #endif // ONNX_INFERENCE_ENABLED
@@ -30,15 +58,20 @@
 #define SILERO_FILENAME SILERO_FILENAME_V3_B_DYNAMIC
 #endif
 
+const char *INPUT_NAMES_V4[] = { "input", "h", "c", "sr" };
+const char *INPUT_NAMES_V3[] = { "input", "h0", "c0" };
+const char *OUTPUT_NAMES_NORMAL[] = { "output", "hn", "cn" };
+
+
 #define SILERO_WINDOW_SIZE_SAMPLES 1536
 #define SILERO_SAMPLE_RATE 16000
 
 // TODO(irwin): fix, globals shouldn't be lowercase like that
-const size_t window_size_samples = SILERO_WINDOW_SIZE_SAMPLES;
-const size_t sample_rate = SILERO_SAMPLE_RATE;
-const float chunks_per_second = (float)SILERO_SAMPLE_RATE / SILERO_WINDOW_SIZE_SAMPLES;
+const size_t HARDCODED_WINDOW_SIZE_SAMPLES = SILERO_WINDOW_SIZE_SAMPLES;
+const size_t HARDCODED_SAMPLE_RATE = SILERO_SAMPLE_RATE;
+const float HARDCODED_CHUNKS_PER_SECOND = (float)SILERO_SAMPLE_RATE / SILERO_WINDOW_SIZE_SAMPLES;
 
-const float chunk_duration_ms = SILERO_WINDOW_SIZE_SAMPLES / (float)SILERO_SAMPLE_RATE * 1000.0f;
+const float HARDCODED_CHUNK_DURATION_MS = SILERO_WINDOW_SIZE_SAMPLES / (float)SILERO_SAMPLE_RATE * 1000.0f;
 
 
 typedef struct VADC_Context VADC_Context;
@@ -49,25 +82,11 @@ typedef struct Silero_Context Silero_Context;
 struct VADC_Context
 {
 #if ONNX_INFERENCE_ENABLED
-   const OrtValue *const *input_tensors;
-   OrtValue **output_tensors;
-   OrtSession *session;
-#endif
-   const char **input_names;
-   const char **output_names;
-   const size_t inputs_count;
-   const size_t outputs_count;
+   ONNX_Specific onnx;
+#endif // ONNX_INFERENCE_ENABLED
 
-   float *output_tensor_state_h;
-   float *output_tensor_state_c;
-   float *output_tensor_prob;
+   Tensor_Buffers buffers;
 
-   const size_t window_size_samples;
-   float *input_tensor_samples;
-
-   const size_t state_count;
-   float *input_tensor_state_h;
-   float *input_tensor_state_c;
    b32 is_silero_v4;
    s32 silero_probability_out_index;
    const int batch_size;

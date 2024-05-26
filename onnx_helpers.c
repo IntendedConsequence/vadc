@@ -78,7 +78,7 @@ int enable_cuda(OrtSessionOptions* session_options)
 
 static const wchar_t model_filename[] = SILERO_FILENAME;
 
-static OrtSession *ort_init( MemoryArena *arena, String8 model_path_arg )
+static OrtSession *ort_init( MemoryArena *arena, String8 model_path_arg, ONNX_Specific *onnx )
 {
    g_ort = OrtGetApiBase()->GetApi( ORT_API_VERSION );
    if ( !g_ort )
@@ -107,10 +107,32 @@ static OrtSession *ort_init( MemoryArena *arena, String8 model_path_arg )
    PathRemoveFileSpecW( model_path );
    PathAppendW( model_path, model_path_arg_w ? model_path_arg_w : model_filename );
 
-   OrtSession *session;
-   ORT_ABORT_ON_ERROR( g_ort->CreateSession( env, model_path, session_options, &session ) );
+   ORT_ABORT_ON_ERROR( g_ort->CreateSession( env, model_path, session_options, &onnx->session ) );
 
-   return session;
+   if (onnx->session)
+   {
+      ORT_ABORT_ON_ERROR( g_ort->CreateCpuMemoryInfo( OrtArenaAllocator, OrtMemTypeDefault, &onnx->memory_info ) );
+      ORT_ABORT_ON_ERROR( g_ort->CreateAllocator( onnx->session, onnx->memory_info, &onnx->ort_allocator ) );
+
+      onnx->batch_size_restriction = ort_get_batch_size_restriction(onnx->session, onnx->ort_allocator);
+
+      {
+         size_t model_output_count = 0;
+         size_t model_input_count = 0;
+
+         ORT_ABORT_ON_ERROR( g_ort->SessionGetOutputCount( onnx->session, &model_output_count ) );
+         ORT_ABORT_ON_ERROR( g_ort->SessionGetInputCount( onnx->session, &model_input_count ) );
+
+         Assert( model_input_count == 3 || model_input_count == 4 );
+
+         onnx->outputs_count = model_output_count;
+         onnx->inputs_count = model_input_count;
+         onnx->is_silero_v4 = model_input_count == 4;
+      }
+
+   }
+
+   return onnx->session;
 }
 
 s32 ort_get_batch_size_restriction( OrtSession *session, OrtAllocator *ort_allocator )
@@ -148,4 +170,89 @@ s32 ort_get_batch_size_restriction( OrtSession *session, OrtAllocator *ort_alloc
    }
 
    return batch_size_restriction;
+}
+
+void ort_create_tensors(Silero_Config config, ONNX_Specific *onnx, Tensor_Buffers buffers)
+{
+   int64_t input_tensor_samples_shape[] = {config.batch_size, config.input_count};
+   const size_t input_tensor_samples_shape_count = ArrayCount( input_tensor_samples_shape );
+   OrtValue **input_tensors = onnx->input_tensors;
+
+   // NOTE(irwin): samples input
+   create_tensor(onnx->memory_info,
+                 &input_tensors[0],
+                 input_tensor_samples_shape,
+                 input_tensor_samples_shape_count,
+                 buffers.input_samples,
+                 config.input_count * config.batch_size);
+
+   int64_t state_shape[] = {2, 1, 64};
+   const size_t state_shape_count = ArrayCount( state_shape );
+   OrtValue **state_h_tensor = &input_tensors[1];
+   // NOTE(irwin): lstm h
+   create_tensor(onnx->memory_info,
+                 state_h_tensor,
+                 state_shape,
+                 state_shape_count,
+                 buffers.lstm_h,
+                 buffers.lstm_count);
+
+   OrtValue** state_c_tensor = &input_tensors[2];
+   // NOTE(irwin): lstm c
+   create_tensor(onnx->memory_info,
+                 state_c_tensor,
+                 state_shape,
+                 state_shape_count,
+                 buffers.lstm_c,
+                 buffers.lstm_count);
+
+   if ( config.is_silero_v4 )
+   {
+      int64_t sr = 16000;
+      int64_t sr_shape[] = {1, 1};
+      const size_t sr_shape_count = ArrayCount( sr_shape );
+      OrtValue **sr_tensor = &input_tensors[3];
+   // NOTE(irwin): sample rate
+      create_tensor_int64( onnx->memory_info, sr_tensor, sr_shape, sr_shape_count, &sr, 1 );
+   }
+
+   OrtValue **output_tensors = onnx->output_tensors;
+   OrtValue **output_prob_tensor = &output_tensors[0];
+
+   // NOTE(irwin): output tensor
+   create_tensor(onnx->memory_info,
+                 output_prob_tensor,
+                 config.prob_shape,
+                 config.prob_shape_count,
+                 buffers.output,
+                 config.prob_tensor_element_count);
+
+   // NOTE(irwin): lstm h output tensor
+   OrtValue** state_h_out_tensor = &output_tensors[1];
+   create_tensor(onnx->memory_info,
+                 state_h_out_tensor,
+                 state_shape,
+                 state_shape_count,
+                 buffers.lstm_h_out,
+                 buffers.lstm_count);
+
+   // NOTE(irwin): lstm c output tensor
+   OrtValue** state_c_out_tensor = &output_tensors[2];
+   create_tensor(onnx->memory_info,
+                 state_c_out_tensor,
+                 state_shape,
+                 state_shape_count,
+                 buffers.lstm_c_out,
+                 buffers.lstm_count);
+
+   const size_t silero_input_tensor_count = config.is_silero_v4 ? 4 : 3;
+
+   const char **input_names = config.is_silero_v4 ? INPUT_NAMES_V4 : INPUT_NAMES_V3;
+
+   onnx->input_names = input_names;
+   onnx->output_names = OUTPUT_NAMES_NORMAL;
+
+   onnx->inputs_count = silero_input_tensor_count;
+
+   // g_ort->ReleaseMemoryInfo(onnx.memory_info);
 }
