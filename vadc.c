@@ -1062,7 +1062,10 @@ ArgOption options[] = {
 
 int main()
 {
-   MemoryArena arena = {0};
+
+#if 1
+   MemoryArena main_arena = {0};
+
    size_t arena_capacity = Megabytes(32);
    u8 *base_address = malloc(arena_capacity);
    if (base_address == 0)
@@ -1071,7 +1074,12 @@ int main()
       fprintf(stderr, "Fatal: couldn't allocate required memory\n");
       return 1;
    }
-   initializeMemoryArena(&arena, base_address, arena_capacity);
+   initializeMemoryArena(&main_arena, base_address, arena_capacity);
+
+   MemoryArena *arena = &main_arena;
+#else
+   MemoryArena *arena = DEBUG_getDebugArena();
+#endif
 
 
    float min_silence_duration_ms;
@@ -1090,7 +1098,7 @@ int main()
    b32 raw_probabilities = 0;
 
    int arg_count_u8 = 0;
-   String8 *arg_array_u8 = get_command_line_as_utf8(&arena, &arg_count_u8);
+   String8 *arg_array_u8 = get_command_line_as_utf8(arena, &arg_count_u8);
    for (int arg_index = 1; arg_index < arg_count_u8; ++arg_index)
    {
       String8 arg_string = arg_array_u8[arg_index];
@@ -1138,7 +1146,7 @@ int main()
                if (arg_value_index < arg_count_u8)
                {
                   String8 arg_value_string = arg_array_u8[arg_value_index];
-                  String8 arg_value_string_null_terminated = String8ToCString(&arena, arg_value_string);
+                  String8 arg_value_string_null_terminated = String8ToCString(arena, arg_value_string);
                   float arg_value = (float)atof(arg_value_string_null_terminated.begin);
                   if (arg_value > 0.0f)
                   {
@@ -1182,7 +1190,7 @@ int main()
       // verify_input_output_count(session);
 
       run_inference( model_path_arg,
-                    &arena,
+                    arena,
                     min_silence_duration_ms,
                     min_speech_duration_ms,
                     threshold,
