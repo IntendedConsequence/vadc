@@ -64,104 +64,14 @@ static FILE *getDebugFile()
 #endif
 
 
-float run_inference_on_single_chunk( MemoryArena *arena, VADC_Context context,
-                                                 const size_t samples_count,
-                                                 const float *samples_buffer_float32,
-                                                 float *state_h_in,
-                                                 float *state_c_in )
-{
-   Assert( samples_count > 0 && samples_count <= context.buffers.window_size_samples );
-#if DEBUG_WRITE_STATE_TO_FILE
-   FILE *debug_file = getDebugFile();
-#endif
-
-   float result = 0.0f;
-
-   memmove( context.buffers.input_samples, samples_buffer_float32, samples_count * sizeof( context.buffers.input_samples[0] ) );
-
-   // NOTE(irwin): pad chunks with not enough samples
-   if ( samples_count < context.buffers.window_size_samples )
-   {
-      for ( size_t pad_index = samples_count; pad_index < context.buffers.window_size_samples; ++pad_index )
-      {
-         context.buffers.input_samples[pad_index] = 0.0f;
-      }
-   }
-
-   memmove( context.buffers.lstm_h, state_h_in, context.buffers.lstm_count * sizeof( context.buffers.lstm_h[0] ) );
-   memmove( context.buffers.lstm_c, state_c_in, context.buffers.lstm_count * sizeof( context.buffers.lstm_c[0] ) );
-#if DEBUG_WRITE_STATE_TO_FILE
-   DEBUG_Silero_State debug_state;
-   float *source = context.buffers.input_samples;
-   size_t source_size_bytes = 1536 * sizeof( context.buffers.input_samples[0] );
-   memmove( debug_state.samples, source, source_size_bytes );
-   memmove( debug_state.state_h, context.buffers.lstm_h, context.buffers.lstm_count * sizeof( context.buffers.lstm_h[0] ) );
-   memmove( debug_state.state_c, context.buffers.lstm_c, context.buffers.lstm_count * sizeof( context.buffers.lstm_c[0] ) );
-   fwrite( &debug_state, sizeof( DEBUG_Silero_State ), 1, debug_file );
-#endif
-
-#if ONNX_INFERENCE_ENABLED
-   VAR_UNUSED(arena);
-   ORT_ABORT_ON_ERROR( g_ort->Run( context.onnx.session,
-                                   NULL,
-                                   context.onnx.input_names,
-                                   context.onnx.input_tensors,
-                                   context.onnx.inputs_count,
-                                   context.onnx.output_names,
-                                   context.onnx.outputs_count,
-                                   context.onnx.output_tensors )
-   );
-   Assert( context.onnx.output_tensors[0] != NULL );
-
-   int is_tensor;
-   ORT_ABORT_ON_ERROR( g_ort->IsTensor( context.onnx.output_tensors[0], &is_tensor ) );
-   Assert( is_tensor );
-
-   float result_probability = context.buffers.output[context.silero_probability_out_index];
-   result = result_probability;
-
-   //result.state_h = context.output_tensor_state_h;
-   //result.state_c = context.output_tensor_state_c;
-#else
-   float result_probability = silero_run_one_batch_with_context(arena,
-                                                                context.silero_context,
-                                                                context.buffers.window_size_samples,
-                                                                context.buffers.input_samples);
-   result = result_probability;
-#endif
-
-   return result;
-}
-
 
 void process_chunks( MemoryArena *arena, VADC_Context context,
                     const size_t buffered_samples_count,
                     const float *samples_buffer_float32,
                     float *probabilities_buffer)
 {
-   if (context.batch_size == 1)
-   {
-      for (size_t offset = 0;
-         offset < buffered_samples_count;
-         offset += context.buffers.window_size_samples)
-      {
-         // NOTE(irwin): copy a slice of the buffered samples
-         size_t samples_count_left = buffered_samples_count - offset;
-         size_t window_size = samples_count_left > context.buffers.window_size_samples ? context.buffers.window_size_samples : samples_count_left;
 
-         // IMPORTANT(irwin): hardcoded to use state from previous inference, assumed to be in output tensor memory
-         // TODO(irwin): dehardcode
-         float result = run_inference_on_single_chunk( arena, context,
-                                                                  window_size,
-                                                                  samples_buffer_float32 + offset,
-                                                                  context.buffers.lstm_h_out,
-                                                                  context.buffers.lstm_c_out );
-
-         *probabilities_buffer++ = result;
-      }
-   }
-#if ONNX_INFERENCE_ENABLED
-   else
+   VAR_UNUSED(arena);
    {
       Assert(!context.is_silero_v4);
       int stride = (int)context.buffers.window_size_samples * context.batch_size;
@@ -186,31 +96,28 @@ void process_chunks( MemoryArena *arena, VADC_Context context,
          memmove( context.buffers.lstm_h, context.buffers.lstm_h_out, context.buffers.lstm_count * sizeof( context.buffers.lstm_h[0] ) );
          memmove( context.buffers.lstm_c, context.buffers.lstm_c_out, context.buffers.lstm_count * sizeof( context.buffers.lstm_c[0] ) );
 
-         ORT_ABORT_ON_ERROR( g_ort->Run( context.onnx.session,
-                                         NULL,
-                                         context.onnx.input_names,
-                                         context.onnx.input_tensors,
-                                         context.onnx.inputs_count,
-                                         context.onnx.output_names,
-                                         context.onnx.outputs_count,
-                                         context.onnx.output_tensors )
-         );
-
-         Assert( context.onnx.output_tensors[0] != NULL );
-
-         int is_tensor;
-         ORT_ABORT_ON_ERROR( g_ort->IsTensor( context.onnx.output_tensors[0], &is_tensor ) );
-         Assert( is_tensor );
-
          int output_stride = context.is_silero_v4 ? 1 : 2;
+#if ONNX_INFERENCE_ENABLED
+         ort_run(&context.onnx);
+
+#else
+         // TODO(irwin): dehardcode one batch
+         One_Batch_Result result = silero_run_one_batch_with_context(arena,
+                                                                      context.silero_context,
+                                                                      context.buffers.window_size_samples,
+                                                                      context.buffers.input_samples);
+         context.buffers.output[0 * output_stride + context.silero_probability_out_index] = result.prob;
+         // *probabilities_buffer++ = result;
+         // VAR_UNUSED(result);
+#endif
          for (int i = 0; i < context.batch_size; ++i)
          {
             float result_probability = context.buffers.output[i * output_stride + context.silero_probability_out_index];
             *probabilities_buffer++ = result_probability;
          }
+
       }
    }
-#endif
 }
 
 

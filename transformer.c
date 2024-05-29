@@ -459,9 +459,16 @@ static void encoder(MemoryArena *arena, TestTensor *input, Encoder_Weights encod
    TracyCZoneEnd(encoder);
 }
 
-
-static float silero_run_one_batch_with_context(MemoryArena *arena, Silero_Context *context, int samples_count, float *samples)
+typedef struct One_Batch_Result One_Batch_Result;
+struct One_Batch_Result
 {
+   float unkn;
+   float prob;
+};
+static One_Batch_Result silero_run_one_batch_with_context(MemoryArena *arena, Silero_Context *context, int samples_count, float *samples)
+{
+   One_Batch_Result result = {0};
+
    MemoryArena *debug_arena = arena;
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
@@ -561,7 +568,8 @@ static float silero_run_one_batch_with_context(MemoryArena *arena, Silero_Contex
       memmove( lstm_input_c->data, lstm_output_c->data, lstm_input_c->nbytes );
    }
 
-   float result = output->data[1];
+   result.unkn = output->data[0];
+   result.prob = output->data[1];
 
    endTemporaryMemory( mark );
 

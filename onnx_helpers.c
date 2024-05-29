@@ -256,3 +256,22 @@ void ort_create_tensors(Silero_Config config, ONNX_Specific *onnx, Tensor_Buffer
 
    // g_ort->ReleaseMemoryInfo(onnx.memory_info);
 }
+
+void ort_run(ONNX_Specific *onnx)
+{
+   ORT_ABORT_ON_ERROR( g_ort->Run( onnx->session,
+                                   NULL,
+                                   onnx->input_names,
+                                   onnx->input_tensors,
+                                   onnx->inputs_count,
+                                   onnx->output_names,
+                                   onnx->outputs_count,
+                                   onnx->output_tensors )
+   );
+
+   Assert( onnx->output_tensors[0] != NULL );
+
+   int is_tensor;
+   ORT_ABORT_ON_ERROR( g_ort->IsTensor( onnx->output_tensors[0], &is_tensor ) );
+   Assert( is_tensor );
+}

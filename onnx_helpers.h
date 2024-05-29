@@ -52,3 +52,4 @@ static OrtSession *ort_init( MemoryArena * arena, String8 model_path_arg, ONNX_S
 
 s32 ort_get_batch_size_restriction( OrtSession * session, OrtAllocator * ort_allocator );
 void ort_create_tensors(Silero_Config config, ONNX_Specific *onnx, Tensor_Buffers buffers);
+void ort_run(ONNX_Specific *onnx);

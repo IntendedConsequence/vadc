@@ -153,11 +153,6 @@ void process_chunks( MemoryArena *arena, VADC_Context context,
                     const float *samples_buffer_float32,
                     float *probabilities_buffer );
 
-float run_inference_on_single_chunk( MemoryArena *arena, VADC_Context context,
-                                                const size_t samples_count,
-                                                const float *samples_buffer_float32,
-                                                float *state_h_in,
-                                                float *state_c_in );
 
 FeedProbabilityResult feed_probability( FeedState *state,
                                        int min_silence_duration_chunks,
