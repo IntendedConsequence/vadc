@@ -78,7 +78,7 @@ int enable_cuda(OrtSessionOptions* session_options)
 
 static const wchar_t model_filename[] = SILERO_FILENAME;
 
-static OrtSession *ort_init( MemoryArena *arena, String8 model_path_arg, ONNX_Specific *onnx )
+static void *ort_init( MemoryArena *arena, String8 model_path_arg, s32 *batch_size_restriction, b32 *is_silero_v4 )
 {
    g_ort = OrtGetApiBase()->GetApi( ORT_API_VERSION );
    if ( !g_ort )
@@ -94,7 +94,7 @@ static OrtSession *ort_init( MemoryArena *arena, String8 model_path_arg, ONNX_Sp
    OrtSessionOptions *session_options;
    ORT_ABORT_ON_ERROR( g_ort->CreateSessionOptions( &session_options ) );
    // enable_cuda(session_options);
-   ORT_ABORT_ON_ERROR( g_ort->SetIntraOpNumThreads( session_options, 4 ) );
+   ORT_ABORT_ON_ERROR( g_ort->SetIntraOpNumThreads( session_options, 1 ) );
    ORT_ABORT_ON_ERROR( g_ort->SetInterOpNumThreads( session_options, 1 ) );
 
 #define MODEL_PATH_BUFFER_SIZE 1024
@@ -107,6 +107,8 @@ static OrtSession *ort_init( MemoryArena *arena, String8 model_path_arg, ONNX_Sp
    PathRemoveFileSpecW( model_path );
    PathAppendW( model_path, model_path_arg_w ? model_path_arg_w : model_filename );
 
+   ONNX_Specific *onnx = pushStruct(arena, ONNX_Specific);
+
    ORT_ABORT_ON_ERROR( g_ort->CreateSession( env, model_path, session_options, &onnx->session ) );
 
    if (onnx->session)
@@ -114,7 +116,9 @@ static OrtSession *ort_init( MemoryArena *arena, String8 model_path_arg, ONNX_Sp
       ORT_ABORT_ON_ERROR( g_ort->CreateCpuMemoryInfo( OrtArenaAllocator, OrtMemTypeDefault, &onnx->memory_info ) );
       ORT_ABORT_ON_ERROR( g_ort->CreateAllocator( onnx->session, onnx->memory_info, &onnx->ort_allocator ) );
 
-      onnx->batch_size_restriction = ort_get_batch_size_restriction(onnx->session, onnx->ort_allocator);
+      // onnx->batch_size_restriction = ort_get_batch_size_restriction(onnx->session, onnx->ort_allocator);
+      // *batch_size_restriction = onnx->batch_size_restriction;
+      *batch_size_restriction = ort_get_batch_size_restriction(onnx->session, onnx->ort_allocator);
 
       {
          size_t model_output_count = 0;
@@ -127,12 +131,25 @@ static OrtSession *ort_init( MemoryArena *arena, String8 model_path_arg, ONNX_Sp
 
          onnx->outputs_count = model_output_count;
          onnx->inputs_count = model_input_count;
-         onnx->is_silero_v4 = model_input_count == 4;
+         // onnx->is_silero_v4 = model_input_count == 4;
+         // *is_silero_v4 = onnx->is_silero_v4;
+
+         // TODO(irwin): dehardcode batch == 1 restriction for silero v4
+         // NOTE(irwin): silero v4 model was not yet reexported with contiguous batching support
+         if (model_input_count == 4)
+         {
+            *is_silero_v4 = true;
+            // *batch_size_restriction = 1;
+         }
+         else
+         {
+            *is_silero_v4 = false;
+         }
       }
 
    }
 
-   return onnx->session;
+   return onnx;
 }
 
 s32 ort_get_batch_size_restriction( OrtSession *session, OrtAllocator *ort_allocator )
@@ -208,12 +225,12 @@ void ort_create_tensors(Silero_Config config, ONNX_Specific *onnx, Tensor_Buffer
 
    if ( config.is_silero_v4 )
    {
-      int64_t sr = 16000;
-      int64_t sr_shape[] = {1, 1};
-      const size_t sr_shape_count = ArrayCount( sr_shape );
+      static int64_t sr = 16000;
+      // int64_t sr_shape[] = {1, 1};
+      // const size_t sr_shape_count = ArrayCount( sr_shape );
       OrtValue **sr_tensor = &input_tensors[3];
    // NOTE(irwin): sample rate
-      create_tensor_int64( onnx->memory_info, sr_tensor, sr_shape, sr_shape_count, &sr, 1 );
+      create_tensor_int64( onnx->memory_info, sr_tensor, 0, 0, &sr, 1 );
    }
 
    OrtValue **output_tensors = onnx->output_tensors;

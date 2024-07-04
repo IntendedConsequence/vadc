@@ -6,36 +6,24 @@
 #include <windows.h> // GetModuleFileNameW
 #include <Shlwapi.h> // PathRemoveFileSpecW, PathAppendW
 
-#if ONNX_INFERENCE_ENABLED
-#include "onnx_helpers.c"
-#endif // ONNX_INFERENCE_ENABLED
-
 #include "string8.c"
 
 #include <tracy\TracyC.h>
 
 #include "utils.h"
-#include "tensor.h"
 
-#include "decoder.c"
-#include "first_layer.c"
-#include "lstm.c"
-#include "transformer.c"
+#if ONNX_INFERENCE_ENABLED
+#include "onnx_helpers.c"
+#else
+#include "silero.h"
+#endif // ONNX_INFERENCE_ENABLED
 
-#define MATHS_IMPLEMENTATION
-#include "maths.h"
 
 #define MEMORY_IMPLEMENTATION
 #include "memory.h"
 
-
 #ifndef DEBUG_WRITE_STATE_TO_FILE
 #define DEBUG_WRITE_STATE_TO_FILE 0
-#endif
-
-
-#if !ONNX_INFERENCE_ENABLED
-#include "silero_v31_16k_weights.c"
 #endif
 
 
@@ -73,7 +61,7 @@ void process_chunks( MemoryArena *arena, VADC_Context context,
 
    VAR_UNUSED(arena);
    {
-      Assert(!context.is_silero_v4);
+      // Assert(!context.is_silero_v4);
       int stride = (int)context.buffers.window_size_samples * context.batch_size;
       for (size_t offset = 0;
          offset < buffered_samples_count;
@@ -97,19 +85,9 @@ void process_chunks( MemoryArena *arena, VADC_Context context,
          memmove( context.buffers.lstm_c, context.buffers.lstm_c_out, context.buffers.lstm_count * sizeof( context.buffers.lstm_c[0] ) );
 
          int output_stride = context.is_silero_v4 ? 1 : 2;
-#if ONNX_INFERENCE_ENABLED
-         ort_run(&context.onnx);
 
-#else
-         // TODO(irwin): dehardcode one batch
-         One_Batch_Result result = silero_run_one_batch_with_context(arena,
-                                                                      context.silero_context,
-                                                                      context.buffers.window_size_samples,
-                                                                      context.buffers.input_samples);
-         context.buffers.output[0 * output_stride + context.silero_probability_out_index] = result.prob;
-         // *probabilities_buffer++ = result;
-         // VAR_UNUSED(result);
-#endif
+         backend_run(arena, &context);
+
          for (int i = 0; i < context.batch_size; ++i)
          {
             float result_probability = context.buffers.output[i * output_stride + context.silero_probability_out_index];
@@ -657,24 +635,12 @@ int run_inference(String8 model_path_arg,
    config.batch_size = 1;
    config.input_count = (s32)HARDCODED_WINDOW_SIZE_SAMPLES;
 
-#if ONNX_INFERENCE_ENABLED
+   void *backend = backend_init( arena, model_path_arg, &config.batch_size_restriction, &config.is_silero_v4 );
 
-   ONNX_Specific onnx = {0};
-
+   if ( !backend )
    {
-      OrtSession *session = ort_init( arena, model_path_arg, &onnx );
-      if ( !session )
-      {
-         return -1;
-      }
+      return -1;
    }
-
-   config.is_silero_v4 = onnx.is_silero_v4;
-   config.batch_size_restriction = onnx.batch_size_restriction;
-#else
-   VAR_UNUSED( model_path_arg );
-   config.is_silero_v4 = false;
-#endif // ONNX_INFERENCE_ENABLED
 
    config.batch_size = (config.batch_size_restriction == -1) ? preferred_batch_size : config.batch_size_restriction;
 
@@ -717,10 +683,7 @@ int run_inference(String8 model_path_arg,
    buffers.lstm_h_out = pushArray(arena, buffers.lstm_count, float);
    buffers.lstm_c_out = pushArray(arena, buffers.lstm_count, float);
 
-#if ONNX_INFERENCE_ENABLED
-   ort_create_tensors(config, &onnx, buffers);
-#endif // ONNX_INFERENCE_ENABLED
-
+   backend_create_tensors(config, backend, buffers);
 
    // NOTE(irwin): read samples from a file or stdin and run inference
    // NOTE(irwin): at 16000 sampling rate, one chunk is 96 ms or 1536 samples
@@ -749,39 +712,14 @@ int run_inference(String8 model_path_arg,
    }
 
 
-
-#if !ONNX_INFERENCE_ENABLED
-   Silero_Context silero_context;
-   {
-      LoadTesttensorResult silero_weights_res = {0};
-
-      //File_Contents contents = read_entire_file( arena, "testdata\\silero_v31_16k.testtensor" );
-      silero_weights_res = load_testtensor_from_bytes(arena, sizeof(silero_v31_16k_weights), silero_v31_16k_weights );
-
-      Assert ( silero_weights_res.tensor_count > 0 );
-      int encoder_weights_count = 24 + 24 + 22 + 24;
-      Assert( silero_weights_res.tensor_count == (1 + encoder_weights_count + 2 + 2) );
-
-      silero_context.weights = silero_weights_init( silero_weights_res );
-      silero_context.state_lstm_h = tensor_zeros_3d(arena, 2, 1, 64);
-      silero_context.state_lstm_c = tensor_zeros_3d(arena, 2, 1, 64);
-   }
-#endif // !ONNX_INFERENCE_ENABLED
-
-
    VADC_Context context =
    {
-#if ONNX_INFERENCE_ENABLED
-      .onnx = onnx,
-#endif // ONNX_INFERENCE_ENABLED
+      .backend = backend,
       .buffers = buffers,
 
       .is_silero_v4 = config.is_silero_v4,
       .silero_probability_out_index = config.is_silero_v4 ? 0 : 1,
       .batch_size = config.batch_size,
-#if !ONNX_INFERENCE_ENABLED
-      .silero_context = &silero_context
-#endif // !ONNX_INFERENCE_ENABLED
    };
 
    FeedState state = {0};

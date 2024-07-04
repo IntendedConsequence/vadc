@@ -58,8 +58,14 @@ rem
 rem vadc
 rem
 
+if "%1" equ "" (
+  set "ONNX=1"
+) else (
+  set "ONNX=%1"
+)
+
 @REM del vadc.pdb >nul & cl.exe /nologo /O2 vadc.c /link lib\onnxruntime.lib
-del vadc.pdb >nul 2>&1 & cl.exe /nologo /MD /MP /O2 /arch:AVX2 /DNDEBUG /DONNX_INFERENCE_ENABLED=0 /Itracy vadc.c tracy\TracyClient.cpp /link Shell32.lib
+del vadc.pdb >nul 2>&1 & cl.exe /nologo /MD /MP /O2 /arch:AVX2 /DNDEBUG /DONNX_INFERENCE_ENABLED=%ONNX% /Itracy vadc.c tracy\TracyClient.cpp /link Shell32.lib lib\onnxruntime.lib Shlwapi.lib
 rem del vadc.pdb >nul 2>&1 & cl.exe /nologo /MD /MP /O2 /arch:AVX2 /DNDEBUG /DONNX_INFERENCE_ENABLED=1 /Itracy vadc.c tracy\TracyClient.cpp /link lib\onnxruntime.lib Shell32.lib
 
 
