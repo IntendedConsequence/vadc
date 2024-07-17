@@ -58,6 +58,7 @@ struct VADC_Context
 #include <stdio.h>
 
 #define SILERO_V4 0
+#define SILERO_V5 1
 
 // #define SILERO_FILENAME_V3 L"silero_vad_v3.onnx"
 // #define SILERO_FILENAME_V3_B32 L"silero_restored_v3.1_16k_v2_b32.onnx"
@@ -82,7 +83,12 @@ struct VADC_Context
 #define SILERO_SLICE_SAMPLES_16K 256
 
 #define SILERO_SLICE_COUNT_MIN 2
-#define SILERO_SLICE_COUNT 6
+#if SILERO_V5
+#define SILERO_SLICE_COUNT 2
+#define SILERO_V5_CONTEXT_SIZE 64
+#else
+#define SILERO_SLICE_COUNT 2
+#endif // SILERO_V5
 
 // 512, 768, 1024, 1280, 1536
 #define SILERO_WINDOW_SIZE_SAMPLES (SILERO_SLICE_SAMPLES_16K * SILERO_SLICE_COUNT)

@@ -2,7 +2,11 @@
 #include "include/onnxruntime_c_api.h"
 
 const char *INPUT_NAMES_V4[] = { "input", "h", "c", "sr" };
+#if SILERO_V5
+const char *INPUT_NAMES_V3[] = { "input", "h", "c" };
+#else
 const char *INPUT_NAMES_V3[] = { "input", "h0", "c0" };
+#endif // SILERO_V5
 const char *OUTPUT_NAMES_NORMAL[] = { "output", "hn", "cn" };
 
 

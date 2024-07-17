@@ -65,7 +65,7 @@ if "%1" equ "" (
 )
 
 @REM del vadc.pdb >nul & cl.exe /nologo /O2 vadc.c /link lib\onnxruntime.lib
-del vadc.pdb >nul 2>&1 & cl.exe /nologo /MD /MP /O2 /arch:AVX2 /DNDEBUG /DONNX_INFERENCE_ENABLED=%ONNX% /Itracy vadc.c tracy\TracyClient.cpp /link Shell32.lib lib\onnxruntime.lib Shlwapi.lib
+del vadc.pdb >nul 2>&1 & cl.exe /nologo /MD /MP /O2 /arch:AVX2 /DNDEBUG /DSILERO_V5=1 /DONNX_INFERENCE_ENABLED=%ONNX% /Itracy vadc.c tracy\TracyClient.cpp /link Shell32.lib lib\onnxruntime.lib Shlwapi.lib
 rem del vadc.pdb >nul 2>&1 & cl.exe /nologo /MD /MP /O2 /arch:AVX2 /DNDEBUG /DONNX_INFERENCE_ENABLED=1 /Itracy vadc.c tracy\TracyClient.cpp /link lib\onnxruntime.lib Shell32.lib
 
 

@@ -194,19 +194,36 @@ s32 ort_get_batch_size_restriction( OrtSession *session, OrtAllocator *ort_alloc
 
 void ort_create_tensors(Silero_Config config, ONNX_Specific *onnx, Tensor_Buffers buffers)
 {
+#if SILERO_V5
+   int64_t input_tensor_samples_shape[] = {config.batch_size, config.input_count + SILERO_V5_CONTEXT_SIZE};
+#else
    int64_t input_tensor_samples_shape[] = {config.batch_size, config.input_count};
+#endif // SILERO_V5
    const size_t input_tensor_samples_shape_count = ArrayCount( input_tensor_samples_shape );
    OrtValue **input_tensors = onnx->input_tensors;
 
    // NOTE(irwin): samples input
+#if SILERO_V5
+   create_tensor(onnx->memory_info,
+                 &input_tensors[0],
+                 input_tensor_samples_shape,
+                 input_tensor_samples_shape_count,
+                 buffers.input_samples,
+                 (config.input_count + SILERO_V5_CONTEXT_SIZE) * config.batch_size);
+#else
    create_tensor(onnx->memory_info,
                  &input_tensors[0],
                  input_tensor_samples_shape,
                  input_tensor_samples_shape_count,
                  buffers.input_samples,
                  config.input_count * config.batch_size);
+#endif // SILERO_V5
 
+#if SILERO_V5
+   int64_t state_shape[] = {1, 1, 128};
+#else
    int64_t state_shape[] = {2, 1, 64};
+#endif // SILERO_V5
    const size_t state_shape_count = ArrayCount( state_shape );
    OrtValue **state_h_tensor = &input_tensors[1];
    // NOTE(irwin): lstm h
