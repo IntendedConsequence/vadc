@@ -857,7 +857,7 @@ int run_inference(String8 model_path_arg,
             samples_buffer_float32[i] = value;
          }
          read_stream.cursor = read_stream.end;
-
+#if 0
          if (max_value > 0.0f)
          {
             for (size_t i = 0; i < values_read; ++i)
@@ -865,7 +865,14 @@ int run_inference(String8 model_path_arg,
                samples_buffer_float32[i] /= max_value;
             }
          }
-
+#else
+         {
+            for (size_t i = 0; i < values_read; ++i)
+            {
+               samples_buffer_float32[i] /= 32768.0f;
+            }
+         }
+#endif
          size_t leftover = buffered_samples_count - values_read;
          if (leftover > 0)
          {
