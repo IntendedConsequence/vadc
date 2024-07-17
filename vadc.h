@@ -84,17 +84,20 @@ struct VADC_Context
 #define SILERO_SLICE_COUNT_MIN 2
 #define SILERO_SLICE_COUNT 6
 
-// 1536
+// 512, 768, 1024, 1280, 1536
 #define SILERO_WINDOW_SIZE_SAMPLES (SILERO_SLICE_SAMPLES_16K * SILERO_SLICE_COUNT)
 
 #define SILERO_SAMPLE_RATE 16000
 
 const size_t HARDCODED_WINDOW_SIZE_SAMPLES = SILERO_WINDOW_SIZE_SAMPLES;
 const size_t HARDCODED_SAMPLE_RATE = SILERO_SAMPLE_RATE;
-const float HARDCODED_CHUNKS_PER_SECOND = (float)SILERO_SAMPLE_RATE / SILERO_WINDOW_SIZE_SAMPLES;
 
-const float HARDCODED_CHUNK_DURATION_MS = SILERO_WINDOW_SIZE_SAMPLES / (float)SILERO_SAMPLE_RATE * 1000.0f;
-
+#undef SILERO_WINDOW_SIZE_SAMPLES
+#undef SILERO_SAMPLE_RATE
+#undef SILERO_SLICE_COUNT_MIN
+#undef SILERO_SLICE_COUNT
+#undef SILERO_SLICE_SAMPLES_8K
+#undef SILERO_SLICE_SAMPLES_16K
 
 
 typedef struct FeedState
@@ -167,13 +170,15 @@ FeedProbabilityResult feed_probability( FeedState *state,
 void emit_speech_segment( FeedProbabilityResult segment,
                          float speech_pad_ms,
                          Segment_Output_Format output_format,
-                         VADC_Stats *stats );
+                         VADC_Stats *stats,
+                         float seconds_per_chunk );
 
 FeedProbabilityResult combine_or_emit_speech_segment( FeedProbabilityResult buffered,
                                                      FeedProbabilityResult feed_result,
                                                      float speech_pad_ms,
                                                      Segment_Output_Format output_format,
-                                                     VADC_Stats *stats );
+                                                     VADC_Stats *stats,
+                                                     float seconds_per_chunk );
 
 // NOTE(irwin): onnx helper routines
 

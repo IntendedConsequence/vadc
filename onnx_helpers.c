@@ -89,7 +89,10 @@ static void *ort_init( MemoryArena *arena, String8 model_path_arg, s32 *batch_si
 
    OrtEnv *env;
    ORT_ABORT_ON_ERROR( g_ort->CreateEnv( ORT_LOGGING_LEVEL_ERROR, "test", &env ) );
+   // ORT_ABORT_ON_ERROR( g_ort->CreateEnv( ORT_LOGGING_LEVEL_VERBOSE, "test", &env ) );
    Assert( env != NULL );
+   ORT_ABORT_ON_ERROR( g_ort->DisableTelemetryEvents( env ) );
+   // ORT_ABORT_ON_ERROR( g_ort->EnableTelemetryEvents( env ) );
 
    OrtSessionOptions *session_options;
    ORT_ABORT_ON_ERROR( g_ort->CreateSessionOptions( &session_options ) );

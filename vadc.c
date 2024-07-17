@@ -86,8 +86,13 @@ void process_chunks( MemoryArena *arena, VADC_Context context,
 
          int output_stride = context.is_silero_v4 ? 1 : 2;
 
+         // NOTE(irwin): if there aren't enough samples for a full batch it can only be the very last batch
+         //              otherwise we don't tell the backend that the batch size is lower, and so if one
+         //              batch in the middle of the stream comes shorter, the lstm state will get screwed up
+         //              from processing null samples in the middle of the stream.
          backend_run(arena, &context);
 
+         // NOTE(irwin): will copy stale probabilities from previous batch if not enough samples for a full batch
          for (int i = 0; i < context.batch_size; ++i)
          {
             float result_probability = context.buffers.output[i * output_stride + context.silero_probability_out_index];
@@ -157,22 +162,20 @@ FeedProbabilityResult feed_probability(FeedState *state,
    return result;
 }
 
-static inline float to_s(int in_chunks)
-{
-   return in_chunks / HARDCODED_CHUNKS_PER_SECOND;
-}
-
 void emit_speech_segment(FeedProbabilityResult segment,
                          float speech_pad_ms,
                          Segment_Output_Format output_format,
-                         VADC_Stats *stats)
+                         VADC_Stats *stats,
+                         float seconds_per_chunk)
 {
+   const float spc = seconds_per_chunk;
+
    const float speech_pad_s = speech_pad_ms / 1000.0f;
 
-   float speech_end_padded = to_s(segment.speech_end) + speech_pad_s;
+   float speech_end_padded = (segment.speech_end * spc) + speech_pad_s;
 
    // NOTE(irwin): print previous start/end times padded in seconds
-   float speech_start_padded = to_s(segment.speech_start) - speech_pad_s;
+   float speech_start_padded = (segment.speech_start * spc) - speech_pad_s;
    if (speech_start_padded < 0.0f)
    {
       speech_start_padded = 0.0f;
@@ -199,13 +202,17 @@ void emit_speech_segment(FeedProbabilityResult segment,
 }
 
 FeedProbabilityResult combine_or_emit_speech_segment(FeedProbabilityResult buffered, FeedProbabilityResult feed_result,
-                                                     float speech_pad_ms, Segment_Output_Format output_format, VADC_Stats *stats)
+                                                     float speech_pad_ms, Segment_Output_Format output_format, VADC_Stats *stats,
+                                                     float seconds_per_chunk)
 {
    FeedProbabilityResult result = buffered;
 
+   const float spc = seconds_per_chunk;
+
+
    const float speech_pad_s = speech_pad_ms / 1000.0f;
 
-   float current_speech_start_padded = to_s(feed_result.speech_start) - speech_pad_s;
+   float current_speech_start_padded = (feed_result.speech_start * spc) - speech_pad_s;
    if (current_speech_start_padded < 0.0f)
    {
       current_speech_start_padded = 0.0f;
@@ -213,14 +220,14 @@ FeedProbabilityResult combine_or_emit_speech_segment(FeedProbabilityResult buffe
 
    if (result.is_valid)
    {
-      float buffered_speech_end_padded = to_s(result.speech_end) + speech_pad_s;
+      float buffered_speech_end_padded = (result.speech_end * spc) + speech_pad_s;
       if (buffered_speech_end_padded >= current_speech_start_padded)
       {
          result.speech_end = feed_result.speech_end;
       }
       else
       {
-         emit_speech_segment(result, speech_pad_ms, output_format, stats);
+         emit_speech_segment(result, speech_pad_ms, output_format, stats, spc);
 
          result = feed_result;
       }
@@ -617,6 +624,8 @@ int run_inference(String8 model_path_arg,
                   int audio_source,
                   float start_seconds )
 {
+   const float HARDCODED_CHUNK_DURATION_MS = HARDCODED_WINDOW_SIZE_SAMPLES / (float)HARDCODED_SAMPLE_RATE * 1000.0f;
+
    int min_speech_duration_chunks = (int)(min_speech_duration_ms / HARDCODED_CHUNK_DURATION_MS + 0.5f);
    if (min_speech_duration_chunks < 1)
    {
@@ -740,7 +749,11 @@ int run_inference(String8 model_path_arg,
       stats.timer_frequency = frequency.QuadPart;
    }
 
+   const float HARDCODED_SECONDS_PER_CHUNK = (float)HARDCODED_WINDOW_SIZE_SAMPLES / HARDCODED_SAMPLE_RATE;
+
    s64 total_samples_read = 0;
+
+   // NOTE(irwin): values_read is only accessed inside the for loop
    size_t values_read = 0;
    for(;;)
    {
@@ -856,7 +869,7 @@ int run_inference(String8 model_path_arg,
          if (feed_result.is_valid)
          {
             buffered = combine_or_emit_speech_segment(buffered, feed_result,
-                                                      speech_pad_ms, output_format, &stats);
+                                                      speech_pad_ms, output_format, &stats, HARDCODED_SECONDS_PER_CHUNK);
          }
 
             // printf("%f\n", probability);
@@ -892,13 +905,13 @@ int run_inference(String8 model_path_arg,
             final_segment.speech_end = (int)(audio_length_samples / HARDCODED_WINDOW_SIZE_SAMPLES);
 
             buffered = combine_or_emit_speech_segment(buffered, final_segment,
-                                                         speech_pad_ms, output_format, &stats);
+                                                         speech_pad_ms, output_format, &stats, HARDCODED_SECONDS_PER_CHUNK);
          }
       }
 
       if (buffered.is_valid)
       {
-         emit_speech_segment(buffered, speech_pad_ms, output_format, &stats);
+         emit_speech_segment(buffered, speech_pad_ms, output_format, &stats, HARDCODED_SECONDS_PER_CHUNK);
       }
    }
 
