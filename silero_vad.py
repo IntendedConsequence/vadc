@@ -283,3 +283,152 @@ class Silero_V3(torch.nn.Module):
         r = r.reshape(batch, seq, -1)
 
         return r, (h, c)
+
+
+import torch.nn.functional as F
+
+class STFT_conv2(torch.nn.Module):
+    def __init__(self, n_fft=256) -> None:
+        super().__init__()
+        self.n_fft = n_fft
+        self.stride = 128
+        self.to_pad = 64
+        self.forward_basis_buffer = torch.nn.Parameter(torch.zeros((n_fft+2, 1, n_fft)), requires_grad=False)
+
+    def forward(self, input: torch.Tensor):
+        filter_length_half = int(self.n_fft // 2)  # 128
+        cutoff = filter_length_half + 1  # 129
+
+        input_padded = F.pad(input, (0, self.to_pad), "reflect")
+
+        # NOTE(irwin): torch.nn.functional.conv1d expects input shape [batch_size, num_channels, num_samples]
+        # we don't want multichannel, so we unsqueeze to [batch_size, 1, num_samples]
+        input_padded_reshaped = input_padded.unsqueeze(1)
+        output = F.conv1d(input_padded_reshaped, self.forward_basis_buffer, stride=self.stride)
+
+        real_part = output[:, :cutoff, :]
+        imag_part = output[:, cutoff:, :]
+
+        magnitude = torch.sqrt(real_part**2 + imag_part**2)
+        return magnitude
+
+class MobileOneBlock(torch.nn.Module):
+    def __init__(self, shape, stride, pad):
+        super().__init__()
+        self.reparam_conv = torch.nn.Conv1d(shape[1], shape[0], shape[2], stride, pad)
+
+    def forward(self, x):
+        return self.reparam_conv(x).relu()
+
+def make_encoder(params):
+    l = []
+    for param in params:
+        shape, stride, pad = param
+        l.append(MobileOneBlock(shape, stride, pad))
+
+    return torch.nn.Sequential(*l)
+
+def make_decoder():
+        decoder = torch.nn.ModuleDict({
+            "rnn": torch.nn.LSTM(input_size=128, hidden_size=128, num_layers=1, batch_first=True),
+            "decoder": torch.nn.Sequential(
+                torch.nn.Dropout(0.1),
+                torch.nn.ReLU(),
+                torch.nn.Conv1d(in_channels=128, out_channels=1, kernel_size=1),
+                torch.nn.Sigmoid()
+            )
+        })
+        return decoder
+
+encoder_shapes = [
+    [[128, 129, 3], 1, 1],
+    [[64, 128, 3], 2, 1],
+    [[64, 64, 3], 2, 1],
+    [[128, 64, 3], 1, 1],
+]
+
+# class AdaptiveAudioNormalization(torch.nn.Module):
+#     def __init__(self):
+#         super().__init__()
+#         self.to_pad = 3
+#         self.filter_ = torch.nn.Parameter(torch.zeros((1, 1, 7)), requires_grad=False)
+
+#     def forward(self, spect: torch.Tensor) -> torch.Tensor:
+#         spect_e = torch.log1p(spect * 1048576)
+#         if len(spect_e.shape) == 2:
+#             spect_e = spect_e[None, :, :]
+#         mean = spect_e.mean(dim=1, keepdim=True)
+#         mean_padded = F.pad(mean, (self.to_pad, self.to_pad), 'reflect')
+#         mean_padded_convolved = torch.conv1d(mean_padded, self.filter_)
+#         mean_mean = mean_padded_convolved.mean(dim=-1, keepdim=True)
+#         normalized = spect_e - mean_mean
+#         return normalized
+
+class Silero_Vad_5(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+
+        # self.context = torch.zeros(64, requires_grad=False)
+
+        self.stft = STFT_conv2()
+
+        # unused
+        self.adaptive_normalization = AdaptiveAudioNormalization()
+        self.encoder = make_encoder(encoder_shapes)
+        self.decoder = make_decoder()
+
+    @staticmethod
+    def fromjit(path):
+        my = Silero_Vad_5()
+        sd = {}
+        v5 = torch.jit.load(path)
+        for k,v in v5._model.state_dict().items():
+            if k.startswith('decoder.rnn.'):
+                k = f"{k}_l0"
+            sd[k] = v
+        my.load_state_dict(sd)
+        my.eval()
+
+        return my
+
+    def forward(self, input: torch.Tensor, h: torch.Tensor, c: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        # input = input.flatten()
+        # input = torch.concat([self.context, input])
+        # offsets = torch.arange()
+        # self.context = input[:-64]
+        spect = self.stft(input)
+        # normalized = self.adaptive_normalization(spect)
+        normalized = spect
+
+        # first_layer_out = self.first_layer(torch.cat([spect, normalized], 1))
+        encoder_out = self.encoder(normalized)
+
+        # encoder_out_t = encoder_out
+        encoder_out_t = torch.permute(encoder_out, [0, 2, 1])
+
+        # print("rnnshape", encoder_out_t.shape)
+        if True:
+            lstm_out, (hn, cn) = self.lstm_minibatched(encoder_out_t, h, c)
+        else:
+            batch, seq, feat = encoder_out_t.shape
+            (hn, cn) = self.decoder.rnn(encoder_out_t.reshape(1, -1, feat), (h, c))
+            print("hncn shape", hn.shape, cn.shape)
+            lstm_out = hn.reshape(batch, seq, -1)
+
+        # lstm_out_t = lstm_out
+        lstm_out_t = torch.permute(lstm_out, [0, 2, 1])
+
+        decoder_out = self.decoder.decoder(lstm_out_t)
+
+        out = torch.unsqueeze(torch.mean(torch.squeeze(decoder_out, 1), [1]), 1)
+        return out, hn, cn
+
+    def lstm_unbatched(self, encoder_out_t: torch.Tensor, h: torch.Tensor, c: torch.Tensor):
+        return self.decoder.rnn(encoder_out_t, (h, c))
+
+    def lstm_minibatched(self, encoder_out_t: torch.Tensor, h: torch.Tensor, c: torch.Tensor):
+        batch, seq, feat = encoder_out_t.shape
+        r, (h, c) = self.decoder.rnn(encoder_out_t.reshape(1, -1, feat), (h, c))
+        r = r.reshape(batch, seq, -1)
+
+        return r, (h, c)
