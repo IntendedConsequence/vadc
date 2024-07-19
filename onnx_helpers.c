@@ -78,7 +78,7 @@ int enable_cuda(OrtSessionOptions* session_options)
 
 static const wchar_t model_filename[] = SILERO_FILENAME;
 
-static void *ort_init( MemoryArena *arena, String8 model_path_arg, s32 *batch_size_restriction, s32 *sr_input_index, s32 *output_dims, s32 *lstm_hidden_size )
+static void *ort_init( MemoryArena *arena, String8 model_path_arg, Silero_Config *config)
 {
    g_ort = OrtGetApiBase()->GetApi( ORT_API_VERSION );
    if ( !g_ort )
@@ -119,10 +119,10 @@ static void *ort_init( MemoryArena *arena, String8 model_path_arg, s32 *batch_si
       ORT_ABORT_ON_ERROR( g_ort->CreateCpuMemoryInfo( OrtArenaAllocator, OrtMemTypeDefault, &onnx->memory_info ) );
       ORT_ABORT_ON_ERROR( g_ort->CreateAllocator( onnx->session, onnx->memory_info, &onnx->ort_allocator ) );
 
-      // onnx->batch_size_restriction = ort_get_batch_size_restriction(onnx->session, onnx->ort_allocator);
-      // *batch_size_restriction = onnx->batch_size_restriction;
-      *batch_size_restriction = ort_get_batch_size_restriction(onnx->session, onnx->ort_allocator);
-      *output_dims = ort_get_output_dims(onnx->session, onnx->ort_allocator);
+      s32 batch_size_restriction = ort_get_batch_size_restriction(onnx->session, onnx->ort_allocator);
+
+      onnx->output_dims = ort_get_output_dims( onnx->session, onnx->ort_allocator);
+      config->output_dims = onnx->output_dims;
 
       {
          size_t model_output_count = 0;
@@ -135,26 +135,53 @@ static void *ort_init( MemoryArena *arena, String8 model_path_arg, s32 *batch_si
 
          onnx->outputs_count = model_output_count;
          onnx->inputs_count = model_input_count;
-         // onnx->is_silero_v4 = model_input_count == 4;
-         // *is_silero_v4 = onnx->is_silero_v4;
 
-         // TODO(irwin): dehardcode batch == 1 restriction for silero v4
-         // NOTE(irwin): silero v4 model was not yet reexported with contiguous batching support
-         #if 0
-         if (model_input_count == 4)
+         onnx->sr_input_index = ort_sr_input_index( onnx->session, onnx->ort_allocator);
+         config->sr_input_index = onnx->sr_input_index;
+
+         s32 lstm_batch_size;
+         onnx->lstm_hidden_size = ort_lstm_hidden_size( onnx->session, onnx->ort_allocator, &lstm_batch_size);
+         config->lstm_hidden_size = onnx->lstm_hidden_size;
+
+         if (batch_size_restriction == -1 && lstm_batch_size != 1)
          {
-            // TODO(irwin): has_sr_input
-            *is_silero_v4 = true;
-            // *batch_size_restriction = 1;
+            // IMPORTANT(irwin): we don't want fully parallel batch, restrict to 1
+            batch_size_restriction = 1;
+         }
+         onnx->batch_size_restriction = batch_size_restriction;
+         config->batch_size_restriction = batch_size_restriction;
+
+         if (onnx->lstm_hidden_size == 128)
+         {
+            onnx->is_silero_v5 = true;
+
+            // TODO(irwin): 8kHz support
+            onnx->input_size_min = 512;
+            onnx->input_size_max = 512;
          }
          else
          {
-            *is_silero_v4 = false;
+            s32 sequence_count_restriction = ort_sequence_count_restriction(onnx->session, onnx->ort_allocator);
+            if (sequence_count_restriction == -1)
+            {
+               // TODO(irwin): 8kHz support
+               onnx->input_size_min = 512;
+               onnx->input_size_max = 1536;
+            }
+            else if (sequence_count_restriction == 0)
+            {
+               // NOTE(irwin): error
+            }
+            else
+            {
+               onnx->input_size_min = sequence_count_restriction;
+               onnx->input_size_max = sequence_count_restriction;
+            }
          }
-         #endif
+         config->input_size_min = onnx->input_size_min;
+         config->input_size_max = onnx->input_size_max;
+         config->is_silero_v5 = onnx->is_silero_v5;
 
-         *sr_input_index = ort_sr_input_index( onnx->session, onnx->ort_allocator);
-         *lstm_hidden_size = ort_lstm_hidden_size( onnx->session, onnx->ort_allocator);
       }
 
    }
@@ -197,6 +224,54 @@ s32 ort_get_batch_size_restriction( OrtSession *session, OrtAllocator *ort_alloc
    }
 
    return batch_size_restriction;
+}
+
+// NOTE(irwin): -1: unrestricted, 0:error, num:restriction
+s32 ort_sequence_count_restriction( OrtSession *session, OrtAllocator *ort_allocator )
+{
+   s32 sequence_count_restriction = -1;
+
+   size_t model_input_count = 0;
+   ORT_ABORT_ON_ERROR( g_ort->SessionGetInputCount( session, &model_input_count ) );
+
+   for ( size_t i = 0; i < model_input_count; i++ )
+   {
+      char *input_name;
+      g_ort->SessionGetInputName( session, i, ort_allocator, &input_name );
+
+      if ( strcmp( input_name, "input" ) == 0 )
+      {
+         OrtTypeInfo *type_info;
+         g_ort->SessionGetInputTypeInfo( session, i, &type_info );
+
+         const OrtTensorTypeAndShapeInfo *tensor_info;
+         g_ort->CastTypeInfoToTensorInfo( type_info, &tensor_info );
+
+         size_t dim_count;
+         g_ort->GetDimensionsCount( tensor_info, &dim_count );
+
+         if (dim_count >= 4)
+         {
+            sequence_count_restriction = 0;
+            g_ort->ReleaseTypeInfo( type_info );
+            break;
+         }
+
+         int64_t dim_value[4];
+         g_ort->GetDimensions( tensor_info, dim_value, dim_count );
+
+         sequence_count_restriction = (int)dim_value[dim_count - 1];
+
+         // fprintf(stderr, "Axis-0 dimension of 'input': %" PRId64 "\n", dim_value);
+
+         g_ort->ReleaseTypeInfo( type_info );
+         break;
+      }
+
+      g_ort->AllocatorFree( ort_allocator, input_name );
+   }
+
+   return sequence_count_restriction;
 }
 
 s32 ort_get_output_dims( OrtSession *session, OrtAllocator *ort_allocator )
@@ -281,7 +356,7 @@ s32 ort_sr_input_index( OrtSession *session, OrtAllocator *ort_allocator )
    return input_index;
 }
 
-s32 ort_lstm_hidden_size( OrtSession *session, OrtAllocator *ort_allocator )
+s32 ort_lstm_hidden_size( OrtSession *session, OrtAllocator *ort_allocator, s32 *lstm_batch_size )
 {
    VAR_UNUSED(ort_allocator);
    s32 hidden_size = -1;
@@ -316,6 +391,11 @@ s32 ort_lstm_hidden_size( OrtSession *session, OrtAllocator *ort_allocator )
          {
             int64_t dimensions[3];
             g_ort->GetDimensions(tensor_info, dimensions, dim_count);
+            if (lstm_batch_size)
+            {
+               *lstm_batch_size = (s32)dimensions[1];
+            }
+
             hidden_size = (s32)dimensions[2];
             Assert(hidden_size == 64 || hidden_size == 128);
             break;
@@ -331,8 +411,8 @@ s32 ort_lstm_hidden_size( OrtSession *session, OrtAllocator *ort_allocator )
 
 void ort_create_tensors(Silero_Config config, ONNX_Specific *onnx, Tensor_Buffers buffers)
 {
-   s32 lstm_hidden_size = ort_lstm_hidden_size(onnx->session, onnx->ort_allocator);
-   b32 silero_v5 = lstm_hidden_size == 128;
+   s32 lstm_hidden_size = ort_lstm_hidden_size(onnx->session, onnx->ort_allocator, 0);
+   b32 silero_v5 = config.is_silero_v5;
 
    s32 final_input_count = config.input_count;
    if (silero_v5)

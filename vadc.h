@@ -10,11 +10,16 @@
 typedef struct Silero_Config Silero_Config;
 struct Silero_Config
 {
+   // NOTE(irwin): sample rate input, implies fused model
    s32 sr_input_index;
 
    s32 batch_size_restriction;
    s32 batch_size;
+
+   // NOTE(irwin): v5 only, 32 or 64
    s32 context_size;
+
+   // NOTE(irwin): sequence count, does not include context_size
    s32 input_count;
 
    size_t prob_shape_count;
@@ -23,6 +28,18 @@ struct Silero_Config
    s32 output_dims;
    s32 silero_probability_out_index;
    s32 output_stride;
+
+   // s32 batch_size_restriction;
+
+   s32 input_size_min;
+   s32 input_size_max;
+
+   // s32 sr_input_index;
+
+   // s32 output_dims;
+
+   s32 lstm_hidden_size;
+   b32 is_silero_v5;
 };
 
 typedef struct Tensor_Buffers Tensor_Buffers;
@@ -58,46 +75,27 @@ struct VADC_Context
 
 #include <stdio.h>
 
-#define SILERO_V4 0
-#define SILERO_V5 1
-
-// #define SILERO_FILENAME_V3 L"silero_vad_v3.onnx"
-// #define SILERO_FILENAME_V3_B32 L"silero_restored_v3.1_16k_v2_b32.onnx"
 #define SILERO_FILENAME_V4 L"silero_vad_v4.onnx"
-#define SILERO_FILENAME_V3_B_DYNAMIC L"silero_restored_v3.1_16k_v2_dyn-sim.onnx"
+#define SILERO_FILENAME_V3_B_DYNAMIC L"silero_restored_v3.1_16k_v3_dyn.onnx"
 
-#if SILERO_V4
-// #define SILERO_PROBABILITY_OUT_INDEX 0
-// #define SILERO_INPUT_TENSOR_COUNT 4
-#define SILERO_FILENAME SILERO_FILENAME_V4
-#else
-// #define SILERO_PROBABILITY_OUT_INDEX 1
-// #define SILERO_INPUT_TENSOR_COUNT 3
+// #define SILERO_FILENAME SILERO_FILENAME_V4
 #define SILERO_FILENAME SILERO_FILENAME_V3_B_DYNAMIC
-#endif
-
-// const char *INPUT_NAMES_V4[] = { "input", "h", "c", "sr" };
-// const char *INPUT_NAMES_V3[] = { "input", "h0", "c0" };
-// const char *OUTPUT_NAMES_NORMAL[] = { "output", "hn", "cn" };
 
 #define SILERO_SLICE_SAMPLES_8K  128
 #define SILERO_SLICE_SAMPLES_16K 256
 
 #define SILERO_SLICE_COUNT_MIN 2
+#define SILERO_SLICE_COUNT_MAX 6
 #define SILERO_V5_CONTEXT_SIZE 64
 
-#if SILERO_V5
 #define SILERO_SLICE_COUNT 2
-#else
-#define SILERO_SLICE_COUNT 2
-#endif // SILERO_V5
 
 // 512, 768, 1024, 1280, 1536
-#define SILERO_WINDOW_SIZE_SAMPLES (SILERO_SLICE_SAMPLES_16K * SILERO_SLICE_COUNT)
+// #define SILERO_WINDOW_SIZE_SAMPLES (SILERO_SLICE_SAMPLES_16K * SILERO_SLICE_COUNT)
 
 #define SILERO_SAMPLE_RATE 16000
 
-const size_t HARDCODED_WINDOW_SIZE_SAMPLES = SILERO_WINDOW_SIZE_SAMPLES;
+// const size_t HARDCODED_WINDOW_SIZE_SAMPLES = SILERO_WINDOW_SIZE_SAMPLES;
 const size_t HARDCODED_SAMPLE_RATE = SILERO_SAMPLE_RATE;
 
 #undef SILERO_WINDOW_SIZE_SAMPLES
@@ -153,6 +151,7 @@ int run_inference( String8 model_path_arg,
                   float threshold,
                   float neg_threshold,
                   float speech_pad_ms,
+                  float desired_sequence_count,
                   b32 raw_probabilities,
                   Segment_Output_Format output_format,
                   String8 filename,

@@ -674,6 +674,7 @@ int run_inference(String8 model_path_arg,
                   float threshold,
                   float neg_threshold,
                   float speech_pad_ms,
+                  float desired_sequence_count,
                   b32 raw_probabilities,
                   Segment_Output_Format output_format,
                   String8 filename,
@@ -682,46 +683,24 @@ int run_inference(String8 model_path_arg,
                   int audio_source,
                   float start_seconds )
 {
-   const float HARDCODED_CHUNK_DURATION_MS = HARDCODED_WINDOW_SIZE_SAMPLES / (float)HARDCODED_SAMPLE_RATE * 1000.0f;
-
-   int min_speech_duration_chunks = (int)(min_speech_duration_ms / HARDCODED_CHUNK_DURATION_MS + 0.5f);
-   if (min_speech_duration_chunks < 1)
-   {
-      min_speech_duration_chunks = 1;
-   }
-
-   int min_silence_duration_chunks = (int)(min_silence_duration_ms / HARDCODED_CHUNK_DURATION_MS + 0.5f);
-   if (min_silence_duration_chunks < 1)
-   {
-      min_silence_duration_chunks = 1;
-   }
-
-
    Silero_Config config = {0};
    config.batch_size_restriction = 1;
    config.batch_size = 1;
-   config.input_count = (s32)HARDCODED_WINDOW_SIZE_SAMPLES;
 
-   int output_dims = 0;
-   int sr_input_index = -1;
-   int lstm_hidden_size = -1;
-
-   void *backend = backend_init( arena, model_path_arg, &config.batch_size_restriction, &sr_input_index, &output_dims, &lstm_hidden_size );
+   void *backend = backend_init( arena, model_path_arg, &config );
 
    if ( !backend )
    {
       return -1;
    }
-   config.output_dims = output_dims;
-   config.sr_input_index = sr_input_index;
 
-   b32 is_silero_v5 = lstm_hidden_size == 128;
+   b32 is_silero_v5 = config.is_silero_v5;
    if (is_silero_v5)
    {
       config.context_size = SILERO_V5_CONTEXT_SIZE;
    }
 
-   if (output_dims == 3)
+   if (config.output_dims == 3)
    {
       config.silero_probability_out_index = 1;
       config.output_stride = 2;
@@ -732,13 +711,12 @@ int run_inference(String8 model_path_arg,
       config.output_stride = 1;
    }
 
-
    config.batch_size = (config.batch_size_restriction == -1) ? preferred_batch_size : config.batch_size_restriction;
 
 
    {
-      Assert(output_dims == 2 || output_dims == 3);
-      if (output_dims == 2)
+      Assert(config.output_dims == 2 || config.output_dims == 3);
+      if (config.output_dims == 2)
       {
          config.prob_shape_count = 2;
          config.prob_shape[0] = config.batch_size;
@@ -760,10 +738,37 @@ int run_inference(String8 model_path_arg,
       config.prob_tensor_element_count = prob_tensor_element_count;
    }
 
+   {
+      int sequence_count = (int)desired_sequence_count;
+      if (sequence_count < config.input_size_min)
+      {
+         sequence_count = config.input_size_min;
+      }
+      if (sequence_count > config.input_size_max)
+      {
+         sequence_count = config.input_size_max;
+      }
+      config.input_count = (s32)sequence_count;
+   }
+
+   const float HARDCODED_CHUNK_DURATION_MS = config.input_count / (float)HARDCODED_SAMPLE_RATE * 1000.0f;
+
+   int min_speech_duration_chunks = (int)(min_speech_duration_ms / HARDCODED_CHUNK_DURATION_MS + 0.5f);
+   if (min_speech_duration_chunks < 1)
+   {
+      min_speech_duration_chunks = 1;
+   }
+
+   int min_silence_duration_chunks = (int)(min_silence_duration_ms / HARDCODED_CHUNK_DURATION_MS + 0.5f);
+   if (min_silence_duration_chunks < 1)
+   {
+      min_silence_duration_chunks = 1;
+   }
+
 
    // NOTE(irwin): create tensors and allocate tensors backing memory buffers
    Tensor_Buffers buffers = {0};
-   buffers.window_size_samples = (int)HARDCODED_WINDOW_SIZE_SAMPLES;
+   buffers.window_size_samples = (int)config.input_count;
 
    if (is_silero_v5)
    {
@@ -836,7 +841,7 @@ int run_inference(String8 model_path_arg,
       stats.timer_frequency = frequency.QuadPart;
    }
 
-   const float HARDCODED_SECONDS_PER_CHUNK = (float)HARDCODED_WINDOW_SIZE_SAMPLES / HARDCODED_SAMPLE_RATE;
+   const float HARDCODED_SECONDS_PER_CHUNK = (float)config.input_count / HARDCODED_SAMPLE_RATE;
 
    s64 total_samples_read = 0;
 
@@ -954,7 +959,7 @@ int run_inference(String8 model_path_arg,
                         probabilities_buffer);
       }
 
-      int probabilities_count = (int)(values_read / HARDCODED_WINDOW_SIZE_SAMPLES);
+      int probabilities_count = (int)(values_read / (float)config.input_count);
       if (!raw_probabilities)
       {
          for (int i = 0; i < probabilities_count; ++i)
@@ -1000,13 +1005,13 @@ int run_inference(String8 model_path_arg,
       // NOTE(irwin): snap last speech segment to actual audio length
       if (state.triggered)
       {
-         int audio_length_samples = (int)((global_chunk_index - 1) * HARDCODED_WINDOW_SIZE_SAMPLES);
-         if (audio_length_samples - (state.current_speech_start * HARDCODED_WINDOW_SIZE_SAMPLES) > (min_speech_duration_chunks * HARDCODED_WINDOW_SIZE_SAMPLES))
+         int audio_length_samples = (int)((global_chunk_index - 1) * config.input_count);
+         if (audio_length_samples - (state.current_speech_start * config.input_count) > (min_speech_duration_chunks * config.input_count))
          {
             FeedProbabilityResult final_segment;
             final_segment.is_valid = 1;
             final_segment.speech_start = state.current_speech_start;
-            final_segment.speech_end = (int)(audio_length_samples / HARDCODED_WINDOW_SIZE_SAMPLES);
+            final_segment.speech_end = (int)(audio_length_samples / config.input_count);
 
             buffered = combine_or_emit_speech_segment(buffered, final_segment,
                                                          speech_pad_ms, output_format, &stats, HARDCODED_SECONDS_PER_CHUNK);
@@ -1089,6 +1094,7 @@ enum ArgOptionIndex
    ArgOptionIndex_NegThresholdRelative,
    ArgOptionIndex_SpeechPad,
    ArgOptionIndex_Batch,
+   ArgOptionIndex_SequenceCount,
    ArgOptionIndex_AudioSource,
    ArgOptionIndex_StartSeconds,
    ArgOptionIndex_RawProbabilities,
@@ -1106,6 +1112,7 @@ ArgOption options[] = {
    {String8FromLiteral("--neg_threshold_relative"),   0.15f },
    {String8FromLiteral("--speech_pad"),              30.0f  },
    {String8FromLiteral("--batch"),                   96.0f  },
+   {String8FromLiteral("--sequence_count"),        1536.0f  },
    {String8FromLiteral("--audio_source"),             0.0f  },
    {String8FromLiteral("--start_seconds"),            0.0f  },
    {String8FromLiteral("--raw_probabilities"),        0.0f  },
@@ -1251,6 +1258,7 @@ int main()
                     threshold,
                     neg_threshold,
                     speech_pad_ms,
+                    options[ArgOptionIndex_SequenceCount].value,
                     raw_probabilities,
                     output_format,
                     input_filename,
