@@ -15,7 +15,36 @@ class STFT(torch.nn.Module):
         self.forward_basis_buffer = torch.nn.Parameter(torch.zeros((n_fft+2, 1, n_fft)), requires_grad=False)
 
     def forward(self, input: torch.Tensor):
-        return torch.stft(pad_reflect(input, self.to_pad), n_fft=self.n_fft, center=False, hop_length=self.stride, win_length=self.n_fft, window=self.hann, return_complex=True).abs()
+        v = torch.stft(pad_reflect(input, self.to_pad), n_fft=self.n_fft, center=False, hop_length=self.stride, win_length=self.n_fft, window=self.hann, return_complex=False)
+        return torch.sqrt(v[:, :, :, 0] ** 2 + v[:, :, :, 1] ** 2)
+
+class STFT_conv(torch.nn.Module):
+    def __init__(self, n_fft=256, is_v4=False) -> None:
+        super().__init__()
+        self.n_fft = n_fft
+        self.stride = n_fft // 4
+        self.to_pad = int((n_fft - self.stride) / 2) if is_v4 else n_fft // 2
+        self.forward_basis_buffer = torch.nn.Parameter(torch.zeros((n_fft+2, 1, n_fft)), requires_grad=False)
+
+    def forward(self, input: torch.Tensor):
+        filter_length_half = int(self.n_fft // 2)  # 128
+        cutoff = filter_length_half + 1  # 129
+
+        # NOTE(irwin): [batch_size, 1792] (128 + 1536 + 128)
+        input_padded = pad_reflect(input, self.to_pad)
+        # input_padded = F.pad(input, (pad_left, pad_right), 'reflect')
+
+        # NOTE(irwin): torch.nn.functional.conv1d expects input shape [batch_size, num_channels, num_samples]
+        # we don't want multichannel, so we unsqueeze to [batch_size, 1, num_samples]
+        input_padded_reshaped = input_padded.unsqueeze(1)
+        output = F.conv1d(input_padded_reshaped, self.forward_basis_buffer, stride=self.stride)
+
+        real_part = output[:, :cutoff, :]
+        imag_part = output[:, cutoff:, :]
+
+        magnitude = torch.sqrt(real_part**2 + imag_part**2)
+        return magnitude
+
 
 class AdaptiveAudioNormalization(torch.nn.Module):
     def __init__(self):
@@ -163,7 +192,7 @@ class Silero_V4(torch.nn.Module):
     def __init__(self, sr=16000):
         super().__init__()
 
-        self.feature_extractor = STFT(256, is_v4=True)
+        self.feature_extractor = STFT_conv(256, is_v4=True)
         self.adaptive_normalization = AdaptiveAudioNormalization()
         self.first_layer = torch.nn.Sequential(ConvBlock(258))
         self.encoder = encoder(is_v4=True, sr=sr)
@@ -217,7 +246,7 @@ class Silero_V3(torch.nn.Module):
     def __init__(self, sr=16000):
         super().__init__()
 
-        self.feature_extractor = STFT(256 if sr==16000 else 128, is_v4=False)
+        self.feature_extractor = STFT_conv(256 if sr==16000 else 128, is_v4=False)
         self.adaptive_normalization = AdaptiveAudioNormalization()
         self.first_layer = torch.nn.Sequential(ConvBlock(129 if sr==16000 else 65))
         self.encoder = encoder(is_v4=False, sr=sr)
