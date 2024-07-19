@@ -53,7 +53,7 @@ static FILE *getDebugFile()
 
 
 
-void process_chunks( MemoryArena *arena, VADC_Context context,
+void process_chunks( MemoryArena *arena, VADC_Context context, Silero_Config config,
                     const size_t buffered_samples_count,
                     const float *samples_buffer_float32,
                     float *probabilities_buffer)
@@ -61,8 +61,7 @@ void process_chunks( MemoryArena *arena, VADC_Context context,
 
    VAR_UNUSED(arena);
    {
-      // Assert(!context.is_silero_v4);
-      int stride = (int)context.buffers.window_size_samples * context.batch_size;
+      int stride = (int)context.buffers.window_size_samples * config.batch_size;
       for (size_t offset = 0;
          offset < buffered_samples_count;
          offset += stride)
@@ -84,7 +83,7 @@ void process_chunks( MemoryArena *arena, VADC_Context context,
          memmove( context.buffers.lstm_h, context.buffers.lstm_h_out, context.buffers.lstm_count * sizeof( context.buffers.lstm_h[0] ) );
          memmove( context.buffers.lstm_c, context.buffers.lstm_c_out, context.buffers.lstm_count * sizeof( context.buffers.lstm_c[0] ) );
 
-         int output_stride = context.is_silero_v4 ? 1 : 2;
+         int output_stride = config.output_stride;
 
          // NOTE(irwin): if there aren't enough samples for a full batch it can only be the very last batch
          //              otherwise we don't tell the backend that the batch size is lower, and so if one
@@ -93,9 +92,9 @@ void process_chunks( MemoryArena *arena, VADC_Context context,
          backend_run(arena, &context);
 
          // NOTE(irwin): will copy stale probabilities from previous batch if not enough samples for a full batch
-         for (int i = 0; i < context.batch_size; ++i)
+         for (int i = 0; i < config.batch_size; ++i)
          {
-            float result_probability = context.buffers.output[i * output_stride + context.silero_probability_out_index];
+            float result_probability = context.buffers.output[i * output_stride + config.silero_probability_out_index];
             *probabilities_buffer++ = result_probability;
          }
 
@@ -103,7 +102,7 @@ void process_chunks( MemoryArena *arena, VADC_Context context,
    }
 }
 
-void process_chunks_v5( MemoryArena *arena, VADC_Context context,
+void process_chunks_v5( MemoryArena *arena, VADC_Context context, Silero_Config config,
                     const size_t buffered_samples_count,
                     const float *samples_buffer_float32,
                     float *probabilities_buffer)
@@ -111,40 +110,39 @@ void process_chunks_v5( MemoryArena *arena, VADC_Context context,
 
    VAR_UNUSED(arena);
    {
-      // Assert(!context.is_silero_v4);
-      int input_buffer_size = ((int)context.buffers.window_size_samples + SILERO_V5_CONTEXT_SIZE) * context.batch_size;
-      int stride = (int)context.buffers.window_size_samples * context.batch_size;
+      s32 context_size = config.context_size;
+      s32 window_size = config.input_count;
+      s32 total_sequence_count = context_size + window_size;
+
+      int input_buffer_size = ((int)context.buffers.window_size_samples + context_size) * config.batch_size;
+      int stride = (int)context.buffers.window_size_samples * config.batch_size;
       for (size_t offset = 0;
          offset < buffered_samples_count;
          offset += stride)
       {
          // NOTE(irwin): copy context from previous batch, should be zeroes for first batch due to ZII
-         memmove(context.buffers.input_samples, context.buffers.input_samples + input_buffer_size - SILERO_V5_CONTEXT_SIZE, SILERO_V5_CONTEXT_SIZE * sizeof(float));
+         memmove(context.buffers.input_samples, context.buffers.input_samples + input_buffer_size - context_size, context_size * sizeof(float));
 
          // NOTE(irwin): copy a slice of the buffered samples
          // size_t samples_count_left = buffered_samples_count - offset;
          // size_t samples_count = samples_count_left > stride ? stride : samples_count_left;
 
-         memmove(context.buffers.input_samples + SILERO_V5_CONTEXT_SIZE, samples_buffer_float32 + offset, 512 * sizeof(float));
-         for (int batch_index = 1; batch_index < context.batch_size; ++batch_index)
+         memmove(context.buffers.input_samples + context_size, samples_buffer_float32 + offset, window_size * sizeof(float));
+         for (int batch_index = 1; batch_index < config.batch_size; ++batch_index)
          {
-            memmove(context.buffers.input_samples + (batch_index * 576),
-                    (samples_buffer_float32 + offset) + (batch_index * 512) - 64,
+            memmove(context.buffers.input_samples + (batch_index * total_sequence_count),
+                    (samples_buffer_float32 + offset) + (batch_index * window_size) - context_size,
                     64 * sizeof(float));
 
-            memmove(context.buffers.input_samples + (batch_index * 576) + 64,
-                    (samples_buffer_float32 + offset) + (batch_index * 512),
+            memmove(context.buffers.input_samples + (batch_index * total_sequence_count) + context_size,
+                    (samples_buffer_float32 + offset) + (batch_index * window_size),
                     512 * sizeof(float));
          }
 
          memmove( context.buffers.lstm_h, context.buffers.lstm_h_out, context.buffers.lstm_count * sizeof( context.buffers.lstm_h[0] ) );
          memmove( context.buffers.lstm_c, context.buffers.lstm_c_out, context.buffers.lstm_count * sizeof( context.buffers.lstm_c[0] ) );
 
-#if SILERO_V5
-         int output_stride = 1;
-#else
-         int output_stride = context.is_silero_v4 ? 1 : 2;
-#endif // SILERO_V5
+         int output_stride = config.output_stride;
 
          // NOTE(irwin): if there aren't enough samples for a full batch it can only be the very last batch
          //              otherwise we don't tell the backend that the batch size is lower, and so if one
@@ -153,9 +151,9 @@ void process_chunks_v5( MemoryArena *arena, VADC_Context context,
          backend_run(arena, &context);
 
          // NOTE(irwin): will copy stale probabilities from previous batch if not enough samples for a full batch
-         for (int i = 0; i < context.batch_size; ++i)
+         for (int i = 0; i < config.batch_size; ++i)
          {
-            float result_probability = context.buffers.output[i * output_stride + context.silero_probability_out_index];
+            float result_probability = context.buffers.output[i * output_stride + config.silero_probability_out_index];
             *probabilities_buffer++ = result_probability;
          }
 
@@ -704,18 +702,43 @@ int run_inference(String8 model_path_arg,
    config.batch_size = 1;
    config.input_count = (s32)HARDCODED_WINDOW_SIZE_SAMPLES;
 
-   void *backend = backend_init( arena, model_path_arg, &config.batch_size_restriction, &config.is_silero_v4 );
+   int output_dims = 0;
+   int sr_input_index = -1;
+   int lstm_hidden_size = -1;
+
+   void *backend = backend_init( arena, model_path_arg, &config.batch_size_restriction, &sr_input_index, &output_dims, &lstm_hidden_size );
 
    if ( !backend )
    {
       return -1;
    }
+   config.output_dims = output_dims;
+   config.sr_input_index = sr_input_index;
+
+   b32 is_silero_v5 = lstm_hidden_size == 128;
+   if (is_silero_v5)
+   {
+      config.context_size = SILERO_V5_CONTEXT_SIZE;
+   }
+
+   if (output_dims == 3)
+   {
+      config.silero_probability_out_index = 1;
+      config.output_stride = 2;
+   }
+   else
+   {
+      config.silero_probability_out_index = 0;
+      config.output_stride = 1;
+   }
+
 
    config.batch_size = (config.batch_size_restriction == -1) ? preferred_batch_size : config.batch_size_restriction;
 
 
    {
-      if (config.is_silero_v4 || SILERO_V5)
+      Assert(output_dims == 2 || output_dims == 3);
+      if (output_dims == 2)
       {
          config.prob_shape_count = 2;
          config.prob_shape[0] = config.batch_size;
@@ -741,11 +764,15 @@ int run_inference(String8 model_path_arg,
    // NOTE(irwin): create tensors and allocate tensors backing memory buffers
    Tensor_Buffers buffers = {0};
    buffers.window_size_samples = (int)HARDCODED_WINDOW_SIZE_SAMPLES;
-#if SILERO_V5
-   buffers.input_samples = pushArray(arena, (HARDCODED_WINDOW_SIZE_SAMPLES + SILERO_V5_CONTEXT_SIZE) * config.batch_size, float);
-#else
-   buffers.input_samples = pushArray(arena, HARDCODED_WINDOW_SIZE_SAMPLES * config.batch_size, float);
-#endif // SILERO_V5
+
+   if (is_silero_v5)
+   {
+      buffers.input_samples = pushArray(arena, (buffers.window_size_samples + config.context_size) * config.batch_size, float);
+   }
+   else
+   {
+      buffers.input_samples = pushArray(arena, buffers.window_size_samples * config.batch_size, float);
+   }
 
    buffers.output = pushArray(arena, config.prob_tensor_element_count, float);
 
@@ -764,7 +791,7 @@ int run_inference(String8 model_path_arg,
    // is purely coincidental
    const int chunks_count = 96;
    // NOTE(irwin): buffered_samples_count is the normalization window size
-   const size_t buffered_samples_count = HARDCODED_WINDOW_SIZE_SAMPLES * chunks_count;
+   const size_t buffered_samples_count = buffers.window_size_samples * chunks_count;
 
    short *samples_buffer_s16 = pushArray(arena, buffered_samples_count, short);
    float *samples_buffer_float32 = pushArray(arena, buffered_samples_count, float);
@@ -789,14 +816,6 @@ int run_inference(String8 model_path_arg,
    {
       .backend = backend,
       .buffers = buffers,
-
-      .is_silero_v4 = config.is_silero_v4,
-#if SILERO_V5
-      .silero_probability_out_index = 0,
-#else
-      .silero_probability_out_index = config.is_silero_v4 ? 0 : 1,
-#endif // SILERO_V5
-      .batch_size = config.batch_size,
    };
 
    FeedState state = {0};
@@ -920,17 +939,20 @@ int run_inference(String8 model_path_arg,
          break;
       }
 
-#if SILERO_V5
-      process_chunks_v5( arena, context,
-                     values_read,
-                     samples_buffer_float32,
-                     probabilities_buffer);
-#else
-      process_chunks( arena, context,
-                     values_read,
-                     samples_buffer_float32,
-                     probabilities_buffer);
-#endif // SILERO_V5
+      if (is_silero_v5)
+      {
+         process_chunks_v5( arena, context, config,
+                        values_read,
+                        samples_buffer_float32,
+                        probabilities_buffer);
+      }
+      else
+      {
+         process_chunks( arena, context, config,
+                        values_read,
+                        samples_buffer_float32,
+                        probabilities_buffer);
+      }
 
       int probabilities_count = (int)(values_read / HARDCODED_WINDOW_SIZE_SAMPLES);
       if (!raw_probabilities)

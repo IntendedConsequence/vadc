@@ -78,7 +78,7 @@ int enable_cuda(OrtSessionOptions* session_options)
 
 static const wchar_t model_filename[] = SILERO_FILENAME;
 
-static void *ort_init( MemoryArena *arena, String8 model_path_arg, s32 *batch_size_restriction, b32 *is_silero_v4 )
+static void *ort_init( MemoryArena *arena, String8 model_path_arg, s32 *batch_size_restriction, s32 *sr_input_index, s32 *output_dims, s32 *lstm_hidden_size )
 {
    g_ort = OrtGetApiBase()->GetApi( ORT_API_VERSION );
    if ( !g_ort )
@@ -122,6 +122,7 @@ static void *ort_init( MemoryArena *arena, String8 model_path_arg, s32 *batch_si
       // onnx->batch_size_restriction = ort_get_batch_size_restriction(onnx->session, onnx->ort_allocator);
       // *batch_size_restriction = onnx->batch_size_restriction;
       *batch_size_restriction = ort_get_batch_size_restriction(onnx->session, onnx->ort_allocator);
+      *output_dims = ort_get_output_dims(onnx->session, onnx->ort_allocator);
 
       {
          size_t model_output_count = 0;
@@ -139,8 +140,10 @@ static void *ort_init( MemoryArena *arena, String8 model_path_arg, s32 *batch_si
 
          // TODO(irwin): dehardcode batch == 1 restriction for silero v4
          // NOTE(irwin): silero v4 model was not yet reexported with contiguous batching support
+         #if 0
          if (model_input_count == 4)
          {
+            // TODO(irwin): has_sr_input
             *is_silero_v4 = true;
             // *batch_size_restriction = 1;
          }
@@ -148,6 +151,10 @@ static void *ort_init( MemoryArena *arena, String8 model_path_arg, s32 *batch_si
          {
             *is_silero_v4 = false;
          }
+         #endif
+
+         *sr_input_index = ort_sr_input_index( onnx->session, onnx->ort_allocator);
+         *lstm_hidden_size = ort_lstm_hidden_size( onnx->session, onnx->ort_allocator);
       }
 
    }
@@ -192,40 +199,174 @@ s32 ort_get_batch_size_restriction( OrtSession *session, OrtAllocator *ort_alloc
    return batch_size_restriction;
 }
 
+s32 ort_get_output_dims( OrtSession *session, OrtAllocator *ort_allocator )
+{
+   s32 output_dims = 2;
+
+   size_t model_output_count = 0;
+   ORT_ABORT_ON_ERROR( g_ort->SessionGetOutputCount( session, &model_output_count ) );
+
+   for ( size_t i = 0; i < model_output_count; i++ )
+   {
+      char *output_name;
+      g_ort->SessionGetOutputName( session, i, ort_allocator, &output_name );
+
+      if ( strcmp( output_name, "output" ) == 0 )
+      {
+         OrtTypeInfo *type_info;
+         g_ort->SessionGetOutputTypeInfo( session, i, &type_info );
+
+         const OrtTensorTypeAndShapeInfo *tensor_info;
+         g_ort->CastTypeInfoToTensorInfo( type_info, &tensor_info );
+
+         size_t dim_count;
+         g_ort->GetDimensionsCount( tensor_info, &dim_count );
+
+         output_dims = (int)dim_count;
+
+         // fprintf(stderr, "Axis-0 dimension of 'input': %" PRId64 "\n", dim_value);
+
+         g_ort->ReleaseTypeInfo( type_info );
+         break;
+      }
+
+      g_ort->AllocatorFree( ort_allocator, output_name );
+   }
+
+   return output_dims;
+}
+
+s32 ort_sr_input_index( OrtSession *session, OrtAllocator *ort_allocator )
+{
+   VAR_UNUSED(ort_allocator);
+   s32 input_index = -1;
+
+   size_t model_input_count = 0;
+   ORT_ABORT_ON_ERROR( g_ort->SessionGetInputCount( session, &model_input_count ) );
+
+   for ( size_t i = 0; i < model_input_count; i++ )
+   {
+      // char *input_name;
+      // g_ort->SessionGetInputName( session, i, ort_allocator, &input_name );
+
+      // if ( strcmp( input_name, "input" ) == 0 )
+      {
+         OrtTypeInfo *type_info;
+         g_ort->SessionGetInputTypeInfo( session, i, &type_info );
+
+         const OrtTensorTypeAndShapeInfo *tensor_info;
+         g_ort->CastTypeInfoToTensorInfo( type_info, &tensor_info );
+
+         size_t dim_count;
+         g_ort->GetDimensionsCount( tensor_info, &dim_count );
+
+         ONNXTensorElementDataType data_type;
+         g_ort->GetTensorElementType( tensor_info, &data_type );
+
+         // fprintf(stderr, "Axis-0 dimension of 'input': %" PRId64 "\n", dim_value);
+
+         g_ort->ReleaseTypeInfo( type_info );
+
+         if (dim_count == 0 && data_type == ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64)
+         {
+            input_index = (s32)i;
+            break;
+         }
+         // break;
+      }
+
+      // g_ort->AllocatorFree( ort_allocator, input_name );
+   }
+
+   return input_index;
+}
+
+s32 ort_lstm_hidden_size( OrtSession *session, OrtAllocator *ort_allocator )
+{
+   VAR_UNUSED(ort_allocator);
+   s32 hidden_size = -1;
+
+   size_t model_input_count = 0;
+   ORT_ABORT_ON_ERROR( g_ort->SessionGetInputCount( session, &model_input_count ) );
+
+   for ( size_t i = 1; i < model_input_count; i++ )
+   {
+      // char *input_name;
+      // g_ort->SessionGetInputName( session, i, ort_allocator, &input_name );
+
+      // if ( strcmp( input_name, "input" ) == 0 )
+      {
+         OrtTypeInfo *type_info;
+         g_ort->SessionGetInputTypeInfo( session, i, &type_info );
+
+         const OrtTensorTypeAndShapeInfo *tensor_info;
+         g_ort->CastTypeInfoToTensorInfo( type_info, &tensor_info );
+
+         size_t dim_count;
+         g_ort->GetDimensionsCount( tensor_info, &dim_count );
+
+         ONNXTensorElementDataType data_type;
+         g_ort->GetTensorElementType( tensor_info, &data_type );
+
+         // fprintf(stderr, "Axis-0 dimension of 'input': %" PRId64 "\n", dim_value);
+
+         g_ort->ReleaseTypeInfo( type_info );
+
+         if (dim_count == 3 && data_type == ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT)
+         {
+            int64_t dimensions[3];
+            g_ort->GetDimensions(tensor_info, dimensions, dim_count);
+            hidden_size = (s32)dimensions[2];
+            Assert(hidden_size == 64 || hidden_size == 128);
+            break;
+         }
+         // break;
+      }
+
+      // g_ort->AllocatorFree( ort_allocator, input_name );
+   }
+
+   return hidden_size;
+}
+
 void ort_create_tensors(Silero_Config config, ONNX_Specific *onnx, Tensor_Buffers buffers)
 {
-#if SILERO_V5
-   int64_t input_tensor_samples_shape[] = {config.batch_size, config.input_count + SILERO_V5_CONTEXT_SIZE};
-#else
-   int64_t input_tensor_samples_shape[] = {config.batch_size, config.input_count};
-#endif // SILERO_V5
+   s32 lstm_hidden_size = ort_lstm_hidden_size(onnx->session, onnx->ort_allocator);
+   b32 silero_v5 = lstm_hidden_size == 128;
+
+   s32 final_input_count = config.input_count;
+   if (silero_v5)
+   {
+      final_input_count += config.context_size;
+   }
+
+   int64_t input_tensor_samples_shape[] = {config.batch_size, final_input_count};
+
    const size_t input_tensor_samples_shape_count = ArrayCount( input_tensor_samples_shape );
    OrtValue **input_tensors = onnx->input_tensors;
 
    // NOTE(irwin): samples input
-#if SILERO_V5
-   create_tensor(onnx->memory_info,
-                 &input_tensors[0],
-                 input_tensor_samples_shape,
-                 input_tensor_samples_shape_count,
-                 buffers.input_samples,
-                 (config.input_count + SILERO_V5_CONTEXT_SIZE) * config.batch_size);
-#else
-   create_tensor(onnx->memory_info,
-                 &input_tensors[0],
-                 input_tensor_samples_shape,
-                 input_tensor_samples_shape_count,
-                 buffers.input_samples,
-                 config.input_count * config.batch_size);
-#endif // SILERO_V5
 
-#if SILERO_V5
-   int64_t state_shape[] = {1, 1, 128};
-#else
-   int64_t state_shape[] = {2, 1, 64};
-#endif // SILERO_V5
+   create_tensor(onnx->memory_info,
+                 &input_tensors[0],
+                 input_tensor_samples_shape,
+                 input_tensor_samples_shape_count,
+                 buffers.input_samples,
+                 final_input_count * config.batch_size);
+
+
+   int64_t state_shape[3] = {0};
+
+   state_shape[0] = silero_v5 ? 1 : 2;
+   state_shape[1] = 1;
+   state_shape[2] = lstm_hidden_size;
+
    const size_t state_shape_count = ArrayCount( state_shape );
-   OrtValue **state_h_tensor = &input_tensors[1];
+
+   int h_index = config.sr_input_index != 1 ? 1 : 2;
+   int c_index = h_index + 1;
+
+   OrtValue **state_h_tensor = &input_tensors[h_index];
    // NOTE(irwin): lstm h
    create_tensor(onnx->memory_info,
                  state_h_tensor,
@@ -234,7 +375,7 @@ void ort_create_tensors(Silero_Config config, ONNX_Specific *onnx, Tensor_Buffer
                  buffers.lstm_h,
                  buffers.lstm_count);
 
-   OrtValue** state_c_tensor = &input_tensors[2];
+   OrtValue** state_c_tensor = &input_tensors[c_index];
    // NOTE(irwin): lstm c
    create_tensor(onnx->memory_info,
                  state_c_tensor,
@@ -243,12 +384,12 @@ void ort_create_tensors(Silero_Config config, ONNX_Specific *onnx, Tensor_Buffer
                  buffers.lstm_c,
                  buffers.lstm_count);
 
-   if ( config.is_silero_v4 )
+   if ( config.sr_input_index != -1 )
    {
       static int64_t sr = 16000;
       // int64_t sr_shape[] = {1, 1};
       // const size_t sr_shape_count = ArrayCount( sr_shape );
-      OrtValue **sr_tensor = &input_tensors[3];
+      OrtValue **sr_tensor = &input_tensors[config.sr_input_index];
    // NOTE(irwin): sample rate
       create_tensor_int64( onnx->memory_info, sr_tensor, 0, 0, &sr, 1 );
    }
@@ -282,14 +423,28 @@ void ort_create_tensors(Silero_Config config, ONNX_Specific *onnx, Tensor_Buffer
                  buffers.lstm_c_out,
                  buffers.lstm_count);
 
-   const size_t silero_input_tensor_count = config.is_silero_v4 ? 4 : 3;
+   size_t model_input_count = 0;
+   ORT_ABORT_ON_ERROR( g_ort->SessionGetInputCount( onnx->session, &model_input_count ) );
+   Assert(model_input_count <= 4);
+   for (size_t i = 0; i < model_input_count; ++i)
+   {
+      g_ort->SessionGetInputName(onnx->session, i, onnx->ort_allocator, &onnx->input_names[i]);
+   }
 
-   const char **input_names = config.is_silero_v4 ? INPUT_NAMES_V4 : INPUT_NAMES_V3;
+   size_t model_output_count = 0;
+   ORT_ABORT_ON_ERROR( g_ort->SessionGetOutputCount( onnx->session, &model_output_count ) );
+   Assert(model_input_count <= 4);
+   for (size_t i = 0; i < model_output_count; ++i)
+   {
+      g_ort->SessionGetOutputName(onnx->session, i, onnx->ort_allocator, &onnx->output_names[i]);
+   }
 
-   onnx->input_names = input_names;
-   onnx->output_names = OUTPUT_NAMES_NORMAL;
+   // const char **input_names = config.is_silero_v4 ? INPUT_NAMES_V4 : INPUT_NAMES_V3;
 
-   onnx->inputs_count = silero_input_tensor_count;
+   // onnx->input_names = input_names;
+   // onnx->output_names = OUTPUT_NAMES_NORMAL;
+
+   onnx->inputs_count = model_input_count;
 
    // g_ort->ReleaseMemoryInfo(onnx.memory_info);
 }

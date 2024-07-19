@@ -78,7 +78,7 @@ del filter_script.pdb >nul & cl.exe /nologo filter_script.c /link
 
 rem
 rem test
-rem 
+rem
 
 rem cl.exe /nologo test.c /Fdtest_%datetime_stamp%d.pdb /link /PDB:test_%datetime_stamp%.pdb
 rem cl.exe /nologo test.c /link /PDB:test_%datetime_stamp%.pdb

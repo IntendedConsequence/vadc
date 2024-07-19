@@ -10,14 +10,19 @@
 typedef struct Silero_Config Silero_Config;
 struct Silero_Config
 {
-   b32 is_silero_v4;
+   s32 sr_input_index;
+
    s32 batch_size_restriction;
    s32 batch_size;
+   s32 context_size;
    s32 input_count;
 
    size_t prob_shape_count;
    int64_t prob_shape[4];
    size_t prob_tensor_element_count;
+   s32 output_dims;
+   s32 silero_probability_out_index;
+   s32 output_stride;
 };
 
 typedef struct Tensor_Buffers Tensor_Buffers;
@@ -45,10 +50,6 @@ struct VADC_Context
    void *backend;
 
    Tensor_Buffers buffers;
-
-   b32 is_silero_v4;
-   s32 silero_probability_out_index;
-   const int batch_size;
 };
 
 #if ONNX_INFERENCE_ENABLED
@@ -83,9 +84,10 @@ struct VADC_Context
 #define SILERO_SLICE_SAMPLES_16K 256
 
 #define SILERO_SLICE_COUNT_MIN 2
+#define SILERO_V5_CONTEXT_SIZE 64
+
 #if SILERO_V5
 #define SILERO_SLICE_COUNT 2
-#define SILERO_V5_CONTEXT_SIZE 64
 #else
 #define SILERO_SLICE_COUNT 2
 #endif // SILERO_V5
@@ -159,7 +161,7 @@ int run_inference( String8 model_path_arg,
                   int audio_source,
                   float start_seconds );
 
-void process_chunks( MemoryArena *arena, VADC_Context context,
+void process_chunks( MemoryArena *arena, VADC_Context context, Silero_Config config,
                     const size_t buffered_samples_count,
                     const float *samples_buffer_float32,
                     float *probabilities_buffer );
