@@ -697,6 +697,7 @@ int run_inference(String8 model_path_arg,
    b32 is_silero_v5 = config.is_silero_v5;
    if (is_silero_v5)
    {
+      fprintf(stderr, "%s", "Model arch is Silero v5\n");
       config.context_size = SILERO_V5_CONTEXT_SIZE;
    }
 
@@ -712,7 +713,7 @@ int run_inference(String8 model_path_arg,
    }
 
    config.batch_size = (config.batch_size_restriction == -1) ? preferred_batch_size : config.batch_size_restriction;
-
+   fprintf(stderr, "Running with batch size %d\n", config.batch_size);
 
    {
       Assert(config.output_dims == 2 || config.output_dims == 3);
@@ -749,6 +750,7 @@ int run_inference(String8 model_path_arg,
          sequence_count = config.input_size_max;
       }
       config.input_count = (s32)sequence_count;
+      fprintf(stderr, "Running with sequence count %d\n", config.input_count);
    }
 
    const float HARDCODED_CHUNK_DURATION_MS = config.input_count / (float)HARDCODED_SAMPLE_RATE * 1000.0f;

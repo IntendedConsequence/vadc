@@ -75,11 +75,12 @@ struct VADC_Context
 
 #include <stdio.h>
 
-#define SILERO_FILENAME_V4 L"silero_vad_v4.onnx"
 #define SILERO_FILENAME_V3_B_DYNAMIC L"silero_restored_v3.1_16k_v3_dyn.onnx"
+#define SILERO_FILENAME_V4 L"silero_vad_v4.onnx"
+#define SILERO_FILENAME_V5 L"silero_vad_v5_16k_minibatched-sim.onnx"
 
 // #define SILERO_FILENAME SILERO_FILENAME_V4
-#define SILERO_FILENAME SILERO_FILENAME_V3_B_DYNAMIC
+#define SILERO_FILENAME SILERO_FILENAME_V5
 
 #define SILERO_SLICE_SAMPLES_8K  128
 #define SILERO_SLICE_SAMPLES_16K 256
