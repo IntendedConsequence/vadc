@@ -230,3 +230,54 @@ def serialize_silero_v31_weights_16k():
     ser = serialize_multiple_arrays(sd)
     print(len(ser))
     Path('testdata/silero_v31_16k.testtensor').write_bytes(ser)
+
+def how_much_to_pad(actual_size, multiple):
+    rem = actual_size % multiple
+    if rem == 0:
+        return 0
+    else:
+        return multiple - rem
+
+def audio_from_raw_int16_unpadded(filename):
+    audio_data = torch.from_numpy(np.fromfile(filename, dtype=np.int16)).float()
+    audio_data /= 32768.0
+    return audio_data
+
+def audio_from_raw_int16(filename, sequence_count):
+    audio_data = torch.from_numpy(np.fromfile(filename, dtype=np.int16)).float()
+    audio_data /= 32768.0
+
+    size = audio_data.size(0)
+    pad = how_much_to_pad(size, sequence_count)
+
+    audio_data_padded = torch.nn.functional.pad(audio_data, (0, pad), mode="constant")
+    return audio_data_padded.reshape(-1, sequence_count)
+
+def normalized_audio_from_raw_int16(filename, sequence_count, normalization_window=None):
+    if normalization_window is None:
+        normalization_window = sequence_count
+
+    audio_data = torch.from_numpy(np.fromfile(filename, dtype=np.int16)).float()
+    # audio_data /= audio_data.abs().max()
+
+    size = audio_data.size(0)
+    pad = how_much_to_pad(size, normalization_window)
+
+    audio_data_padded = torch.nn.functional.pad(audio_data, (0, pad), mode="constant")
+    audio_data_chunked = audio_data_padded.reshape(-1, normalization_window)
+    local_abs_maximums = audio_data_chunked.abs().max(axis=1, keepdim=True)[0]
+    audio_data_normalized = audio_data_chunked / local_abs_maximums
+
+    audio_data_ = audio_data_normalized.reshape(-1)[:size]
+    pad2 = how_much_to_pad(size, sequence_count)
+    padded2 = torch.nn.functional.pad(audio_data_, (0, pad2), mode="constant")
+
+    return padded2.reshape(-1, sequence_count)
+
+def chunks_v5_from_raw_int16(path, prefix, window):
+    cont = normalized_audio_from_raw_int16(path, window)
+    return torch.nn.functional.pad(cont.flatten(), (prefix, 0), mode='constant', value=0.0).unfold(0, window+prefix, window)
+
+def chunks_v5_from_raw_int16_nonorm(path, prefix, window):
+    cont = audio_from_raw_int16(path, window)
+    return torch.nn.functional.pad(cont.flatten(), (prefix, 0), mode='constant', value=0.0).unfold(0, window+prefix, window)
