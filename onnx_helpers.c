@@ -1,5 +1,5 @@
 #include "onnx_helpers.h"
-
+#pragma comment(lib, "lib/onnxruntime.lib")
 
 static const OrtApi *g_ort = NULL;
 
