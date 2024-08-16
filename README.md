@@ -41,7 +41,15 @@ Old and obsolete:
 - `silero_vad_v3.py` - old pytorch implementation for silero vad models. Obsolete
 - `silero_tg.py` - old tinygrad implementation for silero vad v3.1
 
-VADC has 2 backends
+VADC has 2 backends:
+- C
+- onnxruntime
+
+Call:
+- `build_msvc.bat 0` for C backend (default)
+- `build_msvc.bat 1` for onnxruntime backend
+
+Onnxruntime backend is much faster and support more options, like batching and custom sequence lengths. But you need to copy the onnxruntime dlls yourself to where vadc.exe is. Also, batching is not supported by official Silero onnx files, you have to export minibatch-enabled onnx models from pytorch code in `silero_vad.py`, and the export helper code isn't added to git yet.
 
 ### Build instructions
 
