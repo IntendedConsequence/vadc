@@ -1,5 +1,35 @@
 # README
 
+## \[2024-08-16\] UPDATED SHORT VERSION
+
+First of all, the main code of the project is windows only. It doesn't have to be though, just didn't get to it yet.
+
+So, requirements:
+- windows
+- msvc 2022
+- avx2 - there are some crude simd optimizations, can be disabled
+
+How to build:
+run `build_msvc.bat`
+
+`build.bat` is old and used hardcoded clang paths, is not updated and probably doesn't work.
+
+The main executable is vadc. It calls ffmpeg with proper parameters if you pass a valid filepath, so have ffmpeg in PATH.
+Default backend is C. At the moment it is implementation of Silero VAD v3.1 16kHz.
+
+When built with C backend (the default) the vadc executable should be self-sufficient (not counting ffmpeg) and has the weights embedded.
+
+Usage:
+`vadc.exe <filepath>`
+
+Should output speech segment timestamps to stdout.
+
+There are tests which you can run with test.exe, but 7 of them should fail with max error magnitude 0 because their validation data is not added to the git repo because of the size or length of the test.
+
+## TODO: UPDATE OLD README
+
+- [ ] Fix outdated readme contents in the sections below
+
 ## What it does
 
 Given an input audio, outputs timestamp ranges for segments which are likely to contain speech.
