@@ -36,7 +36,11 @@ static inline void add_arrays_inplace ( float *array_a, int count, const float *
 // result:
 // ad + be + cf
 
+#if VADC_SLOW
+#define dotproduct dotproduct_slow
+#else
 #define dotproduct dotproduct_simd
+#endif // VADC_SLOW
 
 static inline float dotproduct_slow ( const float *arr, int count, const float *arr2, int count2 );
 

@@ -3,6 +3,10 @@
 
 #include <tracy\TracyC.h>
 
+#if !defined(VADC_SLOW)
+#define VADC_SLOW 0
+#endif // VADC_SLOW
+
 #include "utils.h"
 #include "tensor.h"
 

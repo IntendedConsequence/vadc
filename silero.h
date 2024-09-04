@@ -1,4 +1,9 @@
 #pragma once
+
+#if !defined(VADC_SLOW)
+#define VADC_SLOW 0
+#endif // VADC_SLOW
+
 #include "tensor.h"
 
 #include "decoder.c"

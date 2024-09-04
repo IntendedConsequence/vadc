@@ -531,9 +531,9 @@ static void my_stft ( MemoryArena *arena, TestTensor *input, TestTensor *filters
    output_dims[2] = features_count; // 25
 
    TestTensor *conv_output = tensor_zeros(arena, output_ndim, output_dims);
-#if 0
+#if VADC_SLOW
    conv_tensor_stride64_nobias( arena, input_padded, filters, conv_output );
-#else
+#else // VADC_SLOW
    {
       int batch_size = tdim(input_padded, 0);
       int array_count = tdim(input_padded, -1);
@@ -659,7 +659,7 @@ static void my_stft ( MemoryArena *arena, TestTensor *input, TestTensor *filters
          }
       }
    }
-#endif
+#endif // VADC_SLOW
    // [1, 258, 25]
    int batches = tdim(output, 0);
    for (int batch_index = 0; batch_index < batches; ++batch_index )
