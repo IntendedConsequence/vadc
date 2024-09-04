@@ -99,7 +99,7 @@ void __declspec(no_sanitize_address)print_shadow_memory( void *address )
   print_shadow_memory(address);
 #endif
 
-static u8 debug_arena_buffer_2[Megabytes( 16 )];
+static u8 debug_arena_buffer_2[Megabytes( 64 )];
 
 static MemoryArena DEBUG_debug_arena_2 = {0};
 
