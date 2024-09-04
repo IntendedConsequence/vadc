@@ -240,7 +240,8 @@ TestResult lstm_test()
              input_c->data,
              weights_transposed->data,
              lstm_biases->data,
-             output_combined
+             output_combined,
+             2
    );
 
    TestResult pass_lstm = all_close( output_combined_reference->data, output_combined, lstm_output_size, 1e-04f );
@@ -310,7 +311,8 @@ TestResult lstm_test_RED()
              input_c_array,
              weights->data,
              biases->data,
-             output_single_batch
+             output_single_batch,
+             layer_count
    );
    // print_array(output_single_batch, lstm_output_size);
 
@@ -321,6 +323,125 @@ TestResult lstm_test_RED()
    return pass_lstm;
 }
 
+
+// NOTE(irwin): same as old but in one file, and input audio wasn't normalized before stft
+TestResult lstm_test_RED_new()
+{
+   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+
+   LoadTesttensorResult lstm_testdata = {0};
+
+   lstm_testdata = load_testtensor(debug_arena, "testdata\\untracked\\RED600_lstm.testtensor" );
+
+   if (lstm_testdata.tensor_count == 0)
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
+
+
+   TestTensor *input = lstm_testdata.tensor_array + 0;
+
+   TestTensor *weights = lstm_testdata.tensor_array + 1;
+   TestTensor *biases = lstm_testdata.tensor_array + 2;
+
+   TestTensor *output_reference = lstm_testdata.tensor_array + 3;
+
+   Assert( input->ndim == 3 );
+   int batches = input->dims[0];
+   int seq_length = input->dims[1];
+   int input_size = input->dims[2];
+   int layer_count = weights->dims[0];
+
+   int batch_stride = seq_length * input_size;
+   int lstm_output_size = batch_stride * batches + (input_size * layer_count * 2);
+   // Assert(lstm_output_size == output_reference->size);
+
+   int hc_size = input_size * layer_count;
+   float *input_h_array = pushArray( debug_arena, hc_size, float );
+   float *input_c_array = pushArray( debug_arena, hc_size, float );
+   float *output_single_batch = pushArray( debug_arena, lstm_output_size, float );
+   // float *output_combined = pushArray( debug_arena, batches * seq_length * input_size, float );
+
+   lstm_seq( debug_arena, input->data,
+             seq_length * batches,
+             input_size,
+             input_h_array,
+             input_c_array,
+             weights->data,
+             biases->data,
+             output_single_batch,
+             layer_count
+   );
+   // print_array(output_single_batch, lstm_output_size);
+
+   TestResult pass_lstm = all_close( output_reference->data, output_single_batch, batch_stride * batches, 1e-04f );
+
+   endTemporaryMemory( mark );
+
+   return pass_lstm;
+}
+
+TestResult lstm_test_RED_1layer()
+{
+   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+
+   LoadTesttensorResult lstm_testdata = {0};
+
+   lstm_testdata = load_testtensor(debug_arena, "testdata\\untracked\\RED600_lstm_1layer.testtensor" );
+
+   if (lstm_testdata.tensor_count == 0)
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
+
+
+   TestTensor *input = lstm_testdata.tensor_array + 0;
+
+   TestTensor *weights = lstm_testdata.tensor_array + 1;
+   TestTensor *biases = lstm_testdata.tensor_array + 2;
+
+   TestTensor *output_reference = lstm_testdata.tensor_array + 3;
+
+   Assert( input->ndim == 3 );
+   int batches = input->dims[0];
+   int seq_length = input->dims[1];
+   int input_size = input->dims[2];
+   int layer_count = weights->dims[0];
+
+   int batch_stride = seq_length * input_size;
+   int lstm_output_size = batch_stride * batches + (input_size * layer_count * 2);
+   // Assert(lstm_output_size == output_reference->size);
+
+   int hc_size = input_size * layer_count;
+   float *input_h_array = pushArray( debug_arena, hc_size, float );
+   float *input_c_array = pushArray( debug_arena, hc_size, float );
+   float *output_single_batch = pushArray( debug_arena, lstm_output_size, float );
+   // float *output_combined = pushArray( debug_arena, batches * seq_length * input_size, float );
+
+   lstm_seq( debug_arena, input->data,
+             seq_length * batches,
+             input_size,
+             input_h_array,
+             input_c_array,
+             weights->data,
+             biases->data,
+             output_single_batch,
+             layer_count
+   );
+   // print_array(output_single_batch, lstm_output_size);
+
+   TestResult pass_lstm = all_close( output_reference->data, output_single_batch, batch_stride * batches, 1e-04f );
+
+   endTemporaryMemory( mark );
+
+   return pass_lstm;
+}
 
 TestResult dw_conv_129_test()
 {
@@ -1161,7 +1282,8 @@ TestResult stft_normalization_encoder_lstm_test()
              input_c_array,
              lstm_weights->data,
              lstm_biases->data,
-             output->data
+             output->data,
+             layer_count
    );
 
 
@@ -1260,7 +1382,8 @@ TestResult stft_normalization_encoder_lstm_decoder_test()
              input_c_array,
              lstm_weights->data,
              lstm_biases->data,
-             lstm_output
+             lstm_output,
+             layer_count
    );
 
    TestTensor *lstm_output_tensor = tensor_zeros_3d( debug_arena, batches, seq_length, input_size );
@@ -1394,7 +1517,8 @@ TestResult silero_test()
                 lstm_input_c->data,
                 silero_weights.lstm_weights->data,
                 silero_weights.lstm_biases->data,
-                lstm_output
+                lstm_output,
+                layer_count
       );
 
       // TODO(irwin):
@@ -1547,6 +1671,8 @@ TestFunctionDescription test_function_descriptions[] =
    TEST_FUNCTION_DESCRIPTION(adaptive_audio_normalization_test),
    TEST_FUNCTION_DESCRIPTION(lstm_test),
    TEST_FUNCTION_DESCRIPTION(lstm_test_RED),
+   TEST_FUNCTION_DESCRIPTION(lstm_test_RED_new),
+   TEST_FUNCTION_DESCRIPTION(lstm_test_RED_1layer),
 };
 
 // int main(int argc, char *argv[])

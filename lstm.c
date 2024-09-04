@@ -28,7 +28,14 @@ static void debugprint_array( const float *arr, int count, FILE *file_out )
 // IMPORTANT(irwin): biases are expected to be shared for both input data and hidden state. Since pytorch uses separate biases
 // for input data and hidden state for CUDA compatibility, if the caller comes from PyTorch, the caller must take care of
 // adding the pytorch separate biases before calling this function.
-static inline void lstm_cell ( MemoryArena *arena, const float *input_x, int input_x_count, const float *hidden_state_previous, const float *cell_state_previous, const float *weights_transposed, const float *biases, float *output_hc )
+static inline void lstm_cell ( MemoryArena *arena,
+                              const float *input_x,
+                              int input_x_count,
+                              const float *hidden_state_previous,
+                              const float *cell_state_previous,
+                              const float *weights_transposed,
+                              const float *biases,
+                              float *output_hc )
 {
    TracyCZone(lstm_cell, true);
 
@@ -89,7 +96,7 @@ static inline void lstm_cell ( MemoryArena *arena, const float *input_x, int inp
 // IMPORTANT(irwin): biases are expected to be shared for both input data and hidden state. Since pytorch uses separate biases
 // for input data and hidden state for CUDA compatibility, if the caller comes from PyTorch, the caller must take care of
 // adding the pytorch separate biases (within each lstm cell) before calling this function.
-static inline void lstm ( MemoryArena *arena, const float *input_x, int input_x_count, const float *hidden_state_previous, const float *cell_state_previous, const float *weights_transposed, const float *biases, float *output_hc )
+static inline void lstm ( MemoryArena *arena, const float *input_x, int input_x_count, const float *hidden_state_previous, const float *cell_state_previous, const float *weights_transposed, const float *biases, float *output_hc, int layers )
 {
    TracyCZone(lstm, true);
 
@@ -103,23 +110,52 @@ static inline void lstm ( MemoryArena *arena, const float *input_x, int input_x_
    MemoryArena *debug_arena = arena;
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
-   float *output_hc_unordered = pushArray( debug_arena, (hidden_state_stride + cell_state_stride) * 2, float );
+   float *output_hc_unordered = pushArray( debug_arena, (hidden_state_stride + cell_state_stride) * layers, float );
 
-   lstm_cell( debug_arena, input_x, input_x_count, hidden_state_previous, cell_state_previous, weights_transposed, biases, output_hc_unordered );
-   lstm_cell( debug_arena, output_hc_unordered, input_x_count, hidden_state_previous + hidden_state_stride, cell_state_previous + cell_state_stride, weights_transposed + weights_stride, biases + biases_stride, output_hc_unordered + hidden_state_stride + cell_state_stride );
+   float *output = output_hc_unordered;
+   const float *input = input_x;
+   for (int layer_index = 0; layer_index < layers; ++layer_index)
+   {
+      lstm_cell( debug_arena,
+                 input,
+                 input_x_count,
+                 hidden_state_previous + layer_index * hidden_state_stride,
+                 cell_state_previous + layer_index * cell_state_stride,
+                 weights_transposed + layer_index * weights_stride,
+                 biases + layer_index * biases_stride,
+                 output + layer_index * (hidden_state_stride + cell_state_stride) );
+
+      input = output + layer_index * (hidden_state_stride + cell_state_stride);
+
+      // lstm_cell( debug_arena,
+      //            output_hc_unordered,
+      //            input_x_count,
+      //            hidden_state_previous + hidden_state_stride,
+      //            cell_state_previous + cell_state_stride,
+      //            weights_transposed + weights_stride,
+      //            biases + biases_stride,
+      //            output + hidden_state_stride + cell_state_stride );
+   }
 
    // h0,c0 -> h0,h1
    // h1,c1 -> c0,c1
 
-   // TODO(irwin): memmove?
-   // h0
-   memcpy( output_hc, output_hc_unordered, hidden_state_stride * sizeof( float ) );
-   // h1
-   memcpy( output_hc + hidden_state_stride, output_hc_unordered + hidden_state_stride + cell_state_stride, hidden_state_stride * sizeof( float ) );
-   // c0
-   memcpy( output_hc + hidden_state_stride + cell_state_stride, output_hc_unordered + hidden_state_stride, cell_state_stride * sizeof( float ) );
-   // c1
-   memcpy( output_hc + hidden_state_stride + cell_state_stride + hidden_state_stride, output_hc_unordered + hidden_state_stride + cell_state_stride + hidden_state_stride, cell_state_stride * sizeof( float ) );
+
+   for (int layer_index = 0; layer_index < layers; ++layer_index)
+   {
+      // h0,h1...
+      memmove( output_hc + layer_index * hidden_state_stride,
+               output_hc_unordered + layer_index * (hidden_state_stride + cell_state_stride),
+               hidden_state_stride * sizeof( float ) );
+   }
+
+   for (int layer_index = 0; layer_index < layers; ++layer_index)
+   {
+      // c0,c1...
+      memmove( output_hc + layers * hidden_state_stride + layer_index * cell_state_stride,
+               output_hc_unordered + hidden_state_stride + layer_index * (hidden_state_stride + cell_state_stride),
+               cell_state_stride * sizeof( float ) );
+   }
 
    endTemporaryMemory( mark );
    TracyCZoneEnd(lstm);
@@ -130,7 +166,7 @@ static inline void lstm ( MemoryArena *arena, const float *input_x, int input_x_
 // adding the pytorch separate biases (within each lstm cell) before calling this function.
 // output:
 // [seq, input_x_count], h0,h1, c0,c1
-static inline void lstm_seq ( MemoryArena *arena, const float *input_x, int input_x_seq_count, int input_x_count, const float *hidden_state_previous, const float *cell_state_previous, const float *weights_transposed, const float *biases, float *output )
+static inline void lstm_seq ( MemoryArena *arena, const float *input_x, int input_x_seq_count, int input_x_count, const float *hidden_state_previous, const float *cell_state_previous, const float *weights_transposed, const float *biases, float *output, int layers )
 {
    TracyCZone(lstm_seq, true);
 
@@ -140,24 +176,24 @@ static inline void lstm_seq ( MemoryArena *arena, const float *input_x, int inpu
    MemoryArena *debug_arena = arena;
    TemporaryMemory mark = beginTemporaryMemory( debug_arena );
 
-   float *input_hc = pushArray( debug_arena, (input_size + hidden_size) * 2, float );
+   float *input_hc = pushArray( debug_arena, (input_size + hidden_size) * layers, float );
    float *input_h = input_hc;
-   float *input_c = input_hc + (hidden_size) * 2;
-   // TODO(irwin): memmove?
-   memcpy( input_h, hidden_state_previous, (hidden_size) * 2 * sizeof( float ) );
-   memcpy( input_c, cell_state_previous, (hidden_size) * 2 * sizeof( float ) );
+   float *input_c = input_hc + (hidden_size) * layers;
 
-   float *output_hc = pushArray( debug_arena, (input_size + hidden_size) * 2, float );
+   memmove( input_h, hidden_state_previous, (hidden_size) * layers * sizeof( float ) );
+   memmove( input_c, cell_state_previous, (hidden_size) * layers * sizeof( float ) );
+
+   float *output_hc = pushArray( debug_arena, (input_size + hidden_size) * layers, float );
    for ( int i = 0; i < input_x_seq_count; ++i )
    {
-      lstm( debug_arena, input_x + i * input_x_count, input_x_count, input_h, input_c, weights_transposed, biases, output_hc );
+      lstm( debug_arena, input_x + i * input_x_count, input_x_count, input_h, input_c, weights_transposed, biases, output_hc, layers );
 
-      // TODO(irwin): memmove?
-      memcpy( input_hc, output_hc, (input_size + hidden_size) * 2 * sizeof( float ) );
-      memcpy( output + i * input_x_count, output_hc + hidden_size, hidden_size * sizeof( float ) );
+
+      memmove( input_hc, output_hc, (input_size + hidden_size) * layers * sizeof( float ) );
+      memmove( output + i * input_x_count, output_hc + (hidden_size * (layers - 1)), hidden_size * sizeof( float ) );
    }
-   // TODO(irwin): memmove?
-   memcpy( output + input_x_seq_count * input_x_count, output_hc, (input_size + hidden_size) * 2 * sizeof( float ) );
+
+   memmove( output + input_x_seq_count * input_x_count, output_hc, (input_size + hidden_size) * layers * sizeof( float ) );
 
    endTemporaryMemory( mark );
    TracyCZoneEnd(lstm_seq);

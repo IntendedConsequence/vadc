@@ -531,7 +531,7 @@ static One_Batch_Result silero_run_one_batch_with_context(MemoryArena *arena, Si
                 lstm_input_c->data,
                 context->weights.lstm_weights->data,
                 context->weights.lstm_biases->data,
-                lstm_output
+                lstm_output, 2
       );
 
       // TODO(irwin):
