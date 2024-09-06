@@ -780,7 +780,41 @@ TestResult stft_test()
 
    TestTensor *output = tensor_zeros_like( debug_arena, result );
 
-   my_stft(debug_arena, input, forward_basis_buffer, output );
+   my_stft(debug_arena, input, forward_basis_buffer, output, 64, 128 );
+
+   float atol = 1e-4f;
+   TestResult test_result = all_close( result->data, output->data, result->size, atol );
+
+   endTemporaryMemory( mark );
+
+   return test_result;
+}
+
+TestResult stft_test_v5()
+{
+   MemoryArena *debug_arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+
+   LoadTesttensorResult res = {0};
+   res = load_testtensor(debug_arena, "testdata\\untracked\\RED600_stft_v5.testtensor" );
+   if (res.tensor_count == 0)
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
+
+   // TODO(irwin): validate loaded tensor count helpers
+   Assert( res.tensor_count == 3 );
+
+   int test_data_index = 0;
+   TestTensor *input = res.tensor_array + test_data_index++;
+   TestTensor *forward_basis_buffer = res.tensor_array + test_data_index++;
+   TestTensor *result = res.tensor_array + test_data_index++;
+
+   TestTensor *output = tensor_zeros_like( debug_arena, result );
+
+   my_stft_(debug_arena, input, forward_basis_buffer, output, 128, 0, 64 );
 
    float atol = 1e-4f;
    TestResult test_result = all_close( result->data, output->data, result->size, atol );
@@ -1230,16 +1264,17 @@ TestResult stft_normalization_encoder_test()
    TestTensor *result = res.tensor_array + test_data_index++;
 
    int cutoff;
+   int half_filter_length;
    {
       int filter_length = tdim( forward_basis_buffer, 2 );
-      int half_filter_length = filter_length / 2;
+      half_filter_length = filter_length / 2;
       cutoff = half_filter_length + 1;
    }
    // TODO(irwin): dehardcode 64 hop_length
-   int stft_out_features_count = compute_stft_output_feature_count( input, forward_basis_buffer, 64 );
+   int stft_out_features_count = compute_stft_output_feature_count( input, forward_basis_buffer, 64, half_filter_length );
    TestTensor *stft_output = tensor_zeros_3d( debug_arena, tdim( input, -2 ), cutoff, stft_out_features_count );
 
-   my_stft( debug_arena, input, forward_basis_buffer, stft_output );
+   my_stft( debug_arena, input, forward_basis_buffer, stft_output, 64, 128 );
 
    TestTensor *normalization_output = tensor_copy( debug_arena, stft_output );
    adaptive_audio_normalization_inplace( debug_arena, normalization_output );
@@ -1298,16 +1333,17 @@ TestResult stft_normalization_encoder_lstm_test()
    TestTensor *output = tensor_zeros_like( debug_arena, result );
 
    int cutoff;
+   int half_filter_length;
    {
       int filter_length = tdim( forward_basis_buffer, 2 );
-      int half_filter_length = filter_length / 2;
+      half_filter_length = filter_length / 2;
       cutoff = half_filter_length + 1;
    }
    // TODO(irwin): dehardcode 64 hop_length
-   int stft_out_features_count = compute_stft_output_feature_count( input, forward_basis_buffer, 64 );
+   int stft_out_features_count = compute_stft_output_feature_count( input, forward_basis_buffer, 64, half_filter_length );
    TestTensor *stft_output = tensor_zeros_3d( debug_arena, tdim( input, -2 ), cutoff, stft_out_features_count );
 
-   my_stft( debug_arena, input, forward_basis_buffer, stft_output );
+   my_stft( debug_arena, input, forward_basis_buffer, stft_output, 64, 128);
 
    TestTensor *normalization_output = tensor_copy( debug_arena, stft_output );
    adaptive_audio_normalization_inplace( debug_arena, normalization_output );
@@ -1398,16 +1434,17 @@ TestResult stft_normalization_encoder_lstm_decoder_test()
    TestTensor *output = tensor_zeros_like( debug_arena, result );
 
    int cutoff;
+   int half_filter_length;
    {
       int filter_length = tdim( forward_basis_buffer, 2 );
-      int half_filter_length = filter_length / 2;
+      half_filter_length = filter_length / 2;
       cutoff = half_filter_length + 1;
    }
    // TODO(irwin): dehardcode 64 hop_length
-   int stft_out_features_count = compute_stft_output_feature_count( input, forward_basis_buffer, 64 );
+   int stft_out_features_count = compute_stft_output_feature_count( input, forward_basis_buffer, 64, half_filter_length );
    TestTensor *stft_output = tensor_zeros_3d( debug_arena, tdim( input, -2 ), cutoff, stft_out_features_count );
 
-   my_stft( debug_arena, input, forward_basis_buffer, stft_output );
+   my_stft( debug_arena, input, forward_basis_buffer, stft_output, 64, 128 );
 
    TestTensor *normalization_output = tensor_copy( debug_arena, stft_output );
    adaptive_audio_normalization_inplace( debug_arena, normalization_output );
@@ -1531,16 +1568,17 @@ TestResult silero_test()
       TestTensor input_one_batch = tensor_index_first_dim( input_batches, batch_index, true );
 
       int cutoff;
+      int half_filter_length;
       {
          int filter_length = tdim( silero_weights.forward_basis_buffer, 2 );
-         int half_filter_length = filter_length / 2;
+         half_filter_length = filter_length / 2;
          cutoff = half_filter_length + 1;
       }
       // TODO(irwin): dehardcode 64 hop_length
-      int stft_out_features_count = compute_stft_output_feature_count( &input_one_batch, silero_weights.forward_basis_buffer, 64 );
+      int stft_out_features_count = compute_stft_output_feature_count( &input_one_batch, silero_weights.forward_basis_buffer, 64, half_filter_length );
       TestTensor *stft_output = tensor_zeros_3d( debug_arena, tdim( &input_one_batch, -2 ), cutoff, stft_out_features_count );
 
-      my_stft( debug_arena, &input_one_batch, silero_weights.forward_basis_buffer, stft_output );
+      my_stft( debug_arena, &input_one_batch, silero_weights.forward_basis_buffer, stft_output, 64, 128 );
 
       TestTensor *normalization_output = tensor_copy( debug_arena, stft_output );
 #endif
@@ -1727,6 +1765,7 @@ TestFunctionDescription test_function_descriptions[] =
    TEST_FUNCTION_DESCRIPTION( stft_normalization_encoder_lstm_decoder_test ),
    TEST_FUNCTION_DESCRIPTION( silero_test ),
    TEST_FUNCTION_DESCRIPTION(stft_test),
+   TEST_FUNCTION_DESCRIPTION(stft_test_v5),
    TEST_FUNCTION_DESCRIPTION(adaptive_audio_normalization_test),
    TEST_FUNCTION_DESCRIPTION(lstm_test),
    TEST_FUNCTION_DESCRIPTION(lstm_test_RED),

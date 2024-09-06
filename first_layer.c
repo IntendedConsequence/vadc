@@ -305,12 +305,14 @@ static void conv_tensor_stride64_nobias ( MemoryArena *arena, TestTensor *input,
    TracyCZoneEnd(conv_tensor_stride64_nobias);
 }
 
-static TestTensor *tensor_reflect_pad_last_dim( MemoryArena *arena, TestTensor *input, int padding )
+static TestTensor *tensor_reflect_pad_last_dim_lr( MemoryArena *arena, TestTensor *input, int padding_left, int padding_right )
 {
    TracyCZone(tensor_reflect_pad_last_dim, true);
    int last_dim_index = tdimindex( input, -1 );
    int last_dim = input->dims[last_dim_index];
-   int last_dim_padded = last_dim + 2 * padding;
+
+   Assert(padding_left >= 0 && padding_right >= 0);
+   int last_dim_padded = last_dim + padding_left + padding_right;
 
    int *new_dims = pushArray( arena, input->ndim, int );
    for ( int i = 0; i < input->ndim; ++i )
@@ -327,24 +329,33 @@ static TestTensor *tensor_reflect_pad_last_dim( MemoryArena *arena, TestTensor *
       float *input_row = input->data + i * last_dim;
       float *output_row_start = new_tensor->data + i * last_dim_padded;
 
-      float *output_row_unpadded = output_row_start + padding;
+      float *output_row_unpadded = output_row_start + padding_left;
       memcpy( output_row_unpadded, input_row, last_dim * sizeof(float) );
 
       float *output_row_pad_left_cursor = output_row_start;
-      float *output_row_pad_right_cursor = output_row_start + last_dim_padded - padding;
+      float *output_row_pad_right_cursor = output_row_start + last_dim_padded - padding_right;
 
-      float *input_row_reflect_left_cursor = input_row + padding;
+      float *input_row_reflect_left_cursor = input_row + padding_left;
       float *input_row_reflect_right_cursor = input_row + last_dim - 2;
 
-      for (int j = 0; j < padding; ++j)
+      for (int j = 0; j < padding_left; ++j)
       {
          *output_row_pad_left_cursor++ = *input_row_reflect_left_cursor--;
+      }
+
+      for (int j = 0; j < padding_right; ++j)
+      {
          *output_row_pad_right_cursor++ = *input_row_reflect_right_cursor--;
       }
    }
 
    TracyCZoneEnd(tensor_reflect_pad_last_dim);
    return new_tensor;
+}
+
+static inline TestTensor *tensor_reflect_pad_last_dim( MemoryArena *arena, TestTensor *input, int padding )
+{
+   return tensor_reflect_pad_last_dim_lr(arena, input, padding, padding);
 }
 
 static void adaptive_audio_normalization_inplace(MemoryArena *arena, TestTensor *input)
@@ -472,16 +483,21 @@ static void adaptive_audio_normalization_inplace(MemoryArena *arena, TestTensor 
    TracyCZoneEnd(adaptive_audio_normalization_inplace);
 }
 
-static inline int compute_stft_output_feature_count( TestTensor *input, TestTensor *filters, int hop_length )
+static inline int compute_stft_output_feature_count_lr( TestTensor *input, TestTensor *filters, int hop_length, int pad_left, int pad_right )
 {
    int filter_length = tdim( filters, 2 );
-   int padding = filter_length / 2;
-   int features_count = (tdim( input, -1 ) + padding * 2 - filter_length) / hop_length + 1; // padded (128 + 1536 + 128) - filter first (256) / hop length (64) + filter first (1)
+   // int padding = filter_length / 2;
+   int features_count = (tdim( input, -1 ) + (pad_left + pad_right) - filter_length) / hop_length + 1; // padded (128 + 1536 + 128) - filter first (256) / hop length (64) + filter first (1)
 
    return features_count;
 }
 
-static void my_stft ( MemoryArena *arena, TestTensor *input, TestTensor *filters, TestTensor *output )
+static inline int compute_stft_output_feature_count( TestTensor *input, TestTensor *filters, int hop_length, int padding )
+{
+   return compute_stft_output_feature_count_lr( input, filters, hop_length, padding, padding );
+}
+
+static void my_stft_ ( MemoryArena *arena, TestTensor *input, TestTensor *filters, TestTensor *output, int hop_length, int pad_left, int pad_right )
 {
    TracyCZone(my_stft, true);
 
@@ -493,14 +509,13 @@ static void my_stft ( MemoryArena *arena, TestTensor *input, TestTensor *filters
    Assert(tdim(filters, 2) == 256);
 
    int filter_length = tdim(filters, 2);
-   int padding = filter_length / 2;
-   Assert(padding * 2 == filter_length);
+   // int padding = filter_length / 2;
+   // Assert(padding * 2 == filter_length);
    int half_filter_length = filter_length / 2;
    int cutoff = half_filter_length + 1;
-   int hop_length = 64;
-   //int features_count = (tdim(input, -1) + padding * 2 - filter_length) / hop_length + 1; // padded (128 + 1536 + 128) - filter first (256) / hop length (64) + filter first (1)
+   // int hop_length = 64;
 
-   int features_count = compute_stft_output_feature_count( input, filters, hop_length );
+   int features_count = compute_stft_output_feature_count_lr( input, filters, hop_length, pad_left, pad_right );
 
    Assert(tdim(output, 0) == tdim(input, 0));
    Assert(tdim(output, 1) == cutoff);
@@ -522,7 +537,7 @@ static void my_stft ( MemoryArena *arena, TestTensor *input, TestTensor *filters
       input_3d = *input;
    }
 
-   TestTensor *input_padded = tensor_reflect_pad_last_dim( arena, &input_3d, padding );
+   TestTensor *input_padded = tensor_reflect_pad_last_dim_lr( arena, &input_3d, pad_left, pad_right );
 
    int output_ndim = 3;
    int output_dims[3] = {0};
@@ -693,6 +708,10 @@ static void my_stft ( MemoryArena *arena, TestTensor *input, TestTensor *filters
    TracyCZoneEnd(my_stft);
 }
 
+static void my_stft ( MemoryArena *arena, TestTensor *input, TestTensor *filters, TestTensor *output, int hop_length, int padding )
+{
+   my_stft_ ( arena, input, filters, output, hop_length, padding, padding );
+}
 
 
 static void conv_block(MemoryArena *arena,  TestTensor *input, b32 has_out_proj,

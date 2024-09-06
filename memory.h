@@ -114,7 +114,7 @@ MemoryArena *DEBUG_getDebugArena()
    {
       // NOTE(irwin): not initialized
       //__asan_get_shadow_mapping( &shadow_memory_scale, &shadow_memory_offset );
-#if 0
+#if 1
       u64 size = Megabytes( 512 );
       void *address = VirtualAlloc( 0, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE );
       initializeMemoryArena( &DEBUG_debug_arena_2, address, size );

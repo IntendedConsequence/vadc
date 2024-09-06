@@ -486,16 +486,17 @@ static One_Batch_Result silero_run_one_batch_with_context(MemoryArena *arena, Si
       TemporaryMemory batch_mark = beginTemporaryMemory( debug_arena );
 
       int cutoff;
+      int half_filter_length;
       {
          int filter_length = tdim( context->weights.forward_basis_buffer, 2 );
-         int half_filter_length = filter_length / 2;
+         half_filter_length = filter_length / 2;
          cutoff = half_filter_length + 1;
       }
       // TODO(irwin): dehardcode 64 hop_length
-      int stft_out_features_count = compute_stft_output_feature_count( input_one_batch, context->weights.forward_basis_buffer, 64 );
+      int stft_out_features_count = compute_stft_output_feature_count( input_one_batch, context->weights.forward_basis_buffer, 64, half_filter_length );
       TestTensor *stft_output = tensor_zeros_3d( debug_arena, tdim( input_one_batch, -2 ), cutoff, stft_out_features_count );
 
-      my_stft( debug_arena, input_one_batch, context->weights.forward_basis_buffer, stft_output );
+      my_stft( debug_arena, input_one_batch, context->weights.forward_basis_buffer, stft_output, 64, 128 );
 
       TestTensor *normalization_output = tensor_copy( debug_arena, stft_output );
 
