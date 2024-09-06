@@ -244,7 +244,7 @@ TestResult lstm_test()
              2
    );
 
-   TestResult pass_lstm = all_close( output_combined_reference->data, output_combined, lstm_output_size, 1e-04f );
+   TestResult pass_lstm = all_close( output_combined_reference->data, output_combined, output_combined_reference->size, 1e-04f );
 
    endTemporaryMemory( mark );
 
@@ -316,7 +316,7 @@ TestResult lstm_test_RED()
    );
    // print_array(output_single_batch, lstm_output_size);
 
-   TestResult pass_lstm = all_close( output_reference->data, output_single_batch, batch_stride * batches, 1e-04f );
+   TestResult pass_lstm = all_close( output_reference->data, output_single_batch, output_reference->size, 1e-04f );
 
    endTemporaryMemory( mark );
 
