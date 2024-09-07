@@ -626,6 +626,57 @@ TestResult v5_reparam_conv_test()
    return test_result;
 }
 
+TestResult v5_reparam_conv2_test()
+{
+   MemoryArena *arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( arena );
+
+   LoadTesttensorResult res = {0};
+   res = load_testtensor(arena, "testdata\\untracked\\v5_reparam_conv2.testtensor" );
+   if (res.tensor_count == 0)
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
+   TestTensor *input = res.tensor_array + 0;
+   TestTensor *weights = res.tensor_array + 1;
+   TestTensor *biases = res.tensor_array + 2;
+   TestTensor *reference_tensor = res.tensor_array + 3;
+
+   ConvOutputShape output_shape = conv_output_shape_pad( input, weights, 2, 1 );
+
+   size_t output_size = output_shape.batch_size * output_shape.channels_out * output_shape.sequence_length * sizeof( float );
+   Assert( output_size == reference_tensor->nbytes );
+   VAR_UNUSED( output_size );
+
+   Assert(output_shape.batch_size == tdim(reference_tensor, 0));
+   Assert(output_shape.channels_out == tdim(reference_tensor, 1));
+   Assert(output_shape.sequence_length == tdim(reference_tensor, 2));
+
+   TestTensor *input_padded = tensor_zero_pad_last_dim_lr(arena, input, 1, 1);
+   TestTensor *output_tensor = conv_tensor_out(arena, input_padded, weights, biases, 2 );
+   tensor_relu_inplace(output_tensor);
+
+
+   float atol = 1e-4f;
+
+   TestResult test_result = all_close( reference_tensor->data, output_tensor->data, reference_tensor->size, atol );
+
+#if 0
+   if ( test_result.max_error > atol )
+   {
+      //const char *funcname = __FUNCTION__;
+      dump_tensor_hdr( "output.hdr", output_tensor );
+      dump_tensor_hdr( "output_expected.hdr", reference_tensor );
+   }
+#endif
+
+   endTemporaryMemory( mark );
+
+   return test_result;
+}
+
 TestResult first_layer_conv_block_test()
 {
    MemoryArena *debug_arena = DEBUG_getDebugArena();
@@ -1799,7 +1850,7 @@ TestFunctionDescription test_function_descriptions[] =
 {
    TEST_FUNCTION_DESCRIPTION(dw_conv_129_test),
    TEST_FUNCTION_DESCRIPTION(v5_reparam_conv_test),
-   TEST_FUNCTION_DESCRIPTION(pw_conv_129_16_test),
+   TEST_FUNCTION_DESCRIPTION(v5_reparam_conv2_test),
    TEST_FUNCTION_DESCRIPTION(first_layer_conv_block_test),
    TEST_FUNCTION_DESCRIPTION(decoder_test),
    TEST_FUNCTION_DESCRIPTION(transpose2d_test),
