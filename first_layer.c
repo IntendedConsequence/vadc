@@ -305,6 +305,36 @@ static void conv_tensor_stride64_nobias ( MemoryArena *arena, TestTensor *input,
    TracyCZoneEnd(conv_tensor_stride64_nobias);
 }
 
+static TestTensor *tensor_zero_pad_last_dim_lr( MemoryArena *arena, TestTensor *input, int padding_left, int padding_right )
+{
+   int last_dim_index = tdimindex( input, -1 );
+   int last_dim = input->dims[last_dim_index];
+
+   Assert(padding_left >= 0 && padding_right >= 0);
+   int last_dim_padded = last_dim + padding_left + padding_right;
+
+   int *new_dims = pushArray( arena, input->ndim, int );
+   for ( int i = 0; i < input->ndim; ++i )
+   {
+      new_dims[i] = input->dims[i];
+   }
+   new_dims[last_dim_index] = last_dim_padded;
+
+   int rows = input->size / last_dim;
+   TestTensor *new_tensor = tensor_zeros( arena, input->ndim, new_dims );
+
+   for (int i = 0; i < rows; ++i)
+   {
+      float *input_row = input->data + i * last_dim;
+      float *output_row_start = new_tensor->data + i * last_dim_padded;
+
+      float *output_row_unpadded = output_row_start + padding_left;
+      memcpy( output_row_unpadded, input_row, last_dim * sizeof(float) );
+   }
+
+   return new_tensor;
+}
+
 static TestTensor *tensor_reflect_pad_last_dim_lr( MemoryArena *arena, TestTensor *input, int padding_left, int padding_right )
 {
    TracyCZone(tensor_reflect_pad_last_dim, true);

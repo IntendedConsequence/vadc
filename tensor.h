@@ -725,7 +725,7 @@ struct ConvOutputShape
    int sequence_length;
 };
 
-static inline ConvOutputShape conv_output_shape( TestTensor *input, TestTensor *weights, int stride )
+static inline ConvOutputShape conv_output_shape_pad( TestTensor *input, TestTensor *weights, int stride, int pad )
 {
    Assert( weights->ndim == 3 );
 
@@ -736,9 +736,14 @@ static inline ConvOutputShape conv_output_shape( TestTensor *input, TestTensor *
    int sequence_count_in = tdim(input, -1);
    int kernel_size = tdim(weights, -1);
    int hop_length = stride;
-   out.sequence_length = 1 + (sequence_count_in - kernel_size) / hop_length;
+   out.sequence_length = 1 + (sequence_count_in + 2 * pad - kernel_size) / hop_length;
 
    return out;
+}
+
+static inline ConvOutputShape conv_output_shape( TestTensor *input, TestTensor *weights, int stride )
+{
+   return conv_output_shape_pad(input, weights, stride, 0);
 }
 
 static inline ConvOutputShape conv_output_shape_shape( ConvOutputShape input_shape, TestTensor *weights, int stride )
