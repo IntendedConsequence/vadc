@@ -202,6 +202,42 @@ TestResult decoder_test()
    return test_result;
 }
 
+TestResult decoder_test_v5()
+{
+   MemoryArena *arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( arena );
+
+   LoadTesttensorResult decoder_testdata = {0};
+
+   decoder_testdata = load_testtensor(arena, "testdata\\untracked\\v5_decoder.testtensor" );
+
+   if (decoder_testdata.tensor_count == 0)
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
+
+
+   TestTensor *input = decoder_testdata.tensor_array + 0;
+
+   TestTensor *weights = decoder_testdata.tensor_array + 1;
+   TestTensor *biases = decoder_testdata.tensor_array + 2;
+
+   TestTensor *output_reference = decoder_testdata.tensor_array + 3;
+
+   TestTensor *relu_out = tensor_copy(arena, input);
+   tensor_relu_inplace(relu_out);
+   TestTensor *conv_out = conv_tensor_out(arena, relu_out, weights, biases, 1);
+   mysigmoid_inplace(conv_out->data, conv_out->size);
+
+   TestResult pass_lstm = all_close( output_reference->data, conv_out->data, output_reference->size, 1e-04f );
+
+   endTemporaryMemory( mark );
+
+   return pass_lstm;
+}
+
 TestResult lstm_test()
 {
    MemoryArena *debug_arena = DEBUG_getDebugArena();
@@ -1955,6 +1991,7 @@ TestFunctionDescription test_function_descriptions[] =
    TEST_FUNCTION_DESCRIPTION(v5_reparam_conv2_test),
    TEST_FUNCTION_DESCRIPTION(v5_reparam_conv3_test),
    TEST_FUNCTION_DESCRIPTION(v5_reparam_conv4_test),
+   TEST_FUNCTION_DESCRIPTION(decoder_test_v5),
    TEST_FUNCTION_DESCRIPTION(decoder_test),
    TEST_FUNCTION_DESCRIPTION(transpose2d_test),
    TEST_FUNCTION_DESCRIPTION(softmax_test),
