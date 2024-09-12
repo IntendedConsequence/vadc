@@ -38,7 +38,7 @@ POI:
     - `maths.h`
     - `tensor.h`
     - `decoder.c`
-    - `first_layer.c`
+    - `conv.c`
     - `lstm.c`
     - `transformer.c`
 

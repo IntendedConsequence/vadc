@@ -7,7 +7,7 @@
 #include "tensor.h"
 
 #include "decoder.c"
-#include "first_layer.c"
+#include "conv.c"
 #include "lstm.c"
 #include "transformer.c"
 #include "silero.h"
