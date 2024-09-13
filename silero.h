@@ -12,6 +12,7 @@
 #include "stft.c"
 #include "lstm.c"
 #include "transformer.c"
+#include "silero_v3.c"
 
 #define MATHS_IMPLEMENTATION
 #include "maths.h"
