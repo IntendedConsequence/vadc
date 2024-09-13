@@ -8,6 +8,7 @@
 
 #include "decoder.c"
 #include "conv.c"
+#include "stft.c"
 #include "lstm.c"
 #include "transformer.c"
 #include "silero.h"
