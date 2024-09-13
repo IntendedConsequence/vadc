@@ -13,6 +13,7 @@
 
 #include "decoder.c"
 #include "conv.c"
+#include "misc.c"
 #include "stft.c"
 #include "lstm.c"
 #include "transformer.c"
