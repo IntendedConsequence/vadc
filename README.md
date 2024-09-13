@@ -37,10 +37,12 @@ POI:
     - `silero.h`
     - `maths.h`
     - `tensor.h`
-    - `decoder.c`
     - `conv.c`
     - `lstm.c`
+    - `stft.c`
     - `transformer.c`
+    - `silero_v3.c`
+    - `misc.c`
 
 Old and obsolete:
 - `vadc.py` - old python wrapper that runs vadc
