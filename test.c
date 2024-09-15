@@ -2177,11 +2177,8 @@ struct TestFunctionDescription
 TestFunctionDescription test_function_descriptions[] =
 {
    TEST_FUNCTION_DESCRIPTION(dw_conv_129_test),
-   TEST_FUNCTION_DESCRIPTION(v5_reparam_conv_test),
-   TEST_FUNCTION_DESCRIPTION(v5_reparam_conv2_test),
-   TEST_FUNCTION_DESCRIPTION(v5_reparam_conv3_test),
-   TEST_FUNCTION_DESCRIPTION(v5_reparam_conv4_test),
-   TEST_FUNCTION_DESCRIPTION(decoder_test_v5),
+   TEST_FUNCTION_DESCRIPTION(pw_conv_129_16_test),
+   TEST_FUNCTION_DESCRIPTION(first_layer_conv_block_test),
    TEST_FUNCTION_DESCRIPTION(decoder_test),
    TEST_FUNCTION_DESCRIPTION(transpose2d_test),
    TEST_FUNCTION_DESCRIPTION(softmax_test),
@@ -2200,13 +2197,19 @@ TestFunctionDescription test_function_descriptions[] =
    TEST_FUNCTION_DESCRIPTION( stft_normalization_encoder_lstm_decoder_test ),
    TEST_FUNCTION_DESCRIPTION( silero_test ),
    TEST_FUNCTION_DESCRIPTION(stft_test),
-   TEST_FUNCTION_DESCRIPTION(stft_test_v5),
    TEST_FUNCTION_DESCRIPTION(adaptive_audio_normalization_test),
    TEST_FUNCTION_DESCRIPTION(lstm_test),
    TEST_FUNCTION_DESCRIPTION(lstm_test_RED),
    TEST_FUNCTION_DESCRIPTION(lstm_test_RED_new),
    TEST_FUNCTION_DESCRIPTION(lstm_test_RED_1layer),
+
+   TEST_FUNCTION_DESCRIPTION(stft_test_v5),
+   TEST_FUNCTION_DESCRIPTION(v5_reparam_conv_test),
+   TEST_FUNCTION_DESCRIPTION(v5_reparam_conv2_test),
+   TEST_FUNCTION_DESCRIPTION(v5_reparam_conv3_test),
+   TEST_FUNCTION_DESCRIPTION(v5_reparam_conv4_test),
    TEST_FUNCTION_DESCRIPTION(lstm_test_RED_v5),
+   TEST_FUNCTION_DESCRIPTION(decoder_test_v5),
    TEST_FUNCTION_DESCRIPTION(silero_v5_test),
 };
 
