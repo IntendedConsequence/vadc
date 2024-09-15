@@ -1967,6 +1967,194 @@ TestResult transformer_layers_3_test()
    return test_result;
 }
 
+TestResult silero_v5_test()
+{
+   MemoryArena *arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( arena );
+
+   LoadTesttensorResult res = {0};
+   res = load_testtensor(arena, "testdata\\untracked\\RED600_silero_v5.testtensor" );
+   if (res.tensor_count == 0)
+   {
+      endTemporaryMemory( mark );
+      TestResult test_result = {0};
+      return test_result;
+   }
+
+   // TODO(irwin): validate loaded tensor count helpers
+   Assert( res.tensor_count == 15 );
+
+   int test_data_index = 0;
+   TestTensor *stft_input = res.tensor_array + test_data_index++;
+
+   TestTensor *forward_basis_buffer = res.tensor_array + test_data_index++;
+
+   TestTensor *reparam_conv_0_weights = res.tensor_array + test_data_index++;
+   TestTensor *reparam_conv_0_biases = res.tensor_array + test_data_index++;
+
+   TestTensor *reparam_conv_1_weights = res.tensor_array + test_data_index++;
+   TestTensor *reparam_conv_1_biases = res.tensor_array + test_data_index++;
+
+   TestTensor *reparam_conv_2_weights = res.tensor_array + test_data_index++;
+   TestTensor *reparam_conv_2_biases = res.tensor_array + test_data_index++;
+
+   TestTensor *reparam_conv_3_weights = res.tensor_array + test_data_index++;
+   TestTensor *reparam_conv_3_biases = res.tensor_array + test_data_index++;
+
+   TestTensor *lstm_weights = res.tensor_array + test_data_index++;
+   TestTensor *lstm_biases = res.tensor_array + test_data_index++;
+
+   TestTensor *decoder_weights = res.tensor_array + test_data_index++;
+   TestTensor *decoder_biases = res.tensor_array + test_data_index++;
+
+
+   TestTensor *reference_probs = res.tensor_array + test_data_index++;
+
+   ////////////////////////////////////////////////////////////////////////////
+   // NOTE(irwin): STFT
+   ////////////////////////////////////////////////////////////////////////////
+   TestTensor *stft_output = 0;
+
+   int hop_length = 128;
+   int pad_left = 0;
+   int pad_right = 64;
+   {
+      int filter_length = tdim(forward_basis_buffer, 2);
+      int half_filter_length = filter_length / 2;
+      int cutoff = half_filter_length + 1;
+
+      int features_count = compute_stft_output_feature_count_lr( stft_input, forward_basis_buffer, hop_length, pad_left, pad_right );
+
+      stft_output = tensor_zeros_3d( arena, tdim(stft_input, 0), cutoff, features_count );
+   }
+
+
+   my_stft_(arena, stft_input, forward_basis_buffer, stft_output, hop_length, pad_left, pad_right );
+
+   TestTensor *reparam_conv_0_output = 0;
+   TestTensor *reparam_conv_1_output = 0;
+   TestTensor *reparam_conv_2_output = 0;
+   TestTensor *reparam_conv_3_output = 0;
+
+   ////////////////////////////////////////////////////////////////////////////
+   // NOTE(irwin): Encoder.0
+   ////////////////////////////////////////////////////////////////////////////
+   {
+      // ConvOutputShape output_shape = conv_output_shape_pad( stft_output, reparam_conv_0_weights, 1, 1 );
+
+      TestTensor *stft_output_padded = tensor_zero_pad_last_dim_lr(arena, stft_output, 1, 1);
+      reparam_conv_0_output = conv_tensor_out(arena, stft_output_padded, reparam_conv_0_weights, reparam_conv_0_biases, 1 );
+      tensor_relu_inplace(reparam_conv_0_output);
+   }
+
+   ////////////////////////////////////////////////////////////////////////////
+   // NOTE(irwin): Encoder.1
+   ////////////////////////////////////////////////////////////////////////////
+   {
+      // ConvOutputShape output_shape = conv_output_shape_pad( reparam_conv_0_output, reparam_conv_1_weights, 2, 1 );
+
+      TestTensor *reparam_conv_0_output_padded = tensor_zero_pad_last_dim_lr(arena, reparam_conv_0_output, 1, 1);
+      reparam_conv_1_output = conv_tensor_out(arena, reparam_conv_0_output_padded, reparam_conv_1_weights, reparam_conv_1_biases, 2 );
+      tensor_relu_inplace(reparam_conv_1_output);
+   }
+
+   ////////////////////////////////////////////////////////////////////////////
+   // NOTE(irwin): Encoder.2
+   ////////////////////////////////////////////////////////////////////////////
+   {
+      // ConvOutputShape output_shape = conv_output_shape_pad( reparam_conv_1_output, reparam_conv_2_weights, 2, 1 );
+
+      TestTensor *reparam_conv_1_output_padded = tensor_zero_pad_last_dim_lr(arena, reparam_conv_1_output, 1, 1);
+      reparam_conv_2_output = conv_tensor_out(arena, reparam_conv_1_output_padded, reparam_conv_2_weights, reparam_conv_2_biases, 2 );
+      tensor_relu_inplace(reparam_conv_2_output);
+   }
+
+   ////////////////////////////////////////////////////////////////////////////
+   // NOTE(irwin): Encoder.3
+   ////////////////////////////////////////////////////////////////////////////
+   {
+      // ConvOutputShape output_shape = conv_output_shape_pad( reparam_conv_2_output, reparam_conv_3_weights, 1, 1 );
+
+      TestTensor *reparam_conv_2_output_padded = tensor_zero_pad_last_dim_lr(arena, reparam_conv_2_output, 1, 1);
+      reparam_conv_3_output = conv_tensor_out(arena, reparam_conv_2_output_padded, reparam_conv_3_weights, reparam_conv_3_biases, 1 );
+      tensor_relu_inplace(reparam_conv_3_output);
+   }
+
+   TestTensor *reparam_conv_3_output_t = tensor_transpose_last_2d(arena, reparam_conv_3_output);
+
+   float *lstm_output = 0;
+   TestTensor lstm_out_tensor = {0};
+
+   ////////////////////////////////////////////////////////////////////////////
+   // NOTE(irwin): LSTM
+   ////////////////////////////////////////////////////////////////////////////
+   {
+      int batches = tdim(reparam_conv_3_output_t, 0);
+      int seq_length = tdim(reparam_conv_3_output_t, 1);
+      int input_size = tdim(reparam_conv_3_output_t, 2);
+      int layer_count = tdim(lstm_weights, 0);
+
+      int batch_stride = seq_length * input_size;
+      int lstm_output_size = batch_stride * batches + (input_size * layer_count * 2);
+
+      int hc_size = input_size * layer_count;
+      float *input_h_array = pushArray( arena, hc_size, float );
+      float *input_c_array = pushArray( arena, hc_size, float );
+
+      lstm_output = pushArray( arena, lstm_output_size, float );
+
+      lstm_out_tensor.ndim = 2;
+      // IMPORTANT(irwin): we ignore the hc at the end of lstm output for the moment
+      // NOTE(irwin): reshape (1, -1, input_size)
+      lstm_out_tensor.dims[0] = seq_length * batches;
+      lstm_out_tensor.dims[1] = input_size;
+      lstm_out_tensor.size = lstm_out_tensor.dims[0] * lstm_out_tensor.dims[1];
+      lstm_out_tensor.nbytes = lstm_out_tensor.size * sizeof(float);
+      lstm_out_tensor.data = lstm_output;
+
+      lstm_seq( arena, reparam_conv_3_output_t->data,
+                seq_length * batches,
+                input_size,
+                input_h_array,
+                input_c_array,
+                lstm_weights->data,
+                lstm_biases->data,
+                lstm_output,
+                layer_count
+      );
+      // NOTE(irwin): reshape (batches, seq_length, input_size)
+      lstm_out_tensor.ndim = 3;
+
+      lstm_out_tensor.dims[0] = batches;
+      lstm_out_tensor.dims[1] = seq_length;
+      lstm_out_tensor.dims[2] = input_size;
+   }
+
+   TestTensor *lstm_out_tensor_t = tensor_transpose_last_2d(arena, &lstm_out_tensor);
+
+
+   ////////////////////////////////////////////////////////////////////////////
+   // NOTE(irwin): decoder
+   ////////////////////////////////////////////////////////////////////////////
+   TestTensor *decoder_out = 0;
+   {
+
+      TestTensor *relu_out = tensor_copy(arena, lstm_out_tensor_t);
+      tensor_relu_inplace(relu_out);
+
+      decoder_out = conv_tensor_out(arena, relu_out, decoder_weights, decoder_biases, 1);
+      mysigmoid_inplace(decoder_out->data, decoder_out->size);
+   }
+
+   float atol = 1e-4f;
+   TestResult test_result = all_close( reference_probs->data, decoder_out->data, reference_probs->size, atol );
+
+   endTemporaryMemory( mark );
+
+   return test_result;
+}
+
+
 static const char *result_strings[] =
 {
    "FAIL",
@@ -2019,6 +2207,7 @@ TestFunctionDescription test_function_descriptions[] =
    TEST_FUNCTION_DESCRIPTION(lstm_test_RED_new),
    TEST_FUNCTION_DESCRIPTION(lstm_test_RED_1layer),
    TEST_FUNCTION_DESCRIPTION(lstm_test_RED_v5),
+   TEST_FUNCTION_DESCRIPTION(silero_v5_test),
 };
 
 // int main(int argc, char *argv[])
