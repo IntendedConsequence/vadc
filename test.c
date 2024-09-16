@@ -1967,6 +1967,63 @@ TestResult transformer_layers_3_test()
    return test_result;
 }
 
+TestTensor *chunks_with_context_from_file(MemoryArena *arena, const char *path)
+{
+   TestTensor *chunks = 0;
+
+   File_Contents contents = read_entire_file(arena, path);
+   if (contents.contents != 0 && contents.bytes_count != 0)
+   {
+      s16 *pcm_s16le = (s16 *)contents.contents;
+      int samples_count = (int)contents.bytes_count / 2;
+
+      int context = 64;
+      int window = 512;
+      int chunk_size = context + window;
+      // int overhead = samples_count / (512 / 64);
+
+      float *samples_float = pushArray(arena, samples_count, float);
+      for (int i = 0; i < samples_count; ++i)
+      {
+         samples_float[i] = (float)pcm_s16le[i] / 32768.0f;
+      }
+
+      int chunks_count = samples_count / window;
+      int chunks_count_padded = chunks_count;
+      if ((chunks_count * window) < samples_count)
+      {
+         ++chunks_count_padded;
+      }
+
+      chunks = tensor_zeros_2d(arena, chunks_count_padded, chunk_size);
+
+      float *samples_cursor = samples_float + (window - context);
+      float *tensor_cursor = chunks->data + context;
+
+      memmove(tensor_cursor, samples_float, window * sizeof(float));
+      tensor_cursor += window;
+
+      for (int i = 1; i < chunks_count; ++i)
+      {
+         memmove(tensor_cursor, samples_cursor, chunk_size * sizeof(float));
+         samples_cursor += window;
+
+         tensor_cursor += chunk_size;
+      }
+
+      // NOTE(irwin): remainder
+      if (chunks_count_padded != chunks_count)
+      {
+         float *one_past_last_sample = samples_float + samples_count;
+         s64 padded_chunk_sample_size_in_bytes = one_past_last_sample - samples_cursor;
+
+         memmove(tensor_cursor, samples_cursor, padded_chunk_sample_size_in_bytes);
+      }
+   }
+
+   return chunks;
+}
+
 TestResult silero_v5_test()
 {
    MemoryArena *arena = DEBUG_getDebugArena();
@@ -1985,7 +2042,12 @@ TestResult silero_v5_test()
    Assert( res.tensor_count == 15 );
 
    int test_data_index = 0;
+#if 0
    TestTensor *stft_input = res.tensor_array + test_data_index++;
+#else
+   test_data_index++;
+   TestTensor *stft_input = chunks_with_context_from_file(arena, "RED.s16le");
+#endif
 
    TestTensor *forward_basis_buffer = res.tensor_array + test_data_index++;
 
