@@ -2040,8 +2040,6 @@ TestResult silero_v5_test()
    // NOTE(irwin): Encoder.0
    ////////////////////////////////////////////////////////////////////////////
    {
-      // ConvOutputShape output_shape = conv_output_shape_pad( stft_output, reparam_conv_0_weights, 1, 1 );
-
       TestTensor *stft_output_padded = tensor_zero_pad_last_dim_lr(arena, stft_output, 1, 1);
       reparam_conv_0_output = conv_tensor_out(arena, stft_output_padded, reparam_conv_0_weights, reparam_conv_0_biases, 1 );
       tensor_relu_inplace(reparam_conv_0_output);
@@ -2051,8 +2049,6 @@ TestResult silero_v5_test()
    // NOTE(irwin): Encoder.1
    ////////////////////////////////////////////////////////////////////////////
    {
-      // ConvOutputShape output_shape = conv_output_shape_pad( reparam_conv_0_output, reparam_conv_1_weights, 2, 1 );
-
       TestTensor *reparam_conv_0_output_padded = tensor_zero_pad_last_dim_lr(arena, reparam_conv_0_output, 1, 1);
       reparam_conv_1_output = conv_tensor_out(arena, reparam_conv_0_output_padded, reparam_conv_1_weights, reparam_conv_1_biases, 2 );
       tensor_relu_inplace(reparam_conv_1_output);
@@ -2062,8 +2058,6 @@ TestResult silero_v5_test()
    // NOTE(irwin): Encoder.2
    ////////////////////////////////////////////////////////////////////////////
    {
-      // ConvOutputShape output_shape = conv_output_shape_pad( reparam_conv_1_output, reparam_conv_2_weights, 2, 1 );
-
       TestTensor *reparam_conv_1_output_padded = tensor_zero_pad_last_dim_lr(arena, reparam_conv_1_output, 1, 1);
       reparam_conv_2_output = conv_tensor_out(arena, reparam_conv_1_output_padded, reparam_conv_2_weights, reparam_conv_2_biases, 2 );
       tensor_relu_inplace(reparam_conv_2_output);
@@ -2073,8 +2067,6 @@ TestResult silero_v5_test()
    // NOTE(irwin): Encoder.3
    ////////////////////////////////////////////////////////////////////////////
    {
-      // ConvOutputShape output_shape = conv_output_shape_pad( reparam_conv_2_output, reparam_conv_3_weights, 1, 1 );
-
       TestTensor *reparam_conv_2_output_padded = tensor_zero_pad_last_dim_lr(arena, reparam_conv_2_output, 1, 1);
       reparam_conv_3_output = conv_tensor_out(arena, reparam_conv_2_output_padded, reparam_conv_3_weights, reparam_conv_3_biases, 1 );
       tensor_relu_inplace(reparam_conv_3_output);
