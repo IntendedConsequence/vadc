@@ -89,7 +89,7 @@ void process_chunks( MemoryArena *arena, VADC_Context context, Silero_Config con
          //              otherwise we don't tell the backend that the batch size is lower, and so if one
          //              batch in the middle of the stream comes shorter, the lstm state will get screwed up
          //              from processing null samples in the middle of the stream.
-         backend_run(arena, &context);
+         backend_run(arena, &context, config);
 
          // NOTE(irwin): will copy stale probabilities from previous batch if not enough samples for a full batch
          for (int i = 0; i < config.batch_size; ++i)
@@ -148,7 +148,7 @@ void process_chunks_v5( MemoryArena *arena, VADC_Context context, Silero_Config 
          //              otherwise we don't tell the backend that the batch size is lower, and so if one
          //              batch in the middle of the stream comes shorter, the lstm state will get screwed up
          //              from processing null samples in the middle of the stream.
-         backend_run(arena, &context);
+         backend_run(arena, &context, config);
 
          // NOTE(irwin): will copy stale probabilities from previous batch if not enough samples for a full batch
          for (int i = 0; i < config.batch_size; ++i)

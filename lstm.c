@@ -242,8 +242,8 @@ static inline LSTM_Result lstm_tensor_minibatched( MemoryArena *arena,
    Assert(tensor_is_valid(input_h0));
    Assert(tensor_is_valid(input_c0));
 
-   Assert(input_h0->ndim == 2);
-   Assert(input_c0->ndim == 2);
+   Assert(input_h0->ndim == 2 || input_h0->ndim == 3);
+   Assert(input_c0->ndim == 2 || input_c0->ndim == 3);
 
    int batches = tdim(input, 0);
    int seq_length = tdim(input, 1);

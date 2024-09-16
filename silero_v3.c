@@ -69,18 +69,23 @@ struct One_Batch_Result
    float unkn;
    float prob;
 };
-static One_Batch_Result silero_run_one_batch_with_context(MemoryArena *arena, Silero_Context *context, int samples_count, float *samples)
+static TestTensor *silero_run_one_batch_with_context( MemoryArena *arena,
+                                                           Silero_Context *context,
+                                                           int batch_size,
+                                                           int samples_count,
+                                                           float *samples)
 {
-   One_Batch_Result result = {0};
+   // One_Batch_Result result = {0};
+
+   TestTensor *output = tensor_zeros_3d( arena, batch_size, 2, 1 );
 
    TemporaryMemory mark = beginTemporaryMemory( arena );
 
    TestTensor *lstm_input_h = context->state_lstm_h;
    TestTensor *lstm_input_c = context->state_lstm_c;
 
-   TestTensor *input_one_batch = tensor_zeros_2d( arena, 1, samples_count );
-   memmove(input_one_batch->data, samples, sizeof(float) * samples_count);
-   TestTensor *output = tensor_zeros_3d( arena, 1, 2, 1 );
+   TestTensor *input_one_batch = tensor_zeros_2d( arena, batch_size, samples_count );
+   memmove(input_one_batch->data, samples, sizeof(float) * samples_count * batch_size);
 
    {
       TemporaryMemory batch_mark = beginTemporaryMemory( arena );
@@ -181,26 +186,32 @@ static One_Batch_Result silero_run_one_batch_with_context(MemoryArena *arena, Si
       int decoder_output_size = batches * tdim( context->weights.decoder_weights, 0 );
 
       int decoder_results = tdim( context->weights.decoder_weights, 0 );
-      TestTensor *output_decoder = tensor_zeros_3d( arena, 1, decoder_results, 1 );
+      TestTensor *output_decoder = tensor_zeros_3d( arena, batches, decoder_results, 1 );
       Assert( decoder_output_size == output_decoder->size );
 
       decoder_tensor(arena, lstm_output_tensor_t, context->weights.decoder_weights, context->weights.decoder_biases, output_decoder );
 
-      float diarization_maybe = output_decoder->data[0];
-      float speech_probability = output_decoder->data[1];
+      for (int i = 0; i < batches; ++i)
+      {
+         output->data[i * 2 + 0] = output_decoder->data[i * 2 + 0];
+         output->data[i * 2 + 1] = output_decoder->data[i * 2 + 1];
+      }
+      // float diarization_maybe = output_decoder->data[0];
+      // float speech_probability = output_decoder->data[1];
 
       endTemporaryMemory( batch_mark );
 
-      output->data[0] = diarization_maybe;
-      output->data[1] = speech_probability;
+      // output->data[0] = diarization_maybe;
+      // output->data[1] = speech_probability;
    }
 
-   result.unkn = output->data[0];
-   result.prob = output->data[1];
+   // result.unkn = output->data[0];
+   // result.prob = output->data[1];
 
    endTemporaryMemory( mark );
 
-   return result;
+   // return result;
+   return output;
 }
 
 

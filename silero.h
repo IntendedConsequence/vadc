@@ -36,7 +36,7 @@ static void *silero_init(MemoryArena *arena, String8 model_path_arg, Silero_Conf
    silero_context->state_lstm_h = tensor_zeros_3d(arena, 2, 1, 64);
    silero_context->state_lstm_c = tensor_zeros_3d(arena, 2, 1, 64);
 
-   config->batch_size_restriction = 1;
+   config->batch_size_restriction = -1;
    config->is_silero_v5 = false;
    config->input_size_min = 1536;
    config->input_size_max = 1536;
@@ -50,7 +50,7 @@ static inline void *backend_init( MemoryArena *arena, String8 model_path_arg, Si
    return silero_init(arena, model_path_arg, config);
 }
 
-static inline void backend_run(MemoryArena *arena, void *context_)
+static inline void backend_run(MemoryArena *arena, void *context_, Silero_Config config)
 {
    VADC_Context *context = context_;
 
@@ -58,14 +58,19 @@ static inline void backend_run(MemoryArena *arena, void *context_)
 
    // NOTE(irwin): hardcoded to v3.1 stride for now, v4 C version isn't implemented yet.
    int output_stride = 2;
-   int silero_probability_out_index = 1;
+   // int silero_probability_out_index = 1;
 
    // TODO(irwin): dehardcode one batch
-   One_Batch_Result result = silero_run_one_batch_with_context(arena,
-                                                               context->backend,
-                                                               context->buffers.window_size_samples,
-                                                               context->buffers.input_samples);
-   context->buffers.output[0 * output_stride + silero_probability_out_index] = result.prob;
+   TestTensor *output = silero_run_one_batch_with_context(arena,
+                                                          context->backend,
+                                                          config.batch_size,
+                                                          context->buffers.window_size_samples,
+                                                          context->buffers.input_samples);
+   for (int i = 0; i < config.batch_size; ++i)
+   {
+      context->buffers.output[i * output_stride + 0] = output->data[i * output_stride + 0];
+      context->buffers.output[i * output_stride + 1] = output->data[i * output_stride + 1];
+   }
 }
 
 static inline void backend_create_tensors(Silero_Config config, void *backend, Tensor_Buffers buffers)

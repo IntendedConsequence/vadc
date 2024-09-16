@@ -72,7 +72,7 @@ s32 ort_lstm_hidden_size( OrtSession *session, OrtAllocator *ort_allocator, s32 
 void ort_create_tensors(Silero_Config config, ONNX_Specific *onnx, Tensor_Buffers buffers);
 void ort_run(ONNX_Specific *onnx);
 
-static inline void backend_run(MemoryArena *arena, VADC_Context *context)
+static inline void backend_run(MemoryArena *arena, VADC_Context *context, Silero_Config config)
 {
    VAR_UNUSED(arena);
    ort_run(context->backend);
