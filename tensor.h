@@ -455,6 +455,61 @@ static inline TestTensor tensor_index_first_dim( TestTensor *tensor_to_slice, in
    return result;
 }
 
+static inline void recalculate_size_and_nbytes_from_dims( TestTensor *tensor )
+{
+   Assert( tensor_is_valid( tensor ) );
+
+   int ndim = tensor->ndim;
+   Assert( ndim <= ArrayCount(tensor->dims) );
+
+   int size = 1;
+   for (int i = 0; i < ndim; ++i)
+   {
+      size *= tensor->dims[i];
+   }
+
+   int nbytes = size * sizeof(float);
+
+   tensor->size = size;
+   tensor->nbytes = nbytes;
+}
+
+// NOTE(irwin): from and to support negative indexing, but because of this they are _both_ INCLUSIVE,
+//              so range of 0..0 has length of 1. This is because otherwise we have no way of telling
+//              we want to slice until and including the last index.
+static inline TestTensor tensor_slice_first_dim( TestTensor *tensor_to_slice, int from, int to )
+{
+   Assert( tensor_is_valid( tensor_to_slice ) );
+
+   // NOTE(irwin): negative index support
+   int first_dim = tdim(tensor_to_slice, 0);
+   if (from < 0)
+   {
+      from += first_dim;
+   }
+
+   if (to < 0)
+   {
+      to += first_dim;
+   }
+
+   Assert( from < first_dim && to < first_dim );
+   Assert( from >= 0 && to >= 0 );
+   Assert( from <= to );
+
+   int first_dimension_stride = tensor_to_slice->size / first_dim;
+   int new_first_dim = to - from + 1;
+
+   TestTensor tensor_view = *tensor_to_slice;
+   tensor_view.dims[0] = new_first_dim;
+   tensor_view.data += first_dimension_stride * from;
+
+   recalculate_size_and_nbytes_from_dims(&tensor_view);
+
+   return tensor_view;
+}
+
+
 static inline void zero_tensor( TestTensor *tensor_to_zero )
 {
    memset( tensor_to_zero->data, 0, tensor_to_zero->nbytes );

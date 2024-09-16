@@ -228,16 +228,33 @@ struct LSTM_Result
 static inline LSTM_Result lstm_tensor_minibatched( MemoryArena *arena,
                                                    TestTensor *input,
                                                    TestTensor *lstm_weights,
-                                                   TestTensor *lstm_biases )
+                                                   TestTensor *lstm_biases,
+                                                   TestTensor *input_h0,
+                                                   TestTensor *input_c0 )
 {
 
    LSTM_Result lstm_result = {0};
 
 
+   Assert(tensor_is_valid(input));
+   Assert(tensor_is_valid(lstm_weights));
+   Assert(tensor_is_valid(lstm_biases));
+   Assert(tensor_is_valid(input_h0));
+   Assert(tensor_is_valid(input_c0));
+
+   Assert(input_h0->ndim == 2);
+   Assert(input_c0->ndim == 2);
+
    int batches = tdim(input, 0);
    int seq_length = tdim(input, 1);
    int input_size = tdim(input, 2);
    int layer_count = tdim(lstm_weights, 0);
+
+   Assert(tdim(input_h0, 0) == layer_count);
+   Assert(tdim(input_h0, -1) == input_size);
+
+   Assert(tdim(input_c0, 0) == layer_count);
+   Assert(tdim(input_c0, -1) == input_size);
 
    int lstm_output_size = (batches * seq_length) * input_size;
    int lstm_output_size_hn = layer_count * input_size;
@@ -251,15 +268,17 @@ static inline LSTM_Result lstm_tensor_minibatched( MemoryArena *arena,
    TemporaryMemory mark = beginTemporaryMemory( arena );
    {
 
-      int hc_size = input_size * layer_count;
-      float *input_h_array = pushArray( arena, hc_size, float );
-      float *input_c_array = pushArray( arena, hc_size, float );
+      // int hc_size = input_size * layer_count;
+      // float *input_h_array = pushArray( arena, hc_size, float );
+      // float *input_c_array = pushArray( arena, hc_size, float );
 
       lstm_seq( arena, input->data,
                 seq_length * batches,
                 input_size,
-                input_h_array,
-                input_c_array,
+                // input_h_array,
+                input_h0->data,
+                // input_c_array,
+                input_c0->data,
                 lstm_weights->data,
                 lstm_biases->data,
                 lstm_output,

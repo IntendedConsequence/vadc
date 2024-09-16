@@ -2043,10 +2043,10 @@ TestResult silero_v5_test()
 
    int test_data_index = 0;
 #if 0
-   TestTensor *stft_input = res.tensor_array + test_data_index++;
+   TestTensor *input = res.tensor_array + test_data_index++;
 #else
    test_data_index++;
-   TestTensor *stft_input = chunks_with_context_from_file(arena, "RED.s16le");
+   TestTensor *input = chunks_with_context_from_file(arena, "RED.s16le");
 #endif
 
    TestTensor *forward_basis_buffer = res.tensor_array + test_data_index++;
@@ -2072,93 +2072,123 @@ TestResult silero_v5_test()
 
    TestTensor *reference_probs = res.tensor_array + test_data_index++;
 
-   ////////////////////////////////////////////////////////////////////////////
-   // NOTE(irwin): STFT
-   ////////////////////////////////////////////////////////////////////////////
-   TestTensor *stft_output = 0;
+   TestTensor *result_probs = tensor_zeros_like(arena, reference_probs);
 
-   int hop_length = 128;
-   int pad_left = 0;
-   int pad_right = 64;
+
+   // int input_size = tdim(input, 2);
+   int input_size = tdim(lstm_biases, -1) / 4;
+   int layer_count = tdim(lstm_weights, 0);
+   // int hc_size = input_size * layer_count;
+   TestTensor *lstm_hn = tensor_zeros_2d(arena, layer_count, input_size);
+   TestTensor *lstm_cn = tensor_zeros_2d(arena, layer_count, input_size);
+
+
+   int chunks_count = tdim(input, 0);
+   int batch_size = 96;
+
+   for (int batch_index = 0; batch_index < chunks_count; batch_index += batch_size)
    {
-      int filter_length = tdim(forward_basis_buffer, 2);
-      int half_filter_length = filter_length / 2;
-      int cutoff = half_filter_length + 1;
+      int to = (batch_index + batch_size) - 1;
+      if (to >= tdim(input, 0))
+      {
+         to = tdim(input, 0) - 1;
+      }
 
-      int features_count = compute_stft_output_feature_count_lr( stft_input, forward_basis_buffer, hop_length, pad_left, pad_right );
+      TestTensor stft_input_ = tensor_slice_first_dim(input, batch_index, to);
+      TestTensor *stft_input = &stft_input_;
 
-      stft_output = tensor_zeros_3d( arena, tdim(stft_input, 0), cutoff, features_count );
-   }
+      ////////////////////////////////////////////////////////////////////////////
+      // NOTE(irwin): STFT
+      ////////////////////////////////////////////////////////////////////////////
+      TestTensor *stft_output = 0;
 
+      int hop_length = 128;
+      int pad_left = 0;
+      int pad_right = 64;
+      {
+         int filter_length = tdim(forward_basis_buffer, 2);
+         int half_filter_length = filter_length / 2;
+         int cutoff = half_filter_length + 1;
 
-   my_stft_(arena, stft_input, forward_basis_buffer, stft_output, hop_length, pad_left, pad_right );
+         int features_count = compute_stft_output_feature_count_lr( stft_input, forward_basis_buffer, hop_length, pad_left, pad_right );
 
-   TestTensor *reparam_conv_0_output = 0;
-   TestTensor *reparam_conv_1_output = 0;
-   TestTensor *reparam_conv_2_output = 0;
-   TestTensor *reparam_conv_3_output = 0;
-
-   ////////////////////////////////////////////////////////////////////////////
-   // NOTE(irwin): Encoder.0
-   ////////////////////////////////////////////////////////////////////////////
-   {
-      TestTensor *stft_output_padded = tensor_zero_pad_last_dim_lr(arena, stft_output, 1, 1);
-      reparam_conv_0_output = conv_tensor_out(arena, stft_output_padded, reparam_conv_0_weights, reparam_conv_0_biases, 1 );
-      tensor_relu_inplace(reparam_conv_0_output);
-   }
-
-   ////////////////////////////////////////////////////////////////////////////
-   // NOTE(irwin): Encoder.1
-   ////////////////////////////////////////////////////////////////////////////
-   {
-      TestTensor *reparam_conv_0_output_padded = tensor_zero_pad_last_dim_lr(arena, reparam_conv_0_output, 1, 1);
-      reparam_conv_1_output = conv_tensor_out(arena, reparam_conv_0_output_padded, reparam_conv_1_weights, reparam_conv_1_biases, 2 );
-      tensor_relu_inplace(reparam_conv_1_output);
-   }
-
-   ////////////////////////////////////////////////////////////////////////////
-   // NOTE(irwin): Encoder.2
-   ////////////////////////////////////////////////////////////////////////////
-   {
-      TestTensor *reparam_conv_1_output_padded = tensor_zero_pad_last_dim_lr(arena, reparam_conv_1_output, 1, 1);
-      reparam_conv_2_output = conv_tensor_out(arena, reparam_conv_1_output_padded, reparam_conv_2_weights, reparam_conv_2_biases, 2 );
-      tensor_relu_inplace(reparam_conv_2_output);
-   }
-
-   ////////////////////////////////////////////////////////////////////////////
-   // NOTE(irwin): Encoder.3
-   ////////////////////////////////////////////////////////////////////////////
-   {
-      TestTensor *reparam_conv_2_output_padded = tensor_zero_pad_last_dim_lr(arena, reparam_conv_2_output, 1, 1);
-      reparam_conv_3_output = conv_tensor_out(arena, reparam_conv_2_output_padded, reparam_conv_3_weights, reparam_conv_3_biases, 1 );
-      tensor_relu_inplace(reparam_conv_3_output);
-   }
-
-   ////////////////////////////////////////////////////////////////////////////
-   // NOTE(irwin): LSTM
-   ////////////////////////////////////////////////////////////////////////////
-   TestTensor *reparam_conv_3_output_t = tensor_transpose_last_2d(arena, reparam_conv_3_output);
-
-   LSTM_Result lstm_out = lstm_tensor_minibatched(arena, reparam_conv_3_output_t, lstm_weights, lstm_biases);
-
-   TestTensor *lstm_out_tensor_t = tensor_transpose_last_2d(arena, &lstm_out.output);
+         stft_output = tensor_zeros_3d( arena, tdim(stft_input, 0), cutoff, features_count );
+      }
 
 
-   ////////////////////////////////////////////////////////////////////////////
-   // NOTE(irwin): decoder
-   ////////////////////////////////////////////////////////////////////////////
-   TestTensor *decoder_out = 0;
-   {
+      my_stft_(arena, stft_input, forward_basis_buffer, stft_output, hop_length, pad_left, pad_right );
 
-      TestTensor *relu_out = tensor_copy(arena, lstm_out_tensor_t);
-      tensor_relu_inplace(relu_out);
+      TestTensor *reparam_conv_0_output = 0;
+      TestTensor *reparam_conv_1_output = 0;
+      TestTensor *reparam_conv_2_output = 0;
+      TestTensor *reparam_conv_3_output = 0;
 
-      decoder_out = conv_tensor_out(arena, relu_out, decoder_weights, decoder_biases, 1);
-      mysigmoid_inplace(decoder_out->data, decoder_out->size);
+      ////////////////////////////////////////////////////////////////////////////
+      // NOTE(irwin): Encoder.0
+      ////////////////////////////////////////////////////////////////////////////
+      {
+         TestTensor *stft_output_padded = tensor_zero_pad_last_dim_lr(arena, stft_output, 1, 1);
+         reparam_conv_0_output = conv_tensor_out(arena, stft_output_padded, reparam_conv_0_weights, reparam_conv_0_biases, 1 );
+         tensor_relu_inplace(reparam_conv_0_output);
+      }
+
+      ////////////////////////////////////////////////////////////////////////////
+      // NOTE(irwin): Encoder.1
+      ////////////////////////////////////////////////////////////////////////////
+      {
+         TestTensor *reparam_conv_0_output_padded = tensor_zero_pad_last_dim_lr(arena, reparam_conv_0_output, 1, 1);
+         reparam_conv_1_output = conv_tensor_out(arena, reparam_conv_0_output_padded, reparam_conv_1_weights, reparam_conv_1_biases, 2 );
+         tensor_relu_inplace(reparam_conv_1_output);
+      }
+
+      ////////////////////////////////////////////////////////////////////////////
+      // NOTE(irwin): Encoder.2
+      ////////////////////////////////////////////////////////////////////////////
+      {
+         TestTensor *reparam_conv_1_output_padded = tensor_zero_pad_last_dim_lr(arena, reparam_conv_1_output, 1, 1);
+         reparam_conv_2_output = conv_tensor_out(arena, reparam_conv_1_output_padded, reparam_conv_2_weights, reparam_conv_2_biases, 2 );
+         tensor_relu_inplace(reparam_conv_2_output);
+      }
+
+      ////////////////////////////////////////////////////////////////////////////
+      // NOTE(irwin): Encoder.3
+      ////////////////////////////////////////////////////////////////////////////
+      {
+         TestTensor *reparam_conv_2_output_padded = tensor_zero_pad_last_dim_lr(arena, reparam_conv_2_output, 1, 1);
+         reparam_conv_3_output = conv_tensor_out(arena, reparam_conv_2_output_padded, reparam_conv_3_weights, reparam_conv_3_biases, 1 );
+         tensor_relu_inplace(reparam_conv_3_output);
+      }
+
+      ////////////////////////////////////////////////////////////////////////////
+      // NOTE(irwin): LSTM
+      ////////////////////////////////////////////////////////////////////////////
+      TestTensor *reparam_conv_3_output_t = tensor_transpose_last_2d(arena, reparam_conv_3_output);
+
+      LSTM_Result lstm_out = lstm_tensor_minibatched(arena, reparam_conv_3_output_t, lstm_weights, lstm_biases, lstm_hn, lstm_cn);
+      memmove(lstm_hn->data, lstm_out.hn.data, lstm_out.hn.nbytes);
+      memmove(lstm_cn->data, lstm_out.cn.data, lstm_out.cn.nbytes);
+
+      TestTensor *lstm_out_tensor_t = tensor_transpose_last_2d(arena, &lstm_out.output);
+
+
+      ////////////////////////////////////////////////////////////////////////////
+      // NOTE(irwin): decoder
+      ////////////////////////////////////////////////////////////////////////////
+      TestTensor *decoder_out = 0;
+      {
+
+         TestTensor *relu_out = tensor_copy(arena, lstm_out_tensor_t);
+         tensor_relu_inplace(relu_out);
+
+         decoder_out = conv_tensor_out(arena, relu_out, decoder_weights, decoder_biases, 1);
+         mysigmoid_inplace(decoder_out->data, decoder_out->size);
+      }
+
+      memmove(result_probs->data + batch_index, decoder_out->data, decoder_out->nbytes);
    }
 
    float atol = 1e-4f;
-   TestResult test_result = all_close( reference_probs->data, decoder_out->data, reference_probs->size, atol );
+   TestResult test_result = all_close( reference_probs->data, result_probs->data, reference_probs->size, atol );
 
    endTemporaryMemory( mark );
 
