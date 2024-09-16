@@ -67,10 +67,15 @@ static void dw_conv_tensor ( TestTensor *input, TestTensor *filters, TestTensor 
    Assert( tensor_is_valid( output ) );
 
    // TODO(irwin): for batch support
-   // - Assert ndim == 3
-   // - batch_size = tdim(input, 0)
+   // - [ ] Assert ndim == 3
+   // - [x] batch_size = tdim(input, 0)
    Assert( input->ndim == 2 || input->ndim == 3 );
+
    int batch_size = 1;
+   if (input->ndim == 3)
+   {
+      batch_size = tdim(input, 0);
+   }
 
    Assert( filters->ndim == 2 || (filters->ndim == 3 && tdim(filters, -2) == 1) );
    Assert( biases->ndim == 1 );
