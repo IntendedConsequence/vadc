@@ -2080,57 +2080,14 @@ TestResult silero_v5_test()
       tensor_relu_inplace(reparam_conv_3_output);
    }
 
-   TestTensor *reparam_conv_3_output_t = tensor_transpose_last_2d(arena, reparam_conv_3_output);
-
-   float *lstm_output = 0;
-   TestTensor lstm_out_tensor = {0};
-
    ////////////////////////////////////////////////////////////////////////////
    // NOTE(irwin): LSTM
    ////////////////////////////////////////////////////////////////////////////
-   {
-      int batches = tdim(reparam_conv_3_output_t, 0);
-      int seq_length = tdim(reparam_conv_3_output_t, 1);
-      int input_size = tdim(reparam_conv_3_output_t, 2);
-      int layer_count = tdim(lstm_weights, 0);
+   TestTensor *reparam_conv_3_output_t = tensor_transpose_last_2d(arena, reparam_conv_3_output);
 
-      int batch_stride = seq_length * input_size;
-      int lstm_output_size = batch_stride * batches + (input_size * layer_count * 2);
+   LSTM_Result lstm_out = lstm_tensor_minibatched(arena, reparam_conv_3_output_t, lstm_weights, lstm_biases);
 
-      int hc_size = input_size * layer_count;
-      float *input_h_array = pushArray( arena, hc_size, float );
-      float *input_c_array = pushArray( arena, hc_size, float );
-
-      lstm_output = pushArray( arena, lstm_output_size, float );
-
-      lstm_out_tensor.ndim = 2;
-      // IMPORTANT(irwin): we ignore the hc at the end of lstm output for the moment
-      // NOTE(irwin): reshape (1, -1, input_size)
-      lstm_out_tensor.dims[0] = seq_length * batches;
-      lstm_out_tensor.dims[1] = input_size;
-      lstm_out_tensor.size = lstm_out_tensor.dims[0] * lstm_out_tensor.dims[1];
-      lstm_out_tensor.nbytes = lstm_out_tensor.size * sizeof(float);
-      lstm_out_tensor.data = lstm_output;
-
-      lstm_seq( arena, reparam_conv_3_output_t->data,
-                seq_length * batches,
-                input_size,
-                input_h_array,
-                input_c_array,
-                lstm_weights->data,
-                lstm_biases->data,
-                lstm_output,
-                layer_count
-      );
-      // NOTE(irwin): reshape (batches, seq_length, input_size)
-      lstm_out_tensor.ndim = 3;
-
-      lstm_out_tensor.dims[0] = batches;
-      lstm_out_tensor.dims[1] = seq_length;
-      lstm_out_tensor.dims[2] = input_size;
-   }
-
-   TestTensor *lstm_out_tensor_t = tensor_transpose_last_2d(arena, &lstm_out_tensor);
+   TestTensor *lstm_out_tensor_t = tensor_transpose_last_2d(arena, &lstm_out.output);
 
 
    ////////////////////////////////////////////////////////////////////////////

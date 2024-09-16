@@ -216,3 +216,107 @@ static inline void lstm_seq ( MemoryArena *arena,
    endTemporaryMemory( mark );
    TracyCZoneEnd(lstm_seq);
 }
+
+typedef struct LSTM_Result LSTM_Result;
+struct LSTM_Result
+{
+   TestTensor output;
+   TestTensor hn;
+   TestTensor cn;
+};
+
+static inline LSTM_Result lstm_tensor_minibatched( MemoryArena *arena,
+                                                   TestTensor *input,
+                                                   TestTensor *lstm_weights,
+                                                   TestTensor *lstm_biases )
+{
+
+   LSTM_Result lstm_result = {0};
+
+
+   int batches = tdim(input, 0);
+   int seq_length = tdim(input, 1);
+   int input_size = tdim(input, 2);
+   int layer_count = tdim(lstm_weights, 0);
+
+   int lstm_output_size = (batches * seq_length) * input_size;
+   int lstm_output_size_hn = layer_count * input_size;
+   int lstm_output_size_cn = layer_count * input_size;
+   int lstm_output_size_hc = lstm_output_size_hn + lstm_output_size_cn;
+
+   int lstm_output_size_total = lstm_output_size + lstm_output_size_hc;
+
+   float *lstm_output = pushArray( arena, lstm_output_size_total, float );
+
+   TemporaryMemory mark = beginTemporaryMemory( arena );
+   {
+
+      int hc_size = input_size * layer_count;
+      float *input_h_array = pushArray( arena, hc_size, float );
+      float *input_c_array = pushArray( arena, hc_size, float );
+
+      lstm_seq( arena, input->data,
+                seq_length * batches,
+                input_size,
+                input_h_array,
+                input_c_array,
+                lstm_weights->data,
+                lstm_biases->data,
+                lstm_output,
+                layer_count
+      );
+
+      // NOTE(irwin): output
+      {
+         TestTensor temp_tensor = {0};
+         // IMPORTANT(irwin): we ignore the hc at the end of lstm output for the moment
+         // NOTE(irwin): reshape (batches, seq_length, input_size)
+         temp_tensor.ndim = 3;
+
+         temp_tensor.dims[0] = batches;
+         temp_tensor.dims[1] = seq_length;
+         temp_tensor.dims[2] = input_size;
+
+         temp_tensor.size = temp_tensor.dims[0] * temp_tensor.dims[1] * temp_tensor.dims[2];
+         temp_tensor.nbytes = temp_tensor.size * sizeof(float);
+         temp_tensor.data = lstm_output;
+
+
+         lstm_result.output = temp_tensor;
+      }
+
+      // NOTE(irwin): hn
+      {
+         TestTensor temp_tensor = {0};
+         temp_tensor.ndim = 2;
+
+         temp_tensor.dims[0] = layer_count;
+         temp_tensor.dims[1] = input_size;
+
+         temp_tensor.size = temp_tensor.dims[0] * temp_tensor.dims[1];
+         temp_tensor.nbytes = temp_tensor.size * sizeof(float);
+         temp_tensor.data = lstm_output + lstm_output_size;
+
+
+         lstm_result.hn = temp_tensor;
+      }
+      // NOTE(irwin): cn
+      {
+         TestTensor temp_tensor = {0};
+         temp_tensor.ndim = 2;
+
+         temp_tensor.dims[0] = layer_count;
+         temp_tensor.dims[1] = input_size;
+
+         temp_tensor.size = temp_tensor.dims[0] * temp_tensor.dims[1];
+         temp_tensor.nbytes = temp_tensor.size * sizeof(float);
+         temp_tensor.data = lstm_output + lstm_output_size + layer_count * input_size;
+
+
+         lstm_result.cn = temp_tensor;
+      }
+   }
+   endTemporaryMemory( mark );
+
+   return lstm_result;
+}
