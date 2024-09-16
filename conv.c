@@ -173,28 +173,32 @@ static inline void conv_tensor ( TestTensor *input, TestTensor *filters, TestTen
    {
       float *input_data_batch = input->data + batch_index * batch_stride_input;
       float *output_data_batch = output->data + batch_index * batch_stride_output;
-      for ( int filter_index = 0; filter_index < filter_count; ++filter_index )
+      for ( int channel_index = 0; channel_index < in_channels; ++channel_index )
+      // for ( int filter_index = 0; filter_index < filter_count; ++filter_index )
       {
-         float *output_filter_channel = output_data_batch + filter_index * output_array_count;
+         // float *output_filter_channel = output_data_batch + filter_index * output_array_count;
          if (biases)
          {
-            float bias_value = biases->data[filter_index];
-            for (int i = 0; i < output_array_count; ++i)
-            {
-               output_filter_channel[i] = bias_value;
-            }
+            // float bias_value = biases->data[filter_index];
+            // for (int i = 0; i < output_array_count; ++i)
+            // {
+            //    output_filter_channel[i] = bias_value;
+            // }
          }
 
-         for ( int channel_index = 0; channel_index < in_channels; ++channel_index )
+         // for ( int channel_index = 0; channel_index < in_channels; ++channel_index )
+         for ( int filter_index = 0; filter_index < filter_count; ++filter_index )
          {
+            float *output_filter_channel = output_data_batch + filter_index * output_array_count;
+
             float *kernel = index3d( filters, filter_index, channel_index, 0 );
 
             float *channel = input_data_batch + channel_index * array_count;
             for ( int index = 0; index < output_array_count; ++index )
             {
-               #if 0
+               #if 1
                output_filter_channel[index] += dotproduct_slow( channel + index * hop_length, kernel_size, kernel, kernel_size );
-               #elif 0
+               #elif 1
                float *channel_sub = channel + index * hop_length;
                float out_channel = output_filter_channel[index];
 
@@ -257,6 +261,20 @@ static inline void conv_tensor ( TestTensor *input, TestTensor *filters, TestTen
                output_filter_channel[index] = sum + read;
 
                #endif
+            }
+         }
+
+      }
+
+      for ( int filter_index = 0; filter_index < filter_count; ++filter_index )
+      {
+         float *output_filter_channel = output_data_batch + filter_index * output_array_count;
+         if (biases)
+         {
+            float bias_value = biases->data[filter_index];
+            for (int i = 0; i < output_array_count; ++i)
+            {
+               output_filter_channel[i] += bias_value;
             }
          }
       }
