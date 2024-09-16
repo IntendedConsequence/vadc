@@ -73,21 +73,17 @@ static One_Batch_Result silero_run_one_batch_with_context(MemoryArena *arena, Si
 {
    One_Batch_Result result = {0};
 
-   MemoryArena *debug_arena = arena;
-   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+   TemporaryMemory mark = beginTemporaryMemory( arena );
 
    TestTensor *lstm_input_h = context->state_lstm_h;
    TestTensor *lstm_input_c = context->state_lstm_c;
 
-   TestTensor *lstm_output_h = tensor_zeros_like( debug_arena, lstm_input_h );
-   TestTensor *lstm_output_c = tensor_zeros_like( debug_arena, lstm_input_h );
-
-   TestTensor *input_one_batch = tensor_zeros_2d( debug_arena, 1, samples_count );
+   TestTensor *input_one_batch = tensor_zeros_2d( arena, 1, samples_count );
    memmove(input_one_batch->data, samples, sizeof(float) * samples_count);
-   TestTensor *output = tensor_zeros_3d( debug_arena, 1, 2, 1 );
+   TestTensor *output = tensor_zeros_3d( arena, 1, 2, 1 );
 
    {
-      TemporaryMemory batch_mark = beginTemporaryMemory( debug_arena );
+      TemporaryMemory batch_mark = beginTemporaryMemory( arena );
 
       int cutoff;
       int half_filter_length;
@@ -98,36 +94,44 @@ static One_Batch_Result silero_run_one_batch_with_context(MemoryArena *arena, Si
       }
       // TODO(irwin): dehardcode 64 hop_length
       int stft_out_features_count = compute_stft_output_feature_count( input_one_batch, context->weights.forward_basis_buffer, 64, half_filter_length );
-      TestTensor *stft_output = tensor_zeros_3d( debug_arena, tdim( input_one_batch, -2 ), cutoff, stft_out_features_count );
+      TestTensor *stft_output = tensor_zeros_3d( arena, tdim( input_one_batch, -2 ), cutoff, stft_out_features_count );
 
-      my_stft( debug_arena, input_one_batch, context->weights.forward_basis_buffer, stft_output, 64, 128 );
+      my_stft( arena, input_one_batch, context->weights.forward_basis_buffer, stft_output, 64, 128 );
 
-      TestTensor *normalization_output = tensor_copy( debug_arena, stft_output );
+      TestTensor *normalization_output = tensor_copy( arena, stft_output );
 
-      adaptive_audio_normalization_inplace( debug_arena, normalization_output );
+      adaptive_audio_normalization_inplace( arena, normalization_output );
 
       ConvOutputShape l4_output_required_shape = shape_for_encoder( normalization_output, context->weights.encoder_weights );
-      TestTensor *l4_output = tensor_zeros_3d( debug_arena, l4_output_required_shape.batch_size, l4_output_required_shape.channels_out, l4_output_required_shape.sequence_length );
+      TestTensor *l4_output = tensor_zeros_3d( arena, l4_output_required_shape.batch_size, l4_output_required_shape.channels_out, l4_output_required_shape.sequence_length );
 
-      encoder( debug_arena, normalization_output, context->weights.encoder_weights, l4_output );
+      encoder( arena, normalization_output, context->weights.encoder_weights, l4_output );
 
-      TestTensor *l4_output_t = tensor_transpose_last_2d( debug_arena, l4_output );
+      TestTensor *l4_output_t = tensor_transpose_last_2d( arena, l4_output );
 
+      /////////////////////////////////////////////////////////////////////////
+      // NOTE(irwin): LSTM
+      /////////////////////////////////////////////////////////////////////////
       int batches = tdim( l4_output_t, -3 );
-      int seq_length = tdim( l4_output_t, -2 );
       int input_size = tdim( l4_output_t, -1 );
-      int layer_count = tdim( context->weights.lstm_weights, 0 );
       int hidden_size = tdim( context->weights.lstm_weights, -1 ) / 2;
       Assert( hidden_size == input_size );
       Assert( hidden_size == tdim( context->weights.lstm_biases, -1 ) / 4 );
+
+#if 0
+      int seq_length = tdim( l4_output_t, -2 );
+      int layer_count = tdim( context->weights.lstm_weights, 0 );
       int batch_stride = seq_length * input_size;
       int lstm_output_size = batch_stride * batches + (input_size * layer_count * 2);
 
       int hc_size = input_size * layer_count;
       Assert( hc_size == lstm_input_h->size );
 
-      float *lstm_output = pushArray( debug_arena, lstm_output_size, float );
-      //float *lstm_output = pushArray( debug_arena, batches * seq_length * input_size, float );
+      float *lstm_output = pushArray( arena, lstm_output_size, float );
+      //float *lstm_output = pushArray( arena, batches * seq_length * input_size, float );
+
+      TestTensor *lstm_output_h = tensor_zeros_like( arena, lstm_input_h );
+      TestTensor *lstm_output_c = tensor_zeros_like( arena, lstm_input_h );
 
       lstm_seq( arena, l4_output_t->data,
                 seq_length * batches,
@@ -145,21 +149,42 @@ static One_Batch_Result silero_run_one_batch_with_context(MemoryArena *arena, Si
       //              + [2, 64] c
       // doesn't support proper batches
       // calls batches what are actually seq_length
-      TestTensor *lstm_output_tensor = tensor_zeros_3d( debug_arena, 1, seq_length, input_size );
+      TestTensor *lstm_output_tensor = tensor_zeros_3d( arena, 1, seq_length, input_size );
       memmove( lstm_output_tensor->data, lstm_output, lstm_output_tensor->nbytes );
 
       memmove( lstm_output_h->data, lstm_output + lstm_output_tensor->size, lstm_output_h->nbytes );
       memmove( lstm_output_c->data, lstm_output + lstm_output_tensor->size + lstm_output_h->size, lstm_output_c->nbytes );
 
-      TestTensor *lstm_output_tensor_t = tensor_transpose_last_2d( debug_arena, lstm_output_tensor );
+      memmove( lstm_input_h->data, lstm_output_h->data, lstm_input_h->nbytes );
+      memmove( lstm_input_c->data, lstm_output_c->data, lstm_input_c->nbytes );
 
+      TestTensor *lstm_output_tensor_t = tensor_transpose_last_2d( arena, lstm_output_tensor );
+#else
+
+      LSTM_Result lstm_out = lstm_tensor_minibatched( arena,
+                                                      l4_output_t,
+                                                      context->weights.lstm_weights,
+                                                      context->weights.lstm_biases,
+                                                      lstm_input_h,
+                                                      lstm_input_c);
+
+      TestTensor *lstm_output_tensor_t = tensor_transpose_last_2d( arena, &lstm_out.output );
+
+      memmove( lstm_input_h->data, lstm_out.hn.data, lstm_out.hn.nbytes );
+      memmove( lstm_input_c->data, lstm_out.cn.data, lstm_out.cn.nbytes );
+#endif
+
+
+      /////////////////////////////////////////////////////////////////////////
+      // NOTE(irwin): decoder
+      /////////////////////////////////////////////////////////////////////////
       int decoder_output_size = batches * tdim( context->weights.decoder_weights, 0 );
 
       int decoder_results = tdim( context->weights.decoder_weights, 0 );
-      TestTensor *output_decoder = tensor_zeros_3d( debug_arena, 1, decoder_results, 1 );
+      TestTensor *output_decoder = tensor_zeros_3d( arena, 1, decoder_results, 1 );
       Assert( decoder_output_size == output_decoder->size );
 
-      decoder_tensor(debug_arena, lstm_output_tensor_t, context->weights.decoder_weights, context->weights.decoder_biases, output_decoder );
+      decoder_tensor(arena, lstm_output_tensor_t, context->weights.decoder_weights, context->weights.decoder_biases, output_decoder );
 
       float diarization_maybe = output_decoder->data[0];
       float speech_probability = output_decoder->data[1];
@@ -168,9 +193,6 @@ static One_Batch_Result silero_run_one_batch_with_context(MemoryArena *arena, Si
 
       output->data[0] = diarization_maybe;
       output->data[1] = speech_probability;
-
-      memmove( lstm_input_h->data, lstm_output_h->data, lstm_input_h->nbytes );
-      memmove( lstm_input_c->data, lstm_output_c->data, lstm_input_c->nbytes );
    }
 
    result.unkn = output->data[0];
