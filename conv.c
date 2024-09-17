@@ -167,114 +167,208 @@ static inline void conv_tensor ( TestTensor *input, TestTensor *filters, TestTen
    int batch_stride_input = input->size / batch_size;
    int batch_stride_output = output->size / batch_size;
 
-   // float *to_sum = pushArray(DEBUG_getDebugArena(), kernel_size, float);
-
-   for ( int batch_index = 0; batch_index < batch_size; ++batch_index )
+   if (kernel_size == 1 && hop_length == 1)
    {
-      float *input_data_batch = input->data + batch_index * batch_stride_input;
-      float *output_data_batch = output->data + batch_index * batch_stride_output;
-      for ( int channel_index = 0; channel_index < in_channels; ++channel_index )
-      // for ( int filter_index = 0; filter_index < filter_count; ++filter_index )
-      {
-         // float *output_filter_channel = output_data_batch + filter_index * output_array_count;
-         if (biases)
-         {
-            // float bias_value = biases->data[filter_index];
-            // for (int i = 0; i < output_array_count; ++i)
-            // {
-            //    output_filter_channel[i] = bias_value;
-            // }
-         }
+      MemoryArena *arena = DEBUG_getDebugArena();
 
-         // for ( int channel_index = 0; channel_index < in_channels; ++channel_index )
+      for ( int batch_index = 0; batch_index < batch_size; ++batch_index )
+      {
+         float *input_data_batch = input->data + batch_index * batch_stride_input;
+         float *output_data_batch = output->data + batch_index * batch_stride_output;
+
          for ( int filter_index = 0; filter_index < filter_count; ++filter_index )
          {
-            float *output_filter_channel = output_data_batch + filter_index * output_array_count;
+            TemporaryMemory batch_mark = beginTemporaryMemory(arena);
 
-            float *kernel = index3d( filters, filter_index, channel_index, 0 );
-
-            float *channel = input_data_batch + channel_index * array_count;
-            for ( int index = 0; index < output_array_count; ++index )
+            float bias_value = 0.0f;
+            if (biases)
             {
-               #if 1
-               output_filter_channel[index] += dotproduct_slow( channel + index * hop_length, kernel_size, kernel, kernel_size );
-               #elif 1
-               float *channel_sub = channel + index * hop_length;
-               float out_channel = output_filter_channel[index];
-
-               __m256 s = _mm256_setzero_ps();
-               int i;
-               for (i = 0; i < kernel_size - 7; i += 8)
-               {
-                  __m256 a = _mm256_loadu_ps(channel_sub + i);
-                  __m256 b = _mm256_loadu_ps(kernel + i);
-                  __m256 r = _mm256_mul_ps(a, b);
-                  s = _mm256_add_ps(s, r);
-               }
-
-               s = _mm256_hadd_ps(s, s);
-               s = _mm256_hadd_ps(s, s);
-               s = _mm256_hadd_ps(s, s);
-
-               out_channel += ((float *)&s)[0];
-               // float v;
-               // _MM_EXTRACT_FLOAT(v, _mm256_extractf128_ps(s, 0), 0);
-               // out_channel += v;
-
-
-               for (; i < kernel_size; ++i)
-               {
-                  out_channel += channel_sub[i] * kernel[i];
-               }
-
-               output_filter_channel[index] = out_channel;
-               #else
-               int wide = 8;
-               int wide_parts = kernel_size / wide;
-               float sub = 0.0f;
-               float *channel_sub = channel + index * hop_length;
-               for (int i = 0; i < wide_parts; ++i)
-               {
-                  float *channel_sub_sub = channel_sub + i * wide;
-                  float *kernel_sub = kernel + i * wide;
-
-                  float subsub = 0.0f;
-                  for (int j = 0; j < wide; ++j)
-                  {
-                     subsub += channel_sub_sub[j] * kernel_sub[j];
-                  }
-                  sub += subsub;
-               }
-
-               float sub2 = 0.0f;
-               for (int i = wide_parts * wide; i < kernel_size; ++i)
-               {
-                  float vala = channel_sub[i];
-                  float valb = kernel[i];
-                  float muled = vala * valb;
-                  float added = sub2 + muled;
-                  sub2 = added;
-               }
-
-               float sum = sub + sub2;
-               float read = output_filter_channel[index];
-               output_filter_channel[index] = sum + read;
-
-               #endif
+               bias_value = biases->data[filter_index];
             }
+
+            float *temp = pushArray(arena, batch_stride_input, float);
+
+            for ( int channel_index = 0; channel_index < in_channels; ++channel_index )
+            {
+
+               float *in_channel = input_data_batch + channel_index * array_count;
+               float *out_channel = temp + channel_index * array_count;
+
+               float kernel = *index3d( filters, filter_index, channel_index, 0 );
+
+               for (int i = 0; i < array_count; ++i)
+               {
+                  out_channel[i] = in_channel[i] * kernel;
+               }
+            }
+#if 1
+            int size = in_channels;
+            while (size > 1)
+            {
+               int half = size / 2;
+               for ( int channel_index = 0; channel_index < half; ++channel_index )
+               {
+                  int left_index = channel_index;
+                  int right_index = channel_index + half;
+
+                  float *channel_left = temp + left_index * array_count;
+                  float *channel_right = temp + right_index * array_count;
+
+                  for (int i = 0; i < array_count; ++i)
+                  {
+                     channel_left[i] += channel_right[i];
+                  }
+               }
+
+               b32 is_odd = size % 2 > 0;
+               if (is_odd)
+               {
+                  int left_index = half - 1;
+                  int right_index = size - 1;
+
+                  float *channel_left = temp + left_index * array_count;
+                  float *channel_right = temp + right_index * array_count;
+
+                  for (int i = 0; i < array_count; ++i)
+                  {
+                     channel_left[i] += channel_right[i];
+                  }
+               }
+
+               size = half;
+            }
+
+#else
+            for (int i = 0; i < array_count; ++i)
+            {
+               for (int channel_index = 1; channel_index < in_channels; ++channel_index)
+               {
+                  float *channel_right = temp + channel_index * array_count;
+                  temp[i] += channel_right[i];
+               }
+            }
+#endif
+
+            float *output_filter_channel = output_data_batch + filter_index * output_array_count;
+            for (int i = 0; i < array_count; ++i)
+            {
+               output_filter_channel[i] = temp[i] + bias_value;
+            }
+
+            endTemporaryMemory(batch_mark);
          }
 
       }
-
-      for ( int filter_index = 0; filter_index < filter_count; ++filter_index )
+   }
+   else
+   {
+      for ( int batch_index = 0; batch_index < batch_size; ++batch_index )
       {
-         float *output_filter_channel = output_data_batch + filter_index * output_array_count;
-         if (biases)
+         float *input_data_batch = input->data + batch_index * batch_stride_input;
+         float *output_data_batch = output->data + batch_index * batch_stride_output;
+         for ( int channel_index = 0; channel_index < in_channels; ++channel_index )
+         // for ( int filter_index = 0; filter_index < filter_count; ++filter_index )
          {
-            float bias_value = biases->data[filter_index];
-            for (int i = 0; i < output_array_count; ++i)
+            // float *output_filter_channel = output_data_batch + filter_index * output_array_count;
+            if (biases)
             {
-               output_filter_channel[i] += bias_value;
+               // float bias_value = biases->data[filter_index];
+               // for (int i = 0; i < output_array_count; ++i)
+               // {
+               //    output_filter_channel[i] = bias_value;
+               // }
+            }
+
+            // for ( int channel_index = 0; channel_index < in_channels; ++channel_index )
+            for ( int filter_index = 0; filter_index < filter_count; ++filter_index )
+            {
+               float *output_filter_channel = output_data_batch + filter_index * output_array_count;
+
+               float *kernel = index3d( filters, filter_index, channel_index, 0 );
+
+               float *channel = input_data_batch + channel_index * array_count;
+               for ( int index = 0; index < output_array_count; ++index )
+               {
+                  #if 1
+                  output_filter_channel[index] += dotproduct_slow( channel + index * hop_length, kernel_size, kernel, kernel_size );
+                  #elif 1
+                  float *channel_sub = channel + index * hop_length;
+                  float out_channel = output_filter_channel[index];
+
+                  __m256 s = _mm256_setzero_ps();
+                  int i;
+                  for (i = 0; i < kernel_size - 7; i += 8)
+                  {
+                     __m256 a = _mm256_loadu_ps(channel_sub + i);
+                     __m256 b = _mm256_loadu_ps(kernel + i);
+                     __m256 r = _mm256_mul_ps(a, b);
+                     s = _mm256_add_ps(s, r);
+                  }
+
+                  s = _mm256_hadd_ps(s, s);
+                  s = _mm256_hadd_ps(s, s);
+                  s = _mm256_hadd_ps(s, s);
+
+                  out_channel += ((float *)&s)[0];
+                  // float v;
+                  // _MM_EXTRACT_FLOAT(v, _mm256_extractf128_ps(s, 0), 0);
+                  // out_channel += v;
+
+
+                  for (; i < kernel_size; ++i)
+                  {
+                     out_channel += channel_sub[i] * kernel[i];
+                  }
+
+                  output_filter_channel[index] = out_channel;
+                  #else
+                  int wide = 8;
+                  int wide_parts = kernel_size / wide;
+                  float sub = 0.0f;
+                  float *channel_sub = channel + index * hop_length;
+                  for (int i = 0; i < wide_parts; ++i)
+                  {
+                     float *channel_sub_sub = channel_sub + i * wide;
+                     float *kernel_sub = kernel + i * wide;
+
+                     float subsub = 0.0f;
+                     for (int j = 0; j < wide; ++j)
+                     {
+                        subsub += channel_sub_sub[j] * kernel_sub[j];
+                     }
+                     sub += subsub;
+                  }
+
+                  float sub2 = 0.0f;
+                  for (int i = wide_parts * wide; i < kernel_size; ++i)
+                  {
+                     float vala = channel_sub[i];
+                     float valb = kernel[i];
+                     float muled = vala * valb;
+                     float added = sub2 + muled;
+                     sub2 = added;
+                  }
+
+                  float sum = sub + sub2;
+                  float read = output_filter_channel[index];
+                  output_filter_channel[index] = sum + read;
+
+                  #endif
+               }
+            }
+
+         }
+
+         for ( int filter_index = 0; filter_index < filter_count; ++filter_index )
+         {
+            float *output_filter_channel = output_data_batch + filter_index * output_array_count;
+            if (biases)
+            {
+               float bias_value = biases->data[filter_index];
+               for (int i = 0; i < output_array_count; ++i)
+               {
+                  output_filter_channel[i] += bias_value;
+               }
             }
          }
       }
