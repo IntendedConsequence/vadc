@@ -44,84 +44,90 @@ static void dual_head_attention(MemoryArena *arena, TestTensor *input_batch,
 
    TemporaryMemory mark = beginTemporaryMemory( arena );
 
-   TestTensor *QKV_result = tensor_zeros_2d( arena, seq_length, out_features );
-   tensor_linear( input_batch, QKV_weights, QKV_biases, QKV_result );
+   {
+      TemporaryMemory mark_batch = beginTemporaryMemory( arena );
 
-   TestTensor *QKV_result_T = tensor_transpose_last_2d( arena, QKV_result );
-   int head_size = seq_length * head_length;
+      TestTensor *QKV_result = tensor_zeros_2d( arena, seq_length, out_features );
+      tensor_linear( input_batch, QKV_weights, QKV_biases, QKV_result );
 
-   TestTensor head_ref = {.ndim = 2, .dims = {head_length, seq_length}};
+      TestTensor *QKV_result_T = tensor_transpose_last_2d( arena, QKV_result );
+      int head_size = seq_length * head_length;
 
-   head_ref.size = head_size;
-   head_ref.nbytes = head_size * sizeof( float );
+      TestTensor head_ref = {.ndim = 2, .dims = {head_length, seq_length}};
 
-   head_ref.data = QKV_result_T->data;
-   TestTensor *q1 = tensor_transpose_last_2d( arena, &head_ref );
+      head_ref.size = head_size;
+      head_ref.nbytes = head_size * sizeof( float );
 
-   head_ref.data += head_size;
-   TestTensor *q2 = tensor_transpose_last_2d( arena, &head_ref );
+      head_ref.data = QKV_result_T->data;
+      TestTensor *q1 = tensor_transpose_last_2d( arena, &head_ref );
 
-
-   head_ref.data += head_size;
-   TestTensor *k1 = tensor_transpose_last_2d( arena, &head_ref );
-
-   head_ref.data += head_size;
-   TestTensor *k2 = tensor_transpose_last_2d( arena, &head_ref );
+      head_ref.data += head_size;
+      TestTensor *q2 = tensor_transpose_last_2d( arena, &head_ref );
 
 
-   head_ref.data += head_size;
-   TestTensor *v1 = tensor_copy( arena, &head_ref );
+      head_ref.data += head_size;
+      TestTensor *k1 = tensor_transpose_last_2d( arena, &head_ref );
+
+      head_ref.data += head_size;
+      TestTensor *k2 = tensor_transpose_last_2d( arena, &head_ref );
 
 
-   head_ref.data += head_size;
-   TestTensor *v2 = tensor_copy( arena, &head_ref );
-
-   TestTensor *a1 = tensor_zeros_2d( arena, tdim( k1, -2 ), tdim( q1, -2 ) );
-   TestTensor *a2 = tensor_zeros_like( arena, a1 );
-
-   tensor_linear( k1, q1, 0, a1 );
-   tensor_linear( k2, q2, 0, a2 );
+      head_ref.data += head_size;
+      TestTensor *v1 = tensor_copy( arena, &head_ref );
 
 
+      head_ref.data += head_size;
+      TestTensor *v2 = tensor_copy( arena, &head_ref );
 
-   // NOTE(irwin): 1.0f / sqrtf(head_length);
-   //              where head_length is the dimensionality of the head
-   //              (this is the sqrt(dk) in the paper Attention Is All You Need
-   //              https://arxiv.org/pdf/1706.03762.pdf)
-   // NOTE(irwin): this is done for numerical stability
-   const float scale = 1.0f / sqrtf((float)head_length);
+      TestTensor *a1 = tensor_zeros_2d( arena, tdim( k1, -2 ), tdim( q1, -2 ) );
+      TestTensor *a2 = tensor_zeros_like( arena, a1 );
 
-   tensor_mul_inplace( a1, scale );
-   tensor_mul_inplace( a2, scale );
+      tensor_linear( k1, q1, 0, a1 );
+      tensor_linear( k2, q2, 0, a2 );
 
-   softmax_inplace_stable( arena, a1 );
-   softmax_inplace_stable( arena, a2 );
 
-   // [25, 25] x [8, 25] = [25, 8]
-   TestTensor *attn1 = tensor_zeros_2d( arena, tdim( a1, -2 ), tdim( v1, -2 ) );
-   TestTensor *attn2 = tensor_zeros_like( arena, attn1 );
 
-   // [25, 8]
-   // [25, 8]
-   tensor_linear( a1, v1, 0, attn1 );
-   tensor_linear( a2, v2, 0, attn2 );
+      // NOTE(irwin): 1.0f / sqrtf(head_length);
+      //              where head_length is the dimensionality of the head
+      //              (this is the sqrt(dk) in the paper Attention Is All You Need
+      //              https://arxiv.org/pdf/1706.03762.pdf)
+      // NOTE(irwin): this is done for numerical stability
+      const float scale = 1.0f / sqrtf((float)head_length);
 
-   // [8, 25]
-   // [8, 25]
-   TestTensor *attn1_t = tensor_transpose_last_2d( arena, attn1 );
-   TestTensor *attn2_t = tensor_transpose_last_2d( arena, attn2 );
+      tensor_mul_inplace( a1, scale );
+      tensor_mul_inplace( a2, scale );
 
-   // [16, 25]
-   // TODO(irwin): tensor_concat routine
-   TestTensor *attn12_t = tensor_zeros_2d( arena, tdim( attn1_t, -2 ) * 2, tdim( attn1_t, -1 ) );
-   memmove( attn12_t->data, attn1_t->data, attn1_t->nbytes );
-   memmove( attn12_t->data + attn1_t->size, attn2_t->data, attn2_t->nbytes );
+      softmax_inplace_stable( arena, a1 );
+      softmax_inplace_stable( arena, a2 );
 
-   // [25, 16]
-   TestTensor *attention = tensor_transpose_last_2d( arena, attn12_t );
+      // [25, 25] x [8, 25] = [25, 8]
+      TestTensor *attn1 = tensor_zeros_2d( arena, tdim( a1, -2 ), tdim( v1, -2 ) );
+      TestTensor *attn2 = tensor_zeros_like( arena, attn1 );
 
-   // [25, 16] x [16, 16] + [16] = [25, 16]
-   tensor_linear( attention, proj_weights, proj_biases, output_batch );
+      // [25, 8]
+      // [25, 8]
+      tensor_linear( a1, v1, 0, attn1 );
+      tensor_linear( a2, v2, 0, attn2 );
+
+      // [8, 25]
+      // [8, 25]
+      TestTensor *attn1_t = tensor_transpose_last_2d( arena, attn1 );
+      TestTensor *attn2_t = tensor_transpose_last_2d( arena, attn2 );
+
+      // [16, 25]
+      // TODO(irwin): tensor_concat routine
+      TestTensor *attn12_t = tensor_zeros_2d( arena, tdim( attn1_t, -2 ) * 2, tdim( attn1_t, -1 ) );
+      memmove( attn12_t->data, attn1_t->data, attn1_t->nbytes );
+      memmove( attn12_t->data + attn1_t->size, attn2_t->data, attn2_t->nbytes );
+
+      // [25, 16]
+      TestTensor *attention = tensor_transpose_last_2d( arena, attn12_t );
+
+      // [25, 16] x [16, 16] + [16] = [25, 16]
+      tensor_linear( attention, proj_weights, proj_biases, output_batch );
+
+      endTemporaryMemory( mark_batch );
+   }
 
    endTemporaryMemory( mark );
    TracyCZoneEnd(dual_head_attention);
