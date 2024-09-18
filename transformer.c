@@ -229,38 +229,6 @@ static void transformer_block( MemoryArena *arena, TestTensor *input_batch,
    TracyCZoneEnd(transformer_block);
 }
 
-static void transformer_block_batch( MemoryArena *arena, TestTensor *input,
-                                     TestTensor *attention_weights, TestTensor *attention_biases,
-                                     TestTensor *attention_proj_weights, TestTensor *attention_proj_biases,
-                                     TestTensor *norm1_weights, TestTensor *norm1_biases,
-                                     TestTensor *linear1_weights, TestTensor *linear1_biases,
-                                     TestTensor *linear2_weights, TestTensor *linear2_biases,
-                                     TestTensor *norm2_weights, TestTensor *norm2_biases,
-                                     TestTensor *output )
-{
-   TracyCZone(transformer_block_batch, true);
-
-   Assert( input->ndim == 3 );
-   Assert( output->ndim == 3 );
-
-   int batch_size = tdim( input, 0 );
-   for ( int batch_index = 0; batch_index < batch_size; ++batch_index )
-   {
-      TestTensor input_slice = tensor_index_first_dim( input, batch_index, false );
-      TestTensor output_slice = tensor_index_first_dim( output, batch_index, false );
-
-      transformer_block( arena, &input_slice,
-                         attention_weights, attention_biases,
-                         attention_proj_weights, attention_proj_biases,
-                         norm1_weights, norm1_biases,
-                         linear1_weights, linear1_biases,
-                         linear2_weights, linear2_biases,
-                         norm2_weights, norm2_biases,
-                         &output_slice );
-   }
-   TracyCZoneEnd(transformer_block_batch);
-}
-
 
 static void transformer_layer( MemoryArena *arena, TestTensor *input, TransformerLayer_Weights weights, int conv_stride, TestTensor *output )
 {
@@ -293,7 +261,7 @@ static void transformer_layer( MemoryArena *arena, TestTensor *input, Transforme
    TestTensor *transformer_block_output = tensor_zeros_like( arena, conv_block_output );
 
    // NOTE(irwin): 2 - TransformerBlock
-   transformer_block_batch(arena,
+   transformer_block(arena,
                      conv_block_output,
                      weights.attention_weights, weights.attention_biases,
                      weights.attention_proj_weights, weights.attention_proj_biases,
