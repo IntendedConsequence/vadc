@@ -133,65 +133,99 @@ static void dual_head_attention(MemoryArena *arena, TestTensor *input,
 
 // TODO(irwin):
 // - [x] batch input support via wrapper
+// - [x] batch input support via internal wrapper loop
 // - [ ] proper batch input support
-static void transformer_block( MemoryArena *arena, TestTensor *input,
+static void transformer_block( MemoryArena *arena, TestTensor *input_batch,
                                TestTensor *attention_weights, TestTensor *attention_biases,
                                TestTensor *attention_proj_weights, TestTensor *attention_proj_biases,
                                TestTensor *norm1_weights, TestTensor *norm1_biases,
                                TestTensor *linear1_weights, TestTensor *linear1_biases,
                                TestTensor *linear2_weights, TestTensor *linear2_biases,
                                TestTensor *norm2_weights, TestTensor *norm2_biases,
-                               TestTensor *output )
+                               TestTensor *output_batch )
 {
    TracyCZone(transformer_block, true);
 
-   Assert( input->ndim == 2 );
-   Assert( output->ndim == 2 );
-
-
-   ///////////////////////////////////////////////////////////////////////////////////
-   // NOTE(irwin): BEGIN transformer_block logic before batch conversion
-   ///////////////////////////////////////////////////////////////////////////////////
-   int shape = tdim( input, -2 );
+   Assert( input_batch->ndim == 2 || input_batch->ndim == 3 );
+   Assert( output_batch->ndim == input_batch->ndim );
 
    TemporaryMemory mark = beginTemporaryMemory( arena );
 
-   TestTensor *input_transposed = tensor_transpose_last_2d( arena, input );
-   TestTensor *attention_output = tensor_zeros_like( arena, input_transposed );
+   if (input_batch->ndim == 2)
+   {
+      // NOTE(irwin): put unsqueezed input and output tensors into arena
+      //              we do this nonsense because tensor_unsqueeze returns
+      //              by value and we don't want to pass an address of a
+      //              stack variable down the call hierarchy. Just in case
+      // TODO(irwin): tensor_unsqueeze_pointer variant
+      TestTensor unsqueezed_input = tensor_unsqueeze(input_batch, 0);
+      TestTensor *unsqueezed_input_copy = pushStruct(arena, TestTensor);
+      *unsqueezed_input_copy = unsqueezed_input;
+      input_batch = unsqueezed_input_copy;
 
-   dual_head_attention( arena, input_transposed,
-                        attention_weights, attention_biases,
-                        attention_proj_weights, attention_proj_biases,
-                        attention_output );
+      TestTensor unsqueezed_output = tensor_unsqueeze(output_batch, 0);
+      TestTensor *unsqueezed_output_copy = pushStruct(arena, TestTensor);
+      *unsqueezed_output_copy = unsqueezed_output;
+      output_batch = unsqueezed_output_copy;
 
-   tensor_add_inplace_nd( input_transposed, attention_output );
+   }
 
-   // TODO(irwin): can zero and reuse attention_output?
-   TestTensor *norm1_output = tensor_zeros_like( arena, input_transposed );
-   layer_norm( arena, input_transposed, norm1_weights, norm1_biases, norm1_output );
+   int batch_size = tdim(input_batch, -3);
+   for ( int batch_index = 0; batch_index < batch_size; ++batch_index )
+   {
+      TestTensor input_slice = tensor_index_first_dim( input_batch, batch_index, false );
+      TestTensor output_slice = tensor_index_first_dim( output_batch, batch_index, false );
 
-   // NOTE(irwin): tdim(input_transposed, -1) == tdim(input, -2)
-   // NOTE(irwin): tdim(norm1_output, -1) == tdim(input_transposed, -1)
-   // NOTE(irwin): shape is tdim(input, -2)
-   Assert(tdim( norm1_output, -1 ) == shape);
-   TestTensor *linear1_output = tensor_zeros_2d( arena, tdim( norm1_output, -2 ), shape );
-   tensor_linear( norm1_output, linear1_weights, linear1_biases, linear1_output );
-   tensor_relu_inplace( linear1_output );
-   TestTensor *linear2_output = tensor_zeros_2d( arena, tdim( linear1_output, -2 ), shape );
-   tensor_linear( linear1_output, linear2_weights, linear2_biases, linear2_output );
-   tensor_add_inplace_nd( norm1_output, linear2_output );
+      // NOTE(irwin): I know what I said just 20 lines above, shut up
+      TestTensor *input = &input_slice;
+      TestTensor *output = &output_slice;
 
-   TestTensor *norm2_output = tensor_zeros_like( arena, norm1_output );
-   layer_norm( arena, norm1_output, norm2_weights, norm2_biases, norm2_output );
+      ///////////////////////////////////////////////////////////////////////////////////
+      // NOTE(irwin): BEGIN transformer_block logic before batch conversion
+      ///////////////////////////////////////////////////////////////////////////////////
+      int shape = tdim( input, -2 );
 
-   TestTensor *output_copy_source = tensor_transpose_last_2d( arena, norm2_output );
-   Assert(output->nbytes == output_copy_source->nbytes);
-   memmove( output->data, output_copy_source->data, output->nbytes );
+      TemporaryMemory mark_batch = beginTemporaryMemory( arena );
 
-   ///////////////////////////////////////////////////////////////////////////////////
-   // NOTE(irwin): END transformer_block logic before batch conversion
-   ///////////////////////////////////////////////////////////////////////////////////
+      TestTensor *input_transposed = tensor_transpose_last_2d( arena, input );
+      TestTensor *attention_output = tensor_zeros_like( arena, input_transposed );
+
+      dual_head_attention( arena, input_transposed,
+                           attention_weights, attention_biases,
+                           attention_proj_weights, attention_proj_biases,
+                           attention_output );
+
+      tensor_add_inplace_nd( input_transposed, attention_output );
+
+      // TODO(irwin): can zero and reuse attention_output?
+      TestTensor *norm1_output = tensor_zeros_like( arena, input_transposed );
+      layer_norm( arena, input_transposed, norm1_weights, norm1_biases, norm1_output );
+
+      // NOTE(irwin): tdim(input_transposed, -1) == tdim(input, -2)
+      // NOTE(irwin): tdim(norm1_output, -1) == tdim(input_transposed, -1)
+      // NOTE(irwin): shape is tdim(input, -2)
+      Assert(tdim( norm1_output, -1 ) == shape);
+      TestTensor *linear1_output = tensor_zeros_2d( arena, tdim( norm1_output, -2 ), shape );
+      tensor_linear( norm1_output, linear1_weights, linear1_biases, linear1_output );
+      tensor_relu_inplace( linear1_output );
+      TestTensor *linear2_output = tensor_zeros_2d( arena, tdim( linear1_output, -2 ), shape );
+      tensor_linear( linear1_output, linear2_weights, linear2_biases, linear2_output );
+      tensor_add_inplace_nd( norm1_output, linear2_output );
+
+      TestTensor *norm2_output = tensor_zeros_like( arena, norm1_output );
+      layer_norm( arena, norm1_output, norm2_weights, norm2_biases, norm2_output );
+
+      TestTensor *output_copy_source = tensor_transpose_last_2d( arena, norm2_output );
+      Assert(output->nbytes == output_copy_source->nbytes);
+      memmove( output->data, output_copy_source->data, output->nbytes );
+
+      ///////////////////////////////////////////////////////////////////////////////////
+      // NOTE(irwin): END transformer_block logic before batch conversion
+      ///////////////////////////////////////////////////////////////////////////////////
+      endTemporaryMemory( mark_batch );
+   }
    endTemporaryMemory( mark );
+
    TracyCZoneEnd(transformer_block);
 }
 
