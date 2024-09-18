@@ -15,8 +15,12 @@ static void dual_head_attention(MemoryArena *arena, TestTensor *input_batch,
 {
    TracyCZone(dual_head_attention, true);
 
-   Assert( input_batch->ndim == 2 );
-   Assert( output_batch->ndim == 2 );
+
+   Assert( input_batch->ndim == 2 || input_batch->ndim == 3 );
+   Assert( output_batch->ndim == input_batch->ndim );
+
+
+
 
    Assert( QKV_weights->ndim == 2 );
    Assert( QKV_biases->ndim == 1 );
@@ -41,14 +45,28 @@ static void dual_head_attention(MemoryArena *arena, TestTensor *input_batch,
    Assert( tdim( output_batch, -2 ) == seq_length );
    Assert( tdim( output_batch, -1 ) == in_features );
 
-
    TemporaryMemory mark = beginTemporaryMemory( arena );
 
+   if (input_batch->ndim == 2)
    {
+      input_batch = tensor_unsqueeze_pointer(arena, input_batch, 0);
+      output_batch = tensor_unsqueeze_pointer(arena, output_batch, 0);
+   }
+
+   int batch_size = tdim(input_batch, -3);
+   for ( int batch_index = 0; batch_index < batch_size; ++batch_index )
+   {
+      TestTensor input_slice = tensor_index_first_dim( input_batch, batch_index, false );
+      TestTensor output_slice = tensor_index_first_dim( output_batch, batch_index, false );
+
+      // TODO(irwin): avoid taking an address of a stack variable
+      TestTensor *input = &input_slice;
+      TestTensor *output = &output_slice;
+
       TemporaryMemory mark_batch = beginTemporaryMemory( arena );
 
       TestTensor *QKV_result = tensor_zeros_2d( arena, seq_length, out_features );
-      tensor_linear( input_batch, QKV_weights, QKV_biases, QKV_result );
+      tensor_linear( input, QKV_weights, QKV_biases, QKV_result );
 
       TestTensor *QKV_result_T = tensor_transpose_last_2d( arena, QKV_result );
       int head_size = seq_length * head_length;
@@ -124,7 +142,7 @@ static void dual_head_attention(MemoryArena *arena, TestTensor *input_batch,
       TestTensor *attention = tensor_transpose_last_2d( arena, attn12_t );
 
       // [25, 16] x [16, 16] + [16] = [25, 16]
-      tensor_linear( attention, proj_weights, proj_biases, output_batch );
+      tensor_linear( attention, proj_weights, proj_biases, output );
 
       endTemporaryMemory( mark_batch );
    }
