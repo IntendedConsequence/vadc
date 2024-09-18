@@ -148,6 +148,10 @@ static void transformer_block( MemoryArena *arena, TestTensor *input,
    Assert( input->ndim == 2 );
    Assert( output->ndim == 2 );
 
+
+   ///////////////////////////////////////////////////////////////////////////////////
+   // NOTE(irwin): BEGIN transformer_block logic before batch conversion
+   ///////////////////////////////////////////////////////////////////////////////////
    int shape = tdim( input, -2 );
 
    TemporaryMemory mark = beginTemporaryMemory( arena );
@@ -184,6 +188,9 @@ static void transformer_block( MemoryArena *arena, TestTensor *input,
    Assert(output->nbytes == output_copy_source->nbytes);
    memmove( output->data, output_copy_source->data, output->nbytes );
 
+   ///////////////////////////////////////////////////////////////////////////////////
+   // NOTE(irwin): END transformer_block logic before batch conversion
+   ///////////////////////////////////////////////////////////////////////////////////
    endTemporaryMemory( mark );
    TracyCZoneEnd(transformer_block);
 }
