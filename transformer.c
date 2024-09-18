@@ -8,15 +8,15 @@
 //       self.out_proj = torch.nn.Linear(in_features=qkv_in_features, out_features=qkv_in_features)
 
 
-static void dual_head_attention(MemoryArena *arena, TestTensor *input,
+static void dual_head_attention(MemoryArena *arena, TestTensor *input_batch,
                                  TestTensor *QKV_weights, TestTensor *QKV_biases,
                                  TestTensor *proj_weights, TestTensor *proj_biases,
-                                 TestTensor *output )
+                                 TestTensor *output_batch )
 {
    TracyCZone(dual_head_attention, true);
 
-   Assert( input->ndim == 2 );
-   Assert( output->ndim == 2 );
+   Assert( input_batch->ndim == 2 );
+   Assert( output_batch->ndim == 2 );
 
    Assert( QKV_weights->ndim == 2 );
    Assert( QKV_biases->ndim == 1 );
@@ -25,9 +25,9 @@ static void dual_head_attention(MemoryArena *arena, TestTensor *input,
    const int n_heads = 2;
    int head_length = in_features / n_heads;
    int out_features = tdim( QKV_weights, -2 );
-   int seq_length = tdim( input, -2 );
+   int seq_length = tdim( input_batch, -2 );
 
-   Assert( in_features == tdim( input, -1 ) );
+   Assert( in_features == tdim( input_batch, -1 ) );
    Assert( out_features == tdim( QKV_biases, 0 ) );
 
    Assert( proj_weights->ndim == 2 );
@@ -37,18 +37,17 @@ static void dual_head_attention(MemoryArena *arena, TestTensor *input,
    Assert( tdim( proj_weights, 1 ) == in_features );
    Assert( tdim( proj_biases, 0 ) == in_features );
 
-   Assert( output->ndim == 2 );
-   Assert( tdim( output, -2 ) == seq_length );
-   Assert( tdim( output, -1 ) == in_features );
+   Assert( output_batch->ndim == 2 );
+   Assert( tdim( output_batch, -2 ) == seq_length );
+   Assert( tdim( output_batch, -1 ) == in_features );
 
 
-   MemoryArena *debug_arena = arena;
-   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+   TemporaryMemory mark = beginTemporaryMemory( arena );
 
-   TestTensor *QKV_result = tensor_zeros_2d( debug_arena, seq_length, out_features );
-   tensor_linear( input, QKV_weights, QKV_biases, QKV_result );
+   TestTensor *QKV_result = tensor_zeros_2d( arena, seq_length, out_features );
+   tensor_linear( input_batch, QKV_weights, QKV_biases, QKV_result );
 
-   TestTensor *QKV_result_T = tensor_transpose_last_2d( debug_arena, QKV_result );
+   TestTensor *QKV_result_T = tensor_transpose_last_2d( arena, QKV_result );
    int head_size = seq_length * head_length;
 
    TestTensor head_ref = {.ndim = 2, .dims = {head_length, seq_length}};
@@ -59,28 +58,28 @@ static void dual_head_attention(MemoryArena *arena, TestTensor *input,
    head_ref.nbytes = head_size * sizeof( float );
 
    head_ref.data = QKV_result_T->data;
-   TestTensor *q1 = tensor_transpose_last_2d( debug_arena, &head_ref );
+   TestTensor *q1 = tensor_transpose_last_2d( arena, &head_ref );
 
    head_ref.data += head_size;
-   TestTensor *q2 = tensor_transpose_last_2d( debug_arena, &head_ref );
-
-
-   head_ref.data += head_size;
-   TestTensor *k1 = tensor_transpose_last_2d( debug_arena, &head_ref );
-
-   head_ref.data += head_size;
-   TestTensor *k2 = tensor_transpose_last_2d( debug_arena, &head_ref );
+   TestTensor *q2 = tensor_transpose_last_2d( arena, &head_ref );
 
 
    head_ref.data += head_size;
-   TestTensor *v1 = tensor_copy( debug_arena, &head_ref );
+   TestTensor *k1 = tensor_transpose_last_2d( arena, &head_ref );
+
+   head_ref.data += head_size;
+   TestTensor *k2 = tensor_transpose_last_2d( arena, &head_ref );
 
 
    head_ref.data += head_size;
-   TestTensor *v2 = tensor_copy( debug_arena, &head_ref );
+   TestTensor *v1 = tensor_copy( arena, &head_ref );
 
-   TestTensor *a1 = tensor_zeros_2d( debug_arena, tdim( k1, -2 ), tdim( q1, -2 ) );
-   TestTensor *a2 = tensor_zeros_like( debug_arena, a1 );
+
+   head_ref.data += head_size;
+   TestTensor *v2 = tensor_copy( arena, &head_ref );
+
+   TestTensor *a1 = tensor_zeros_2d( arena, tdim( k1, -2 ), tdim( q1, -2 ) );
+   TestTensor *a2 = tensor_zeros_like( arena, a1 );
 
    tensor_linear( k1, q1, 0, a1 );
    tensor_linear( k2, q2, 0, a2 );
@@ -97,12 +96,12 @@ static void dual_head_attention(MemoryArena *arena, TestTensor *input,
    tensor_mul_inplace( a1, scale );
    tensor_mul_inplace( a2, scale );
 
-   softmax_inplace_stable( debug_arena, a1 );
-   softmax_inplace_stable( debug_arena, a2 );
+   softmax_inplace_stable( arena, a1 );
+   softmax_inplace_stable( arena, a2 );
 
    // [25, 25] x [8, 25] = [25, 8]
-   TestTensor *attn1 = tensor_zeros_2d( debug_arena, tdim( a1, -2 ), tdim( v1, -2 ) );
-   TestTensor *attn2 = tensor_zeros_like( debug_arena, attn1 );
+   TestTensor *attn1 = tensor_zeros_2d( arena, tdim( a1, -2 ), tdim( v1, -2 ) );
+   TestTensor *attn2 = tensor_zeros_like( arena, attn1 );
 
    // [25, 8]
    // [25, 8]
@@ -111,20 +110,20 @@ static void dual_head_attention(MemoryArena *arena, TestTensor *input,
 
    // [8, 25]
    // [8, 25]
-   TestTensor *attn1_t = tensor_transpose_last_2d( debug_arena, attn1 );
-   TestTensor *attn2_t = tensor_transpose_last_2d( debug_arena, attn2 );
+   TestTensor *attn1_t = tensor_transpose_last_2d( arena, attn1 );
+   TestTensor *attn2_t = tensor_transpose_last_2d( arena, attn2 );
 
    // [16, 25]
    // TODO(irwin): tensor_concat routine
-   TestTensor *attn12_t = tensor_zeros_2d( debug_arena, tdim( attn1_t, -2 ) * 2, tdim( attn1_t, -1 ) );
+   TestTensor *attn12_t = tensor_zeros_2d( arena, tdim( attn1_t, -2 ) * 2, tdim( attn1_t, -1 ) );
    memmove( attn12_t->data, attn1_t->data, attn1_t->nbytes );
    memmove( attn12_t->data + attn1_t->size, attn2_t->data, attn2_t->nbytes );
 
    // [25, 16]
-   TestTensor *attention = tensor_transpose_last_2d( debug_arena, attn12_t );
+   TestTensor *attention = tensor_transpose_last_2d( arena, attn12_t );
 
    // [25, 16] x [16, 16] + [16] = [25, 16]
-   tensor_linear( attention, proj_weights, proj_biases, output );
+   tensor_linear( attention, proj_weights, proj_biases, output_batch );
 
    endTemporaryMemory( mark );
    TracyCZoneEnd(dual_head_attention);
