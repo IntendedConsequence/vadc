@@ -358,6 +358,25 @@ static inline b32 tensor_is_valid( TestTensor *tensor )
    return (!!tensor->data) & (!!tensor->nbytes) & (!!tensor->size) & (!!tensor->ndim) & (!!tensor->dims);
 }
 
+static inline TestTensor tensor_unsqueeze( TestTensor *tensor, int dim );
+static inline TestTensor tensor_squeeze( TestTensor *tensor, int dim );
+
+static inline TestTensor *tensor_unsqueeze_pointer( MemoryArena *arena, TestTensor *tensor, int dim )
+{
+   TestTensor *unsqueezed_tensor_copy = pushStruct(arena, TestTensor);
+   *unsqueezed_tensor_copy = tensor_unsqueeze(tensor, dim);
+
+   return unsqueezed_tensor_copy;
+}
+
+static inline TestTensor *tensor_squeeze_pointer( MemoryArena *arena, TestTensor *tensor, int dim )
+{
+   TestTensor *squeezed_tensor_copy = pushStruct(arena, TestTensor);
+   *squeezed_tensor_copy = tensor_squeeze(tensor, dim);
+
+   return squeezed_tensor_copy;
+}
+
 static inline TestTensor tensor_unsqueeze( TestTensor *tensor, int dim )
 {
    Assert( tensor_is_valid( tensor ) );

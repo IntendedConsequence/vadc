@@ -153,21 +153,8 @@ static void transformer_block( MemoryArena *arena, TestTensor *input_batch,
 
    if (input_batch->ndim == 2)
    {
-      // NOTE(irwin): put unsqueezed input and output tensors into arena
-      //              we do this nonsense because tensor_unsqueeze returns
-      //              by value and we don't want to pass an address of a
-      //              stack variable down the call hierarchy. Just in case
-      // TODO(irwin): tensor_unsqueeze_pointer variant
-      TestTensor unsqueezed_input = tensor_unsqueeze(input_batch, 0);
-      TestTensor *unsqueezed_input_copy = pushStruct(arena, TestTensor);
-      *unsqueezed_input_copy = unsqueezed_input;
-      input_batch = unsqueezed_input_copy;
-
-      TestTensor unsqueezed_output = tensor_unsqueeze(output_batch, 0);
-      TestTensor *unsqueezed_output_copy = pushStruct(arena, TestTensor);
-      *unsqueezed_output_copy = unsqueezed_output;
-      output_batch = unsqueezed_output_copy;
-
+      input_batch = tensor_unsqueeze_pointer(arena, input_batch, 0);
+      output_batch = tensor_unsqueeze_pointer(arena, output_batch, 0);
    }
 
    int batch_size = tdim(input_batch, -3);
@@ -176,7 +163,7 @@ static void transformer_block( MemoryArena *arena, TestTensor *input_batch,
       TestTensor input_slice = tensor_index_first_dim( input_batch, batch_index, false );
       TestTensor output_slice = tensor_index_first_dim( output_batch, batch_index, false );
 
-      // NOTE(irwin): I know what I said just 20 lines above, shut up
+      // TODO(irwin): avoid taking an address of a stack variable
       TestTensor *input = &input_slice;
       TestTensor *output = &output_slice;
 
