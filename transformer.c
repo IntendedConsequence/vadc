@@ -7,7 +7,9 @@
 //       self.QKV = torch.nn.Linear(in_features=qkv_in_features, out_features=qkv_out_features)
 //       self.out_proj = torch.nn.Linear(in_features=qkv_in_features, out_features=qkv_in_features)
 
-
+// TODO(irwin):
+// - [x] batch input support via internal wrapper loop
+// - [ ] proper batch input support
 static void dual_head_attention(MemoryArena *arena, TestTensor *input_batch,
                                  TestTensor *QKV_weights, TestTensor *QKV_biases,
                                  TestTensor *proj_weights, TestTensor *proj_biases,
@@ -41,7 +43,6 @@ static void dual_head_attention(MemoryArena *arena, TestTensor *input_batch,
    Assert( tdim( proj_weights, 1 ) == in_features );
    Assert( tdim( proj_biases, 0 ) == in_features );
 
-   Assert( output_batch->ndim == 2 );
    Assert( tdim( output_batch, -2 ) == seq_length );
    Assert( tdim( output_batch, -1 ) == in_features );
 
@@ -155,7 +156,7 @@ static void dual_head_attention(MemoryArena *arena, TestTensor *input_batch,
 // TODO(irwin):
 // - [x] batch input support via wrapper
 // - [x] batch input support via internal wrapper loop
-// - [ ] proper batch input support
+// - [x] proper batch input support
 static void transformer_block( MemoryArena *arena, TestTensor *input_batch,
                                TestTensor *attention_weights, TestTensor *attention_biases,
                                TestTensor *attention_proj_weights, TestTensor *attention_proj_biases,
@@ -179,15 +180,10 @@ static void transformer_block( MemoryArena *arena, TestTensor *input_batch,
    }
 
    int batch_size = tdim(input_batch, -3);
-   for ( int batch_index = 0; batch_index < batch_size; ++batch_index )
+
+   TestTensor *input = input_batch;
+   TestTensor *output = output_batch;
    {
-      TestTensor input_slice = tensor_index_first_dim( input_batch, batch_index, false );
-      TestTensor output_slice = tensor_index_first_dim( output_batch, batch_index, false );
-
-      // TODO(irwin): avoid taking an address of a stack variable
-      TestTensor *input = &input_slice;
-      TestTensor *output = &output_slice;
-
       ///////////////////////////////////////////////////////////////////////////////////
       // NOTE(irwin): BEGIN transformer_block logic before batch conversion
       ///////////////////////////////////////////////////////////////////////////////////
@@ -207,21 +203,21 @@ static void transformer_block( MemoryArena *arena, TestTensor *input_batch,
 
       // TODO(irwin): can zero and reuse attention_output?
       TestTensor *norm1_output = tensor_zeros_like( arena, input_transposed );
-      layer_norm( arena, input_transposed, norm1_weights, norm1_biases, norm1_output );
+      layer_norm_batch( arena, input_transposed, norm1_weights, norm1_biases, norm1_output );
 
       // NOTE(irwin): tdim(input_transposed, -1) == tdim(input, -2)
       // NOTE(irwin): tdim(norm1_output, -1) == tdim(input_transposed, -1)
       // NOTE(irwin): shape is tdim(input, -2)
       Assert(tdim( norm1_output, -1 ) == shape);
-      TestTensor *linear1_output = tensor_zeros_2d( arena, tdim( norm1_output, -2 ), shape );
+      TestTensor *linear1_output = tensor_zeros_3d( arena, batch_size, tdim( norm1_output, -2 ), shape );
       tensor_linear( norm1_output, linear1_weights, linear1_biases, linear1_output );
       tensor_relu_inplace( linear1_output );
-      TestTensor *linear2_output = tensor_zeros_2d( arena, tdim( linear1_output, -2 ), shape );
+      TestTensor *linear2_output = tensor_zeros_3d( arena, batch_size, tdim( linear1_output, -2 ), shape );
       tensor_linear( linear1_output, linear2_weights, linear2_biases, linear2_output );
       tensor_add_inplace_nd( norm1_output, linear2_output );
 
       TestTensor *norm2_output = tensor_zeros_like( arena, norm1_output );
-      layer_norm( arena, norm1_output, norm2_weights, norm2_biases, norm2_output );
+      layer_norm_batch( arena, norm1_output, norm2_weights, norm2_biases, norm2_output );
 
       TestTensor *output_copy_source = tensor_transpose_last_2d( arena, norm2_output );
       Assert(output->nbytes == output_copy_source->nbytes);
