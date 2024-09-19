@@ -371,9 +371,9 @@ static inline void conv_tensor ( TestTensor *input, TestTensor *filters, TestTen
 
                output_filter_channel[i] += bias_value;
             }
-#elif 1
+#elif 0
             /////////////////////////////////////////////////////////////////////////////
-            // NOTE(irwin): variant C: (best one so far)
+            // NOTE(irwin): variant C:
             //              in_channels are premultiplied by the kernels and written
             //              transposed, then summed up N at a time where N is a stride of
             //              2-16 (power of 2)
@@ -442,7 +442,7 @@ static inline void conv_tensor ( TestTensor *input, TestTensor *filters, TestTen
 
                output_filter_channel[i] += bias_value;
             }
-#else
+#elif 0
             /////////////////////////////////////////////////////////////////////////////
             // NOTE(irwin): variant D: like C but explicit transpose step
             //              in_channels are premultiplied by the kernels
@@ -524,6 +524,63 @@ static inline void conv_tensor ( TestTensor *input, TestTensor *filters, TestTen
                {
                   int transposed_stride = i * in_channels;
                   float a0 = temp2[transposed_stride + j + 0];
+                  output_filter_channel[i] += (a0);
+               }
+
+               output_filter_channel[i] += bias_value;
+            }
+#else
+            /////////////////////////////////////////////////////////////////////////////
+            // NOTE(irwin): variant E: SIMD (best one so far)
+            //              in_channels are premultiplied by the kernels
+            //              then SIMD summed
+            /////////////////////////////////////////////////////////////////////////////
+            for ( int channel_index = 0; channel_index < in_channels; ++channel_index )
+            {
+
+               float *in_channel = input_data_batch + channel_index * array_count;
+
+               float kernel = *index3d( filters, filter_index, channel_index, 0 );
+
+               for (int i = 0; i < array_count; ++i)
+               {
+                  float *out_channel = temp + in_channels * i;
+                  out_channel[channel_index] = in_channel[i] * kernel;
+               }
+            }
+
+            float *output_filter_channel = output_data_batch + filter_index * output_array_count;
+            for (int i = 0; i < array_count; ++i)
+            {
+               int j = 0;
+               int stride = 16;
+
+               __m256 r1 = _mm256_setzero_ps();
+               __m256 r2 = _mm256_setzero_ps();
+               for (; j < in_channels - (stride - 1); j += stride)
+               {
+                  int transposed_stride = i * in_channels;
+                  __m256 a1 = _mm256_loadu_ps(temp + transposed_stride + j + 0);
+                  __m256 a2 = _mm256_loadu_ps(temp + transposed_stride + j + 8);
+                  r1 = _mm256_add_ps(r1, a1);
+                  r2 = _mm256_add_ps(r2, a2);
+               }
+               r1 = _mm256_hadd_ps(r1, r2);
+
+               r1 = _mm256_hadd_ps(r1, r1);
+               r1 = _mm256_hadd_ps(r1, r1);
+               // r = _mm256_hadd_ps(r, r);
+
+               output_filter_channel[i] += ((float *)&r1)[0] + ((float *)&r1)[4];
+               // float v;
+               // _MM_EXTRACT_FLOAT(v, _mm256_extractf128_ps(r, 0), 0);
+               // output_filter_channel[i] += v;
+
+
+               for (; j < in_channels; ++j)
+               {
+                  int transposed_stride = i * in_channels;
+                  float a0 = temp[transposed_stride + j + 0];
                   output_filter_channel[i] += (a0);
                }
 
