@@ -123,6 +123,23 @@ static void adaptive_audio_normalization_inplace(MemoryArena *arena, TestTensor 
    TracyCZoneEnd(adaptive_audio_normalization_inplace);
 }
 
+static void layer_norm( MemoryArena *arena, TestTensor *input, TestTensor *weight, TestTensor *bias, TestTensor *output );
+
+static void layer_norm_batch( MemoryArena *arena, TestTensor *input, TestTensor *weight, TestTensor *bias, TestTensor *output )
+{
+   Assert( input->ndim == 3 );
+   Assert( output->ndim == 3 );
+
+   int batch_size = tdim( input, 0 );
+   for ( int batch_index = 0; batch_index < batch_size; ++batch_index )
+   {
+      TestTensor input_slice = tensor_index_first_dim( input, batch_index, false );
+      TestTensor output_slice = tensor_index_first_dim( output, batch_index, false );
+
+      layer_norm( arena, &input_slice, weight, bias, &output_slice );
+   }
+}
+
 static void layer_norm( MemoryArena *arena, TestTensor *input, TestTensor *weight, TestTensor *bias, TestTensor *output )
 {
    const float eps = 1e-5f;
