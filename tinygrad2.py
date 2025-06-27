@@ -1,3 +1,4 @@
+import math
 import os
 os.environ["LLVM_PATH"]="c:\\1PROGS\\llvm-16.0.2-windows-amd64-msvc17-msvcrt\\bin\\LLVM-C.dll"
 import pathlib
@@ -6,7 +7,7 @@ import tinygrad
 import tinygrad.nn as nn
 import numpy as np
 
-from tinygrad import Tensor, Device, TinyJit, dtypes
+from tinygrad import Tensor, Device, TinyJit, dtypes, Variable
 from tinygrad.helpers import tqdm, Context, getenv, Timing
 # Device.DEFAULT = "CUDA"
 
@@ -47,21 +48,27 @@ class LSTM:
             self.cell.bias_ih = Tensor(lstm_sd['bias_ih_l0'].numpy())
             self.cell.bias_hh = Tensor(lstm_sd['bias_hh_l0'].numpy())
 
-    # @TinyJit
     def tg_lstm_jit(self, x:Tensor, hc:tuple[Tensor, Tensor])->tuple[Tensor, Tensor]:
         hn, cn = self.cell(x, hc)
-        return hn.realize(), cn.realize()
+        return hn, cn
 
     # @TinyJit
     def __call__(self, x:Tensor, hc:tuple[Tensor, Tensor]|None=None)->tuple[Tensor, Tensor]:
-        if hc is None: hc = (Tensor.zeros(x.size(0), self.cell.weight_hh.size(1), dtype=x.dtype, device=x.device),)*2
+        if hc is None: hc = (Tensor.zeros(x.size(0), self.cell.weight_hh.size(1), dtype=x.dtype, device=x.device), Tensor.zeros(x.size(0), self.cell.weight_hh.size(1), dtype=x.dtype, device=x.device))
         bs, seq, feat = x.shape
-        # res = Tensor.empty(bs, seq, feat)
-        res = Tensor.empty(bs, 0, feat)
+        USE_CAT = True
+        if not USE_CAT:
+            res = Tensor.empty(bs, seq, feat)
+        else:
+            res = Tensor.empty(bs, 0, feat)
+        # vi = Variable("seq", 0, seq-1)
         for i in range(seq):
-            hc = self.tg_lstm_jit(x[:, i, :].contiguous(), hc)
-            # res[:, i:i+1, :] = hc[0].unsqueeze(1)
-            res = Tensor.cat(res, hc[0].unsqueeze(1), dim=1).realize()
+            # vib = vi.bind(i)
+            hc = self.tg_lstm_jit(x[:, i, :], hc)
+            if not USE_CAT:
+                res[:, i:i+1, :] = hc[0].unsqueeze(1)
+            else:
+                res = Tensor.cat(res, hc[0].unsqueeze(1), dim=1)
         return res, hc
 
 class SileroV5:
@@ -196,14 +203,14 @@ if __name__ == '__main__':
         return tg_lstm_out_t.relu().conv2d(weight=v5t.decoder_parameters[0], bias=v5t.decoder_parameters[1]).sigmoid().realize()
 
     @TinyJit
-    def model(x:Tensor, tg_hc):
+    def model(batch:Tensor, tg_h, tg_c):
         tg_stft_out = stft(batch, v5t.forward_basis_buffer)
         tg_encoder_out = encoder(tg_stft_out, v5t.encoder_parameters)
         tg_encoder_out_t = tg_encoder_out.permute(0, 2, 1)
         bs, seq, feat = tg_encoder_out_t.shape
         tg_lstm_minibatched = tg_encoder_out_t.reshape(1, -1, 128)
 
-        tg_lstm_out, tg_hc = v5t.lstm(tg_lstm_minibatched, tg_hc)
+        tg_lstm_out, tg_hc = v5t.lstm(tg_lstm_minibatched, (tg_h, tg_c))
         tg_lstm_out = tg_lstm_out.reshape(bs, seq, -1)
         # tg_lstm_out = tg_lstm_out.reshape(bbb, seq, -1)
         tg_lstm_out_t = tg_lstm_out.permute(0, 2, 1)
@@ -214,14 +221,21 @@ if __name__ == '__main__':
 
     with Timing("red600 "):
         i = 0
-        tg_hc = None
+        tg_hc = (Tensor.zeros(1, v5t.lstm.cell.weight_hh.size(1), dtype=v5c.dtype, device=v5c.device), Tensor.zeros(1, v5t.lstm.cell.weight_hh.size(1), dtype=v5c.dtype, device=v5c.device))
         pbar = tqdm(total=v5c.shape[0])
+        vi = Variable("i", 0, int((math.ceil(v5c.shape[0] / BS) * BS)) - 1)
+        probs = []
         while i*BS < v5c.shape[0]:
-            batch = v5c[i*BS:(i+1)*BS, ...].contiguous()
-            results, tg_hc = model(batch, tg_hc)
-            # print(results.numpy())
+            vib = vi.bind(i*BS)
+            batch = v5c[vib:vib+BS, ...]
+            results, tg_hc_ = model(batch, tg_hc[0], tg_hc[1])
+            tg_hc[0].assign(tg_hc_[0])
+            tg_hc[1].assign(tg_hc_[1])
+            probs.append(results.numpy())
             i+=1
             pbar.update(BS)
+        with open("probs_tinygrad.txt", "w") as f:
+            np.savetxt(f, np.array(probs).flatten(), "%.06f")
 
 
 
