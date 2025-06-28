@@ -200,7 +200,7 @@ if __name__ == '__main__':
     BS = getenv("BS", 32)
 
     def decoder(tg_lstm_out_t:Tensor)->Tensor:
-        return tg_lstm_out_t.relu().conv2d(weight=v5t.decoder_parameters[0], bias=v5t.decoder_parameters[1]).sigmoid().realize()
+        return tg_lstm_out_t.relu().conv2d(weight=v5t.decoder_parameters[0], bias=v5t.decoder_parameters[1]).sigmoid()
 
     @TinyJit
     def model(batch:Tensor, tg_h, tg_c):
@@ -215,7 +215,7 @@ if __name__ == '__main__':
         # tg_lstm_out = tg_lstm_out.reshape(bbb, seq, -1)
         tg_lstm_out_t = tg_lstm_out.permute(0, 2, 1)
         tg_decoder_out = decoder(tg_lstm_out_t)
-        results = tg_decoder_out.squeeze(1).mean(axis=1).flatten().realize()
+        results = tg_decoder_out.squeeze(1).mean(axis=1).flatten()
         return results, tg_hc
 
 
