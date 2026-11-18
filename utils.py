@@ -281,3 +281,49 @@ def chunks_v5_from_raw_int16(path, prefix, window):
 def chunks_v5_from_raw_int16_nonorm(path, prefix, window):
     cont = audio_from_raw_int16(path, window)
     return torch.nn.functional.pad(cont.flatten(), (prefix, 0), mode='constant', value=0.0).unfold(0, window+prefix, window)
+
+def filter_probs(probs, prob_duration=32.0):
+    thresh = 0.5
+    thresh_neg = thresh - 0.15
+    min_speech = 250.0
+    min_silence = 200.0
+    speech_pad = 30.0
+
+    result = []
+
+    speech = False
+    buffered = 0
+    start = 0
+    for idx, prob in enumerate(probs):
+        ts = idx * prob_duration
+        if speech:
+            if prob < thresh_neg:
+                buffered += prob_duration
+            else:
+                buffered = 0
+
+            if buffered >= min_silence:
+                finish = min(ts + prob_duration - buffered + speech_pad, len(probs) * prob_duration)
+                result.append(finish / 1000.0)
+                # sys.stdout.write(f"{finish / 1000.0:.02f}\n")
+                buffered = 0
+                speech = False
+        else:
+            if prob > thresh:
+                buffered += prob_duration
+            else:
+                buffered = 0
+
+            if buffered >= min_speech:
+                start = max(ts + prob_duration - buffered - speech_pad, 0)
+                # sys.stdout.write(f"{start / 1000.0:.02f},")
+                result.append(start / 1000.0)
+                buffered = 0
+                speech = True
+    if speech:
+        result.append(ts / 1000.0)
+        # sys.stdout.write(f"{ts / 1000.0:.02f}\n")
+
+    return np.array(result, dtype=np.float32)
+
+# filtered = filter_probs(probs, 1536 / 16)

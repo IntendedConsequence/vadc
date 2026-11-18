@@ -1,10 +1,12 @@
+import sys
+# sys.path.pop(0)
 import tinygrad as tg
-from tinygrad import nn, Tensor
-from tinygrad.helpers import Timing
-from tinygrad.jit import TinyJit
-
+from tinygrad import Tensor, nn, dtypes, TinyJit
+from tinygrad.helpers import Timing, Context
 from tinygrad import Device
-# Device.DEFAULT = "CPU"
+# sys.path.insert(0, '')
+
+Device.DEFAULT = "GPU"
 
 
 import numpy as np
@@ -376,6 +378,7 @@ class LSTMCell:
     self.weights_hh = Tensor.uniform(hidden_size * 4, hidden_size)
     self.bias_hh = Tensor.uniform(hidden_size * 4)
 
+  # @TinyJit
   def __call__(self, x: Tensor, hc: Tensor) -> Tensor:
     # print(x.shape)
     gates = x.linear(self.weights_ih.T, self.bias_ih) + hc[:x.shape[0]].linear(self.weights_hh.T, self.bias_hh)
@@ -384,7 +387,8 @@ class LSTMCell:
     i, f, g, o = i.sigmoid(), f.sigmoid(), g.tanh(), o.sigmoid()
 
     c = (f * hc[x.shape[0]:]) + (i * g)
-    h = (o * c.tanh()).dropout(self.dropout)
+    # h = (o * c.tanh()).dropout(self.dropout)
+    h = (o * c.tanh())
     # print(c.shape, h.shape)
     newhc = Tensor.cat(h, c)
     # print(newhc.shape)
@@ -418,32 +422,43 @@ class LSTM:
 
     # @TinyJit
     def __call__(self, x: Tensor, hc: Tensor) -> tuple[Tensor, Tensor]:
-        # @TinyJit
-        def _do_step(x_: Tensor, hc_: Tensor) -> Tensor:
-            return self.do_step(x_, hc_)
-
-        if hc is None:
-            hc = Tensor.zeros(self.layers, 2 * x.shape[1], self.hidden_size, requires_grad=False)
+        """x: (seq, batch, feature),
+        hc: stacked: h:[layers, batch, features], c:[layers, batch, features]
+        """
+        # if hc is None:
+            # hc = Tensor.zeros(self.layers, 2 * x.shape[1], self.hidden_size, requires_grad=False)
 
         output = None
-        for t in range(x.shape[0]):
-            # hc = self.do_step(x[t], hc) # TODO: why do we need to do this?
-            hc = _do_step(x[t] + 1 - 1, hc) # TODO: why do we need to do this?
+        # print(x.shape)
+        seq, bs, feat = x.shape
+        x = x.reshape(-1, 1, feat)
+        for seq in range(x.shape[0]):
+            hc = self.do_step(x[seq], hc) # TODO: why do we need to do this?
+            # hc = _do_step(x[seq] + 1 - 1, hc) # TODO: why do we need to do this?
             if output is None:
                 output = hc[-1:, :x.shape[1]]
             else:
                 output = output.cat(hc[-1:, :x.shape[1]], dim=0)
-        print(output.shape)
-        return output.realize(), hc.realize()
+        # print(output.shape)
+        return output.reshape(seq, bs, -1).realize(), hc.realize()
 
-    def do_step(self, x: Tensor, hc: Tensor) -> Tensor:
-        print(x.shape)
+    def do_step_old(self, x: Tensor, hc: Tensor) -> Tensor:
+        # print(x.shape)
         new_hc = [x]
         for i, cell in enumerate(self.cells):
             new_hc.append(cell(new_hc[i][:x.shape[0]], hc[i]))
 
         stacked = Tensor.stack(new_hc[1:])
         # print(stacked.shape)
+        return stacked
+
+    # @TinyJit
+    def do_step(self, x: Tensor, hc: Tensor) -> Tensor:
+        # print(x.shape)
+        cell_0_output = self.cells[0](x[:x.shape[0]], hc[0])
+        cell_1_output = self.cells[1](cell_0_output[:x.shape[0]], hc[1])
+
+        stacked = Tensor.stack(cell_0_output, cell_1_output)
         return stacked
 
 class Decoder:
@@ -566,7 +581,7 @@ class Silero:
                 hc = Tensor.zeros(2, 2, 64)
         hc = Tensor.cat(h, c, dim=1)
 
-        @TinyJit
+        # @TinyJit
         def not_lstm(x):
             x = self.feature_extractor.forward(x)
             x = self.adaptive_normalization.forward(x)
@@ -647,14 +662,46 @@ class Silero:
 
         return decoder_out_tg.realize(), hc[:, 0, None, :].realize(), hc[:, 1, None, :].realize()
 
+    @TinyJit
+    def before_lstm(self, x):
+        x = self.feature_extractor.forward(x)
+        x = self.adaptive_normalization.forward(x)
+        x = self.first_layer(x)
+        x = self.encoder(x)
+        return x.realize()
+
+    # @TinyJit
+    def forward2(self, x: Tensor, h: Tensor, c: Tensor):
+        hc = Tensor.cat(h, c, dim=1)
+
+        x = self.before_lstm(x)
+
+        # lstm [1, 64, 7] -> [7, 1, 64] (batch, feature, seq) -> (seq, batch, feature)
+        x = self.lstm(x.permute([2, 0, 1]), hc)
+        x, hc = x[0], x[1]
+
+        # decoder [7, 1, 64] -> [1, 64, 7] (seq, batch, feature) -> (batch, feature, seq)
+        x = x.permute([1, 2, 0])
+        x = self.decoder(x)
+
+        return x.realize(), hc[:, 0, None, :].realize(), hc[:, 1, None, :].realize()
+
 def foo():
     from pathlib import Path
 
     silero = Silero()
     silero.load_state_dict(nn.state.torch_load('silero_vad_v3_16k.pt'))
 
-    audio_data = np.fromfile(r'RED.s16le', dtype=np.int16)
-    torch_probs = np.loadtxt("torch.probs")
+    audio_data = np.fromfile(r'RED.s16le', dtype=np.int16).astype(np.float32) / 32768.0
+    samples_count = audio_data.shape[0]
+
+    to_pad_rec = samples_count % (96 * 1536)
+    if to_pad_rec == 0: to_pad_rec = (96 * 1536)
+    to_pad = (96 * 1536) - to_pad_rec
+
+    audio_data = np.pad(audio_data, (0, to_pad)).reshape((-1, 96, 1536))
+    # torch_probs = np.loadtxt("torch.probs")
+    torch_probs = np.loadtxt("ref_raw.txt")
 
     h0 = np.zeros((2,1,64), dtype=np.float32)
     c0 = np.zeros_like(h0)
@@ -662,7 +709,7 @@ def foo():
     hn = Tensor(h0)
     cn = Tensor(c0)
 
-    batch_size = 64
+    batch_size = 1
     # example random input [batch_size, 1536]
     # rand_input = torch.rand([batch_size, 1536])
 
@@ -671,8 +718,9 @@ def foo():
     # silero_stateful = torch.jit.trace(silero_restored2.forward_stateful, example_inputs=(torch.rand((1, 64, 7)), hn, cn))
 
     probs = []
-    for chunk_batch in chunks_grouped(audio_data, batch_size):
-        result = silero.forward(Tensor(np.array([c for c in chunk_batch if c is not None])), hn, cn)
+    for chunk_batch in audio_data:
+        # print(chunk_batch)
+        result = silero.forward2(Tensor(chunk_batch), hn, cn)
 
         prob_result = result[0]
         hn = result[1]
@@ -683,7 +731,7 @@ def foo():
             probs.append(prob)
 
     if True:
-        Path('current.probs').write_text('\n'.join(f"{p:0.6f}" for p in probs))
+        Path('tinygrad_v31_raw.txt').write_text('\n'.join(f"{p:0.6f}" for p in probs))
         print(np.abs(probs - torch_probs).mean())
         # print(subprocess.check_output(["fc", "current.probs", "torch.probs"]).decode('utf-8', errors='replace'))
 
@@ -696,4 +744,6 @@ def foo():
 
 if __name__ == "__main__":
     Tensor.training = False
-    foo()
+    Tensor.no_grad = True
+    with Context(DEBUG = 1):
+        foo()

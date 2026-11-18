@@ -9,6 +9,8 @@ import numpy as np
 
 from tinygrad import Tensor, Device, TinyJit, dtypes, Variable
 from tinygrad.helpers import tqdm, Context, getenv, Timing
+
+from extra.export_model import export_model
 # Device.DEFAULT = "CUDA"
 
 # import torch
@@ -106,6 +108,30 @@ class SileroV5:
 
         return v5tg
 
+    # @TinyJit
+    def forward(self, samples_for_one_batch:Tensor, tg_h, tg_c):
+        prefix = 64
+        window = 512
+        return self(samples_for_one_batch.flatten().unfold(0, prefix+window, window), tg_h, tg_c)
+
+    def __call__(self, batch:Tensor, tg_h, tg_c):
+        tg_stft_out = stft(batch, self.forward_basis_buffer)
+        tg_encoder_out = encoder(tg_stft_out, self.encoder_parameters)
+        tg_encoder_out_t = tg_encoder_out.permute(0, 2, 1)
+        bs, seq, feat = tg_encoder_out_t.shape
+        tg_lstm_minibatched = tg_encoder_out_t.reshape(1, -1, 128)
+
+        tg_lstm_out, tg_hc = self.lstm(tg_lstm_minibatched, (tg_h, tg_c))
+        tg_lstm_out = tg_lstm_out.reshape(bs, seq, -1)
+        # tg_lstm_out = tg_lstm_out.reshape(bbb, seq, -1)
+        tg_lstm_out_t = tg_lstm_out.permute(0, 2, 1)
+        tg_decoder_out = self.decoder(tg_lstm_out_t)
+        results = tg_decoder_out.squeeze(1).mean(axis=1).flatten()
+        return results, *tg_hc
+
+    def decoder(self, tg_lstm_out_t:Tensor)->Tensor:
+        return tg_lstm_out_t.relu().conv2d(weight=self.decoder_parameters[0], bias=self.decoder_parameters[1]).sigmoid()
+
 
 def save_chunks():
     import utils
@@ -128,61 +154,6 @@ def audio_from_raw_int16_tg(filename, sequence_count, device=None)->Tensor:
 def chunks_v5_from_raw_int16_tg(path, prefix, window, device=None)->Tensor:
     red600 = audio_from_raw_int16_tg(path, window, device)
     return red600.flatten().pad((prefix, 0), mode="constant").unfold(0, prefix+window, window)
-
-def foo():
-    # v5 = Silero_Vad_5.fromjit("silero-vad-models/v5/silero_vad.jit")
-    v5c_tg = nn.state.safe_load("red_v5_chunks.safetensors")["red.s16le"]
-    v5_sd_tg = nn.state.safe_load("v5.safetensors")
-
-    forward_basis_buffer = v5_sd_tg["forward_basis_buffer"]
-
-    print(v5c_tg.shape)
-
-    lstm = LSTM()
-    nn.state.load_state_dict({"lstm":lstm}, v5_sd_tg)
-
-    tg_stft_out = stft(v5c_tg, forward_basis_buffer)
-    print("stft done")
-    # np.allclose(torch_stft_out.numpy(), tg_stft_out).numpy()
-
-    tg_encoder_out=encoder(tg_stft_out, [[Tensor(wb.detach().numpy()) for wb in e.parameters()] for e in v5.encoder])
-    print("encoder done")
-    tg_encoder_out_t = tg_encoder_out.permute(0, 2, 1)
-    bs, seq, feat = tg_encoder_out_t.shape
-    tg_lstm_minibatched = tg_encoder_out_t.reshape(1, -1, 128)
-    # tg_lstm_minibatched = tg_lstm_minibatched[0:1, bbb*0:bbb*1, ...]
-    tg_hc = None
-    i = 0
-    bbb = 75
-    output = []
-    import tqdm
-    pbar = tqdm.tqdm(seq)
-    while i*bbb < tg_lstm_minibatched.shape[1]:
-        tg_lstm_out, tg_hc = lstm(tg_lstm_minibatched[0:1, bbb*i:bbb*(i+1), ...].contiguous(), tg_hc)
-        output.append(tg_lstm_out)
-        i+=1
-        pbar.update(1*bbb)
-    pbar.close()
-    print("lstm done")
-    tg_lstm_out = Tensor.cat(*output, dim=1).reshape(bs, seq, -1)
-    # tg_lstm_out = tg_lstm_out.reshape(bbb, seq, -1)
-    tg_lstm_out_t = tg_lstm_out.permute(0, 2, 1)
-
-    def decoder(x:Tensor, decoder):
-        weight, bias = list(Tensor(w.detach().numpy()) for w in decoder.decoder.parameters())
-        x = x.relu()
-        x = x.conv2d(weight=weight, bias=bias)
-        x = x.sigmoid()
-        return x
-
-    tg_decoder_out = decoder(tg_lstm_out_t, v5.decoder).realize()
-    print("decoder done")
-    tg_probs = tg_decoder_out.squeeze(1).mean(axis=1).unsqueeze(1)
-    print(tg_probs.numpy().flatten())
-
-    # with torch.inference_mode():
-    #     torch_stft_out = v5.stft(v5c)
-    # torch_stft_out
 
 if __name__ == '__main__':
     # v5 = Silero_Vad_5.fromjit("silero-vad-models/v5/silero_vad.jit")
@@ -222,29 +193,35 @@ if __name__ == '__main__':
     with Timing("red600 "):
         i = 0
         tg_hc = (Tensor.zeros(1, v5t.lstm.cell.weight_hh.size(1), dtype=v5c.dtype, device=v5c.device), Tensor.zeros(1, v5t.lstm.cell.weight_hh.size(1), dtype=v5c.dtype, device=v5c.device))
-        pbar = tqdm(total=v5c.shape[0])
-        vi = Variable("i", 0, int((math.ceil(v5c.shape[0] / BS) * BS)) - 1)
-        probs = []
-        while i*BS < v5c.shape[0]:
-            vib = vi.bind(i*BS)
-            batch = v5c[vib:vib+BS, ...]
-            results, tg_hc_ = model(batch, tg_hc[0], tg_hc[1])
-            tg_hc[0].assign(tg_hc_[0])
-            tg_hc[1].assign(tg_hc_[1])
-            probs.append(results.numpy())
-            i+=1
-            pbar.update(BS)
-        with open("probs_tinygrad.txt", "w") as f:
-            np.savetxt(f, np.array(probs).flatten(), "%.06f")
+        prg, inp_sizes, out_sizes, state = export_model(v5t, Device.DEFAULT.lower(), Tensor.randn(32*512+64), Tensor.randn(1, v5t.lstm.cell.weight_hh.size(1), dtype=v5c.dtype, device=v5c.device), Tensor.randn(1, v5t.lstm.cell.weight_hh.size(1), dtype=v5c.dtype, device=v5c.device), model_name="silero")
+        from pathlib import Path
+        dirname = Path("webgpu")
+        with open(dirname / "vad.js", "w") as f:
+            f.write(prg)
+        nn.state.safe_save(state, (dirname / "vad.safetensors").as_posix())
+        v5c.numpy().flatten().tofile(dirname / 'chunks.bin')
+
+        if False:
+            pbar = tqdm(total=v5c.shape[0])
+            vi = Variable("i", 0, int((math.ceil(v5c.shape[0] / BS) * BS)) - 1)
+            probs = []
+            while i*BS < v5c.shape[0]:
+                vib = vi.bind(i*BS)
+                batch = v5c[vib:vib+BS, ...]
+                results, tg_hc_ = v5t(batch, tg_hc[0], tg_hc[1])
+                tg_hc[0].assign(tg_hc_[0])
+                tg_hc[1].assign(tg_hc_[1])
+                probs.append(results.numpy())
+                i+=1
+                pbar.update(BS)
+            with open("probs_tinygrad.txt", "w") as f:
+                np.savetxt(f, np.array(probs).flatten(), "%.06f")
 
 
 
 
 
 # TODO(irwin):
-# - all weights to safetensors
 # - run whole model end to end, from samples to probabilities
-# - verify outputs with torch
-# - test CPU
-# - speed
-# - export?
+# - export webgpu
+# - load, resample and chunk in js

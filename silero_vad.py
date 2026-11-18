@@ -188,6 +188,33 @@ def encoder(is_v4 = False, sr = 16000):
 
     return torch.nn.Sequential(*enc)
 
+ENCODER_V4_16K = ("Sequential", [
+    ("Conv1d", {"in_channels": 16, "out_channels": 16, "kernel_size": 1, "stride": 2}),
+    ("BatchNorm1d", 16),
+    ("ReLU", ),
+
+    ("Sequential", [
+        ("ConvBlock", {"in_channels": 16, "out_channels": 32}, )
+    ]),
+    ("Conv1d", {"in_channels": 32, "out_channels": 32, "kernel_size": 1, "stride": 2}),
+    ("BatchNorm1d", 32),
+    ("ReLU", ),
+
+    ("Sequential", [
+        ("ConvBlock", {"in_channels": 32, "out_channels": 32, "has_out_proj": False}, )
+    ]),
+    ("Conv1d", {"in_channels": 32, "out_channels": 32, "kernel_size": 1, "stride": 2}),
+    ("BatchNorm1d", 32),
+    ("ReLU", ),
+
+    ("Sequential", [
+        ("ConvBlock", {"in_channels": 32, "out_channels": 64}, )
+    ]),
+    ("Conv1d", {"in_channels": 64, "out_channels": 64, "kernel_size": 1}),
+    ("BatchNorm1d", 64),
+    ("ReLU", ),
+])
+
 class Silero_V4(torch.nn.Module):
     def __init__(self, sr=16000):
         super().__init__()
@@ -347,33 +374,15 @@ encoder_shapes = [
     [[128, 64, 3], 1, 1],
 ]
 
-# class AdaptiveAudioNormalization(torch.nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#         self.to_pad = 3
-#         self.filter_ = torch.nn.Parameter(torch.zeros((1, 1, 7)), requires_grad=False)
-
-#     def forward(self, spect: torch.Tensor) -> torch.Tensor:
-#         spect_e = torch.log1p(spect * 1048576)
-#         if len(spect_e.shape) == 2:
-#             spect_e = spect_e[None, :, :]
-#         mean = spect_e.mean(dim=1, keepdim=True)
-#         mean_padded = F.pad(mean, (self.to_pad, self.to_pad), 'reflect')
-#         mean_padded_convolved = torch.conv1d(mean_padded, self.filter_)
-#         mean_mean = mean_padded_convolved.mean(dim=-1, keepdim=True)
-#         normalized = spect_e - mean_mean
-#         return normalized
 
 class Silero_Vad_5(torch.nn.Module):
     def __init__(self):
         super().__init__()
 
-        # self.context = torch.zeros(64, requires_grad=False)
-
         self.stft = STFT_conv2()
 
         # unused
-        self.adaptive_normalization = AdaptiveAudioNormalization()
+        # self.adaptive_normalization = AdaptiveAudioNormalization()
         self.encoder = make_encoder(encoder_shapes)
         self.decoder = make_decoder()
 
@@ -382,40 +391,31 @@ class Silero_Vad_5(torch.nn.Module):
         my = Silero_Vad_5()
         sd = {}
         v5 = torch.jit.load(path)
+
+        # NOTE(irwin): load 16k model by default
         for k,v in v5._model.state_dict().items():
             if k.startswith('decoder.rnn.'):
                 k = f"{k}_l0"
-            sd[k] = v
+            if not k.startswith("adaptive_normalization."):
+                sd[k] = v
         my.load_state_dict(sd)
         my.eval()
 
         return my
 
     def forward(self, input: torch.Tensor, h: torch.Tensor, c: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        # input = input.flatten()
-        # input = torch.concat([self.context, input])
-        # offsets = torch.arange()
-        # self.context = input[:-64]
         spect = self.stft(input)
-        # normalized = self.adaptive_normalization(spect)
-        normalized = spect
-
-        # first_layer_out = self.first_layer(torch.cat([spect, normalized], 1))
-        encoder_out = self.encoder(normalized)
-
-        # encoder_out_t = encoder_out
+        encoder_out = self.encoder(spect)
         encoder_out_t = torch.permute(encoder_out, [0, 2, 1])
 
-        # print("rnnshape", encoder_out_t.shape)
         if True:
             lstm_out, (hn, cn) = self.lstm_minibatched(encoder_out_t, h, c)
         else:
             batch, seq, feat = encoder_out_t.shape
             (hn, cn) = self.decoder.rnn(encoder_out_t.reshape(1, -1, feat), (h, c))
-            print("hncn shape", hn.shape, cn.shape)
+            # print("hncn shape", hn.shape, cn.shape)
             lstm_out = hn.reshape(batch, seq, -1)
 
-        # lstm_out_t = lstm_out
         lstm_out_t = torch.permute(lstm_out, [0, 2, 1])
 
         decoder_out = self.decoder.decoder(lstm_out_t)

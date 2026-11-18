@@ -82,19 +82,27 @@ class STFT(torch.nn.Module):
     win_length : int
     window : str
 
-    def __init__(self):
+    def __init__(self, is_sample_rate_16k=True):
         super().__init__()
 
-        self.filter_length: int = 256
-        self.hop_length : int = 64
-        self.win_length : int = 256
+        if is_sample_rate_16k:
+            self.filter_length: int = 256
+            self.hop_length : int = 64
+            self.win_length : int = 256
+        else:
+            self.filter_length: int = 128
+            self.hop_length : int = 32
+            self.win_length : int = 128
+
         self.window : str = "hann"
 
-        self.register_buffer("forward_basis_buffer", torch.zeros([258, 1, 256]))
+        if is_sample_rate_16k:
+            self.register_buffer("forward_basis_buffer", torch.zeros([258, 1, 256]))
+        else:
+            self.register_buffer("forward_basis_buffer", torch.zeros([130, 1, 128]))
 
     def forward(self, input_data: torch.Tensor) -> torch.Tensor:
-        _0 = (self).transform_(input_data, )
-        return _0
+        return self.transform_(input_data)
 
     def transform_(self, input_data: torch.Tensor) -> torch.Tensor:
         num_batches = input_data.size(0)
@@ -126,10 +134,40 @@ class STFT(torch.nn.Module):
         # return (magnitude, phase)
         return magnitude
 
-def simple_pad(x: torch.Tensor, pad: int) -> torch.Tensor:
+    def transform_simplified(self, input_data: torch.Tensor) -> torch.Tensor:
+        filter_length_half = int(self.filter_length // 2)  # 128
+        pad_left, pad_right = filter_length_half, filter_length_half
+        cutoff = filter_length_half + 1  # 129
+
+        # NOTE(irwin): [batch_size, 1792] (128 + 1536 + 128)
+        input_padded = F.pad(input_data, (pad_left, pad_right), 'reflect')
+
+        # NOTE(irwin): torch.nn.functional.conv1d expects input shape [batch_size, num_channels, num_samples]
+        # we don't want multichannel, so we unsqueeze to [batch_size, 1, num_samples]
+        input_padded_reshaped = input_padded.unsqueeze(1)
+        output = F.conv1d(input_padded_reshaped, self.forward_basis_buffer, stride=self.hop_length)
+
+        real_part = output[:, :cutoff, :]
+        imag_part = output[:, cutoff:, :]
+
+        magnitude = torch.sqrt(real_part**2 + imag_part**2)
+        return magnitude
+
+def simple_pad_(x: torch.Tensor, pad: int) -> torch.Tensor:
     left_pad = torch.flip(x[:, :, 1: 1+pad], (-1,))
     right_pad = torch.flip(x[:, :, -1 - pad: -1], (-1,))
     return torch.cat([left_pad, x, right_pad], dim=2)
+
+def simple_pad(x: torch.Tensor, pad: int) -> torch.Tensor:
+    return F.pad(x, (pad, pad), 'reflect')
+
+def stft_torch(input):
+    hann = torch.hann_window(256)
+    return torch.stft(input, n_fft=256, hop_length=64, win_length=256, window=hann, return_complex=True).abs()
+
+def stft_torch_8k(input):
+    hann = torch.hann_window(128)
+    return torch.stft(input, n_fft=128, hop_length=32, win_length=128, window=hann, return_complex=True).abs()
 
 class AdaptiveAudioNormalization(torch.nn.Module):
     filter_: torch.Tensor
@@ -612,12 +650,20 @@ def print_module_init_args(jit_module, original_module=torch.nn.Conv1d):
     helper(', '.join(f"{k}={v!r}" for k, v in arglist if k not in defaults_dict or defaults_dict[k] != v))
 
 class Silero_VAD_V3(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, is_sample_rate_16k=True):
         super().__init__()
 
-        self.feature_extractor = STFT()
+        # TODO(irwin): can use stft_torch()
+        if True:
+            self.feature_extractor = STFT(is_sample_rate_16k)
+        else:
+            self.feature_extractor = stft_torch if is_sample_rate_16k else stft_torch_8k
         self.adaptive_normalization = AdaptiveAudioNormalization()
-        self.first_layer = ConvBlock()
+
+        if is_sample_rate_16k:
+            self.first_layer = ConvBlock()
+        else:
+            self.first_layer = ConvBlock(in_channels=65)
 
         self.encoder = Encoder()
         self.lstm = torch.nn.LSTM(input_size=64, hidden_size=64, num_layers=2, batch_first=True, dropout=0.1)
@@ -635,41 +681,6 @@ class Silero_VAD_V3(torch.nn.Module):
         batch, seq, feat = input.shape
         r, (h, c) = self.lstm(input.reshape(1, -1, feat), (h, c))
         r = r.reshape(batch, seq, -1)
-
-        # r0, (h, c) = self.lstm(input[0:0+1, :, :], (h, c))
-        # r1, (h, c) = self.lstm(input[1:1+1, :, :], (h, c))
-        # r2, (h, c) = self.lstm(input[2:2+1, :, :], (h, c))
-        # r3, (h, c) = self.lstm(input[3:3+1, :, :], (h, c))
-        # r4, (h, c) = self.lstm(input[4:4+1, :, :], (h, c))
-        # r5, (h, c) = self.lstm(input[5:5+1, :, :], (h, c))
-        # r6, (h, c) = self.lstm(input[6:6+1, :, :], (h, c))
-        # r7, (h, c) = self.lstm(input[7:7+1, :, :], (h, c))
-        # r8, (h, c) = self.lstm(input[8:8+1, :, :], (h, c))
-        # r9, (h, c) = self.lstm(input[9:9+1, :, :], (h, c))
-        # r10, (h, c) = self.lstm(input[10:10+1, :, :], (h, c))
-        # r11, (h, c) = self.lstm(input[11:11+1, :, :], (h, c))
-        # r12, (h, c) = self.lstm(input[12:12+1, :, :], (h, c))
-        # r13, (h, c) = self.lstm(input[13:13+1, :, :], (h, c))
-        # r14, (h, c) = self.lstm(input[14:14+1, :, :], (h, c))
-        # r15, (h, c) = self.lstm(input[15:15+1, :, :], (h, c))
-        # r16, (h, c) = self.lstm(input[16:16+1, :, :], (h, c))
-        # r17, (h, c) = self.lstm(input[17:17+1, :, :], (h, c))
-        # r18, (h, c) = self.lstm(input[18:18+1, :, :], (h, c))
-        # r19, (h, c) = self.lstm(input[19:19+1, :, :], (h, c))
-        # r20, (h, c) = self.lstm(input[20:20+1, :, :], (h, c))
-        # r21, (h, c) = self.lstm(input[21:21+1, :, :], (h, c))
-        # r22, (h, c) = self.lstm(input[22:22+1, :, :], (h, c))
-        # r23, (h, c) = self.lstm(input[23:23+1, :, :], (h, c))
-        # r24, (h, c) = self.lstm(input[24:24+1, :, :], (h, c))
-        # r25, (h, c) = self.lstm(input[25:25+1, :, :], (h, c))
-        # r26, (h, c) = self.lstm(input[26:26+1, :, :], (h, c))
-        # r27, (h, c) = self.lstm(input[27:27+1, :, :], (h, c))
-        # r28, (h, c) = self.lstm(input[28:28+1, :, :], (h, c))
-        # r29, (h, c) = self.lstm(input[29:29+1, :, :], (h, c))
-        # r30, (h, c) = self.lstm(input[30:30+1, :, :], (h, c))
-        # r31, (h, c) = self.lstm(input[31:31+1, :, :], (h, c))
-
-        # r = torch.stack([r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, r29, r30, r31], dim=0).squeeze()
 
         return r, (h, c)
 
@@ -779,6 +790,22 @@ class OnnxWrapper():
 
         return out
 
+def foo2():
+    silero = Silero_VAD_V3()
+    silero.load_state_dict(torch.load("silero_vad_v3_16k.pt"))
+    silero.eval()
+
+    audio_data = np.fromfile(r'RED.s16le', dtype=np.int16).astype('float32')
+    audio_data /= audio_data.max()
+    nsamples = 256 * 6
+    total_length_truncated = (len(audio_data) // nsamples) * nsamples
+    audio_data_truncated = audio_data[:total_length_truncated]
+    audio_data_reshaped = audio_data_truncated.reshape(-1, nsamples)
+
+    result = silero(torch.from_numpy(audio_data_reshaped), torch.zeros(2, 1, 64), torch.zeros(2, 1, 64))
+    print([x.shape for x in result])
+
+
 def foo():
     silero_restored2 = Silero_VAD_V3()
     silero_restored2.load_state_dict(torch.load("silero_vad_v3_16k.pt"))
@@ -885,4 +912,4 @@ def foo():
             break
 
 if __name__ == "__main__":
-    foo()
+    foo2()
