@@ -13,3 +13,5 @@ silero_v31_16k_weights.c
 *.raddbg
 *.raddbgi
 *.exp
+/external/
+/mahmoud onnx/
