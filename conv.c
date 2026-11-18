@@ -625,7 +625,7 @@ static inline void conv_tensor ( TestTensor *input, TestTensor *filters, TestTen
                {
                   #if 1
                   output_filter_channel[index] += dotproduct_slow( channel + index * hop_length, kernel_size, kernel, kernel_size );
-                  #elif 1
+                  #elif 0
                   float *channel_sub = channel + index * hop_length;
                   float out_channel = output_filter_channel[index];
 
@@ -641,9 +641,12 @@ static inline void conv_tensor ( TestTensor *input, TestTensor *filters, TestTen
 
                   s = _mm256_hadd_ps(s, s);
                   s = _mm256_hadd_ps(s, s);
-                  s = _mm256_hadd_ps(s, s);
+                  // s = _mm256_hadd_ps(s, s);
 
-                  out_channel += ((float *)&s)[0];
+                  // out_channel += ((float *)&s)[0];
+
+                  out_channel += ((float *)&s)[0] + ((float *)&s)[4];
+
                   // float v;
                   // _MM_EXTRACT_FLOAT(v, _mm256_extractf128_ps(s, 0), 0);
                   // out_channel += v;

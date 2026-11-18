@@ -60,12 +60,11 @@ static inline void backend_run(MemoryArena *arena, void *context_, Silero_Config
    int output_stride = 2;
    // int silero_probability_out_index = 1;
 
-   // TODO(irwin): dehardcode one batch
-   TestTensor *output = silero_run_one_batch_with_context(arena,
-                                                          context->backend,
-                                                          config.batch_size,
-                                                          context->buffers.window_size_samples,
-                                                          context->buffers.input_samples);
+   TestTensor *output = silero_run_batched_with_context(arena,
+                                                        context->backend,
+                                                        config.batch_size,
+                                                        context->buffers.window_size_samples,
+                                                        context->buffers.input_samples);
    for (int i = 0; i < config.batch_size; ++i)
    {
       context->buffers.output[i * output_stride + 0] = output->data[i * output_stride + 0];

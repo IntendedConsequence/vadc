@@ -97,7 +97,8 @@ static void *ort_init( MemoryArena *arena, String8 model_path_arg, Silero_Config
    OrtSessionOptions *session_options;
    ORT_ABORT_ON_ERROR( g_ort->CreateSessionOptions( &session_options ) );
    // enable_cuda(session_options);
-   ORT_ABORT_ON_ERROR( g_ort->SetIntraOpNumThreads( session_options, 1 ) );
+   ORT_ABORT_ON_ERROR( g_ort->SetIntraOpNumThreads( session_options, 4 ) );
+   // ORT_ABORT_ON_ERROR( g_ort->SetSessionExecutionMode( session_options, ORT_PARALLEL ) );
    ORT_ABORT_ON_ERROR( g_ort->SetInterOpNumThreads( session_options, 1 ) );
 
 #define MODEL_PATH_BUFFER_SIZE 1024

@@ -114,13 +114,30 @@ static inline float mean ( float *arr, int arr_count )
    return result / divisor;
 }
 
+
+static inline float dotproduct_simd_ ( const float *arr, int count, const float *arr2, int count2 );
+
+static inline float dotproduct_simd ( const float *arr, int count, const float *arr2, int count2 )
+{
+   VAR_UNUSED(count2);
+
+   if (count >= 16)
+   {
+      return dotproduct_simd_(arr, count, arr2, count2);
+   }
+   else
+   {
+      return dotproduct_slow(arr, count, arr2, count2);
+   }
+}
+
 // row1:     row2:
 // [a b c]   [d e f]
 //
 // result:
 // ad + be + cf
 
-static inline float dotproduct_simd ( const float *arr, int count, const float *arr2, int count2 )
+static inline float dotproduct_simd_ ( const float *arr, int count, const float *arr2, int count2 )
 {
    VAR_UNUSED(count2);
    // TracyCZone(dotproduct, true);
@@ -145,7 +162,10 @@ static inline float dotproduct_simd ( const float *arr, int count, const float *
       r = _mm256_add_ps(r, abcd);
    }
 
-   result = result + ((float *)&r)[0] + ((float *)&r)[1] + ((float *)&r)[2] + ((float *)&r)[3] + ((float *)&r)[4] + ((float *)&r)[5] + ((float *)&r)[6] + ((float *)&r)[7];
+   r = _mm256_hadd_ps(r, r);
+   r = _mm256_hadd_ps(r, r);
+
+   result = result + ((float *)&r)[0] + ((float *)&r)[4];
 
    for ( int i = (mincount / wide) * wide; i < mincount; ++i )
    {

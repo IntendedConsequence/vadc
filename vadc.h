@@ -11,6 +11,7 @@ typedef struct Silero_Config Silero_Config;
 struct Silero_Config
 {
    // NOTE(irwin): sample rate input, implies fused model
+   // NOTE(irwin): onnx only
    s32 sr_input_index;
 
    s32 batch_size_restriction;

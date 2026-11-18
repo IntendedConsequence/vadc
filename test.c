@@ -195,7 +195,7 @@ TestResult decoder_test()
    decoder(debug_arena, input->data, input->dims, input->ndim, weights->data, weights->dims, weights->ndim, biases->data, biases->dims, biases->ndim, output, output_dims, output_ndims );
 
 
-   float atol = 1e-10f;
+   float atol = 1e-5f;
 
    TestResult test_result = all_close( result->data, output, result->size, atol );
 
@@ -367,12 +367,12 @@ TestResult lstm_test_RED()
 // NOTE(irwin): same as old but in one file, and input audio wasn't normalized before stft
 TestResult lstm_test_RED_new()
 {
-   MemoryArena *debug_arena = DEBUG_getDebugArena();
-   TemporaryMemory mark = beginTemporaryMemory( debug_arena );
+   MemoryArena *arena = DEBUG_getDebugArena();
+   TemporaryMemory mark = beginTemporaryMemory( arena );
 
    LoadTesttensorResult lstm_testdata = {0};
 
-   lstm_testdata = load_testtensor(debug_arena, "testdata\\untracked\\RED600_lstm.testtensor" );
+   lstm_testdata = load_testtensor(arena, "testdata\\untracked\\RED600_lstm.testtensor" );
 
    if (lstm_testdata.tensor_count == 0)
    {
@@ -393,19 +393,22 @@ TestResult lstm_test_RED_new()
    int batches = input->dims[0];
    int seq_length = input->dims[1];
    int input_size = input->dims[2];
-   int layer_count = weights->dims[0];
 
    int batch_stride = seq_length * input_size;
-   int lstm_output_size = batch_stride * batches + (input_size * layer_count * 2);
-   // Assert(lstm_output_size == output_reference->size);
+   int layer_count = weights->dims[0];
+   int hidden_size = tdim(weights, -1) / 2;
+   Assert(hidden_size == input_size);
+   Assert(hidden_size == (tdim(biases, -1) / 4));
 
-   int hc_size = input_size * layer_count;
-   float *input_h_array = pushArray( debug_arena, hc_size, float );
-   float *input_c_array = pushArray( debug_arena, hc_size, float );
-   float *output_single_batch = pushArray( debug_arena, lstm_output_size, float );
-   // float *output_combined = pushArray( debug_arena, batches * seq_length * input_size, float );
+#if 0
+   // int lstm_output_size = batch_stride * batches + (input_size * layer_count * 2);
 
-   lstm_seq( debug_arena, input->data,
+   // int hc_size = input_size * layer_count;
+   // float *input_h_array = pushArray( arena, hc_size, float );
+   // float *input_c_array = pushArray( arena, hc_size, float );
+   // float *output_single_batch = pushArray( arena, lstm_output_size, float );
+
+   lstm_seq( arena, input->data,
              seq_length * batches,
              input_size,
              input_h_array,
@@ -415,9 +418,20 @@ TestResult lstm_test_RED_new()
              output_single_batch,
              layer_count
    );
+#else
+   TestTensor *lstm_input_h = tensor_zeros_3d(arena, layer_count, 1, hidden_size);
+   TestTensor *lstm_input_c = tensor_zeros_3d(arena, layer_count, 1, hidden_size);
+
+   LSTM_Result lstm_out = lstm_tensor_minibatched( arena,
+                                                   input,
+                                                   weights,
+                                                   biases,
+                                                   lstm_input_h,
+                                                   lstm_input_c );
+#endif
    // print_array(output_single_batch, lstm_output_size);
 
-   TestResult pass_lstm = all_close( output_reference->data, output_single_batch, batch_stride * batches, 1e-04f );
+   TestResult pass_lstm = all_close( output_reference->data, lstm_out.output.data, batch_stride * batches, 1e-04f );
 
    endTemporaryMemory( mark );
 

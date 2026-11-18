@@ -75,6 +75,7 @@ void ort_run(ONNX_Specific *onnx);
 static inline void backend_run(MemoryArena *arena, VADC_Context *context, Silero_Config config)
 {
    VAR_UNUSED(arena);
+   VAR_UNUSED(config);
    ort_run(context->backend);
 }
 

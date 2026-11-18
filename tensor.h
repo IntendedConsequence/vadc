@@ -433,6 +433,49 @@ static inline TestTensor tensor_squeeze( TestTensor *tensor, int dim )
    return result;
 }
 
+static inline TestTensor *tensor_zeros_1d( MemoryArena *arena, int dim0 );
+
+static inline TestTensor *tensor_concat_last_dim( MemoryArena *arena, TestTensor *tensor_left, TestTensor *tensor_right)
+{
+   Assert(tensor_is_valid(tensor_left));
+   Assert(tensor_is_valid(tensor_right));
+
+   Assert(tensor_left->ndim == tensor_right->ndim);
+
+   int ndim = tensor_left->ndim;
+   Assert(0 == memcmp(tensor_left->dims, tensor_right->dims, (ndim - 1) * sizeof(tensor_left->dims[0])));
+
+   TestTensor *concatenated = tensor_zeros_1d(arena, tensor_left->size + tensor_right->size);
+   concatenated->ndim = ndim;
+   for (int i = 0; i < (ndim - 1); ++i)
+   {
+      concatenated->dims[i] = tdim(tensor_left, i);
+   }
+   concatenated->dims[ndim - 1] = tdim(tensor_left, -1) + tdim(tensor_right, -1);
+
+   int concat_stride = tdim(concatenated, -1);
+   float *concat_cursor = concatenated->data;
+
+   int left_stride = tdim(tensor_left, -1);
+   float *left_cursor = tensor_left->data;
+
+   int right_stride = tdim(tensor_right, -1);
+   float *right_cursor = tensor_right->data;
+
+   for (int row = 0; row < concatenated->size / concat_stride; ++row)
+   {
+      memmove(concat_cursor + row * concat_stride,
+              left_cursor + row * left_stride,
+              left_stride * sizeof(float));
+
+      memmove(concat_cursor + row * concat_stride + left_stride,
+              right_cursor + row * right_stride,
+              right_stride * sizeof(float));
+   }
+
+   return concatenated;
+}
+
 // NOTE(irwin): contiguous only
 static inline TestTensor tensor_index_first_dim( TestTensor *tensor_to_slice, int at_index, b32 keep_dim )
 {

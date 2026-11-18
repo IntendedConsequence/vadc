@@ -140,18 +140,19 @@ static void my_stft_ ( MemoryArena *arena, TestTensor *input, TestTensor *filter
 
                   __m256 ab1 = _mm256_mul_ps(a1, b1);
                   __m256 ab2 = _mm256_mul_ps(a2, b2);
-                  __m256 ab12 = _mm256_add_ps(ab1, ab2);
 
                   __m256 ab3 = _mm256_mul_ps(a3, b3);
                   __m256 ab4 = _mm256_mul_ps(a4, b4);
-                  __m256 ab34 = _mm256_add_ps(ab3, ab4);
 
                   __m256 ab5 = _mm256_mul_ps(a5, b5);
                   __m256 ab6 = _mm256_mul_ps(a6, b6);
-                  __m256 ab56 = _mm256_add_ps(ab5, ab6);
 
                   __m256 ab7 = _mm256_mul_ps(a7, b7);
                   __m256 ab8 = _mm256_mul_ps(a8, b8);
+
+                  __m256 ab12 = _mm256_add_ps(ab1, ab2);
+                  __m256 ab34 = _mm256_add_ps(ab3, ab4);
+                  __m256 ab56 = _mm256_add_ps(ab5, ab6);
                   __m256 ab78 = _mm256_add_ps(ab7, ab8);
 
                   __m256 ab1234 = _mm256_add_ps(ab12, ab34);
@@ -171,6 +172,12 @@ static void my_stft_ ( MemoryArena *arena, TestTensor *input, TestTensor *filter
                                               ((float *)&r0123)[2] + ((float *)&r0123)[3] +
                                               ((float *)&r0123)[4] + ((float *)&r0123)[5] +
                                               ((float *)&r0123)[6] + ((float *)&r0123)[7];
+               #elif 1
+
+               r0123 = _mm256_hadd_ps(r0123, r0123);
+               r0123 = _mm256_hadd_ps(r0123, r0123);
+               output_filter_channel[index] = ((float *)&r0123)[0] + ((float *)&r0123)[4];
+
                #else
 
                float s01 = ((float *)&r0123)[0] + ((float *)&r0123)[1];

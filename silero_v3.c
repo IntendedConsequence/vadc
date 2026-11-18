@@ -69,7 +69,8 @@ struct One_Batch_Result
    float unkn;
    float prob;
 };
-static TestTensor *silero_run_one_batch_with_context( MemoryArena *arena,
+
+static TestTensor *silero_run_batched_with_context( MemoryArena *arena,
                                                            Silero_Context *context,
                                                            int batch_size,
                                                            int samples_count,

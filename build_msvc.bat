@@ -64,8 +64,14 @@ if "%1" equ "" (
   set "ONNX=%1"
 )
 
+
+set "VADC_DEV_FLAGS="
+set "VADC_DEV_FLAGS=%VADC_DEV_FLAGS% /O2 /arch:AVX2"
+set "VADC_DEV_FLAGS=%VADC_DEV_FLAGS% /DNDEBUG"
+rem set "VADC_DEV_FLAGS=%VADC_DEV_FLAGS% /DTRACY_ENABLE"
+
 @REM del vadc.pdb >nul & cl.exe /nologo /O2 vadc.c /link lib\onnxruntime.lib
-del vadc.pdb >nul 2>&1 & cl.exe /nologo /MP /O2 /arch:AVX2 /DNDEBUG /DONNX_INFERENCE_ENABLED=%ONNX% /Itracy vadc.c tracy\TracyClient.cpp /link Shell32.lib Shlwapi.lib
+del vadc.pdb >nul 2>&1 & cl.exe /nologo /MP %VADC_DEV_FLAGS% /DONNX_INFERENCE_ENABLED=%ONNX% /Itracy vadc.c tracy\TracyClient.cpp /link Shell32.lib Shlwapi.lib
 rem del vadc.pdb >nul 2>&1 & cl.exe /nologo /MD /MP /O2 /arch:AVX2 /DNDEBUG /DONNX_INFERENCE_ENABLED=1 /Itracy vadc.c tracy\TracyClient.cpp /link lib\onnxruntime.lib Shell32.lib
 
 
@@ -92,7 +98,7 @@ set CL=%CL% /fp:precise
 @REM set CL=%CL% -Qvec-report:2
 set CL=%CL% /O2 /arch:AVX2
 @REM set CL=%CL% /DTRACY_ENABLE /DTRACY_NO_SAMPLING
-set CL=%CL% /DNDEBUG
+rem set CL=%CL% /DNDEBUG
 del test.pdb >nul & cl.exe /nologo /MP /Itracy test.c tracy\TracyClient.cpp /link
 
 

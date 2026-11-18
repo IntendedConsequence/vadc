@@ -55,21 +55,24 @@ static void dual_head_attention(MemoryArena *arena, TestTensor *input_batch,
    }
 
    int batch_size = tdim(input_batch, -3);
+
+   TestTensor *QKV_result = tensor_zeros_3d( arena, batch_size, seq_length, out_features );
+   tensor_linear( input_batch, QKV_weights, QKV_biases, QKV_result );
+
+   TestTensor *proj_input = tensor_zeros_3d( arena, batch_size, seq_length, in_features );
+   int proj_input_stride = proj_input->size / batch_size;
+
+#if 1
    for ( int batch_index = 0; batch_index < batch_size; ++batch_index )
    {
-      TestTensor input_slice = tensor_index_first_dim( input_batch, batch_index, false );
-      TestTensor output_slice = tensor_index_first_dim( output_batch, batch_index, false );
+      TestTensor QKV_result_slice = tensor_index_first_dim( QKV_result, batch_index, false );
 
       // TODO(irwin): avoid taking an address of a stack variable
-      TestTensor *input = &input_slice;
-      TestTensor *output = &output_slice;
+      TestTensor *QKV_result_ = &QKV_result_slice;
 
       TemporaryMemory mark_batch = beginTemporaryMemory( arena );
 
-      TestTensor *QKV_result = tensor_zeros_2d( arena, seq_length, out_features );
-      tensor_linear( input, QKV_weights, QKV_biases, QKV_result );
-
-      TestTensor *QKV_result_T = tensor_transpose_last_2d( arena, QKV_result );
+      TestTensor *QKV_result_T = tensor_transpose_last_2d( arena, QKV_result_ );
       int head_size = seq_length * head_length;
 
       TestTensor head_ref = {.ndim = 2, .dims = {head_length, seq_length}};
@@ -128,10 +131,167 @@ static void dual_head_attention(MemoryArena *arena, TestTensor *input_batch,
       tensor_linear( a1, v1, 0, attn1 );
       tensor_linear( a2, v2, 0, attn2 );
 
+#if 0
       // [8, 25]
       // [8, 25]
       TestTensor *attn1_t = tensor_transpose_last_2d( arena, attn1 );
       TestTensor *attn2_t = tensor_transpose_last_2d( arena, attn2 );
+
+      // [16, 25]
+      // TODO(irwin): tensor_concat routine
+      TestTensor *attn12_t = tensor_zeros_2d( arena, tdim( attn1_t, -2 ) * 2, tdim( attn1_t, -1 ) );
+      memmove( attn12_t->data, attn1_t->data, attn1_t->nbytes );
+      memmove( attn12_t->data + attn1_t->size, attn2_t->data, attn2_t->nbytes );
+
+      // [25, 16]
+      TestTensor *attention = tensor_transpose_last_2d( arena, attn12_t );
+#else
+      // [25, 8] + [25, 8] -> [25, 16]
+      TestTensor *attention = tensor_concat_last_dim( arena, attn1, attn2 );
+#endif
+      Assert(attention->nbytes == (proj_input_stride * sizeof(float)));
+      memmove(proj_input->data + proj_input_stride * batch_index, attention->data, attention->nbytes);
+
+      endTemporaryMemory( mark_batch );
+   }
+
+      // [bs, 25, 16] x [16, 16] + [16] = [bs, 25, 16]
+   tensor_linear( proj_input, proj_weights, proj_biases, output_batch );
+
+#else
+
+   TestTensor *QKV_result = tensor_zeros_3d( arena, batch_size, seq_length, out_features );
+   tensor_linear( input_batch, QKV_weights, QKV_biases, QKV_result );
+
+   TestTensor *QKV_result_T = tensor_transpose_last_2d( arena, QKV_result );
+   int head_size = seq_length * head_length * batch_size;
+
+   TestTensor head_ref = {.ndim = 2, .dims = {head_length, seq_length * batch_size}};
+
+   head_ref.size = head_size;
+   head_ref.nbytes = head_size * sizeof( float );
+
+   head_ref.data = QKV_result_T->data;
+   TestTensor *q1 = tensor_transpose_last_2d( arena, &head_ref );
+   q1->ndim = 3;
+   q1->dims[0] = batch_size;
+   q1->dims[1] = seq_length;
+   q1->dims[2] = head_length;
+
+   head_ref.data += head_size;
+   TestTensor *q2 = tensor_transpose_last_2d( arena, &head_ref );
+   q2->ndim = 3;
+   q2->dims[0] = batch_size;
+   q2->dims[1] = seq_length;
+   q2->dims[2] = head_length;
+
+   head_ref.data += head_size;
+   TestTensor *k1 = tensor_transpose_last_2d( arena, &head_ref );
+   k1->ndim = 3;
+   k1->dims[0] = batch_size;
+   k1->dims[1] = seq_length;
+   k1->dims[2] = head_length;
+
+
+   head_ref.data += head_size;
+   TestTensor *k2 = tensor_transpose_last_2d( arena, &head_ref );
+   k2->ndim = 3;
+   k2->dims[0] = batch_size;
+   k2->dims[1] = seq_length;
+   k2->dims[2] = head_length;
+
+
+   head_ref.data += head_size;
+   TestTensor *v1 = tensor_transpose_last_2d( arena, &head_ref );
+   v1->ndim = 3;
+   v1->dims[0] = batch_size;
+   v1->dims[1] = seq_length;
+   v1->dims[2] = head_length;
+   v1 = tensor_transpose_last_2d(arena, v1);
+
+
+   head_ref.data += head_size;
+   TestTensor *v2 = tensor_transpose_last_2d( arena, &head_ref );
+   v2->ndim = 3;
+   v2->dims[0] = batch_size;
+   v2->dims[1] = seq_length;
+   v2->dims[2] = head_length;
+   v2 = tensor_transpose_last_2d(arena, v2);
+
+   TestTensor *a1 = tensor_zeros_3d( arena, batch_size, tdim( k1, -2 ), tdim( q1, -2 ) );
+   TestTensor *a2 = tensor_zeros_like( arena, a1 );
+
+   // TODO(irwin): batch-wrap all matmuls of [k, q, v, a]'s as they need to be multiplied like
+   //              k1[0] @ a1[0]
+   //              k1[1] @ a1[1] ...
+   //                  ...
+   //              k2[0] @ a2[0]
+   //              k2[1] @ a2[1] ...
+
+   for ( int batch_index = 0; batch_index < batch_size; ++batch_index )
+   {
+      TestTensor k1_slice = tensor_index_first_dim( k1, batch_index, false );
+      TestTensor k2_slice = tensor_index_first_dim( k2, batch_index, false );
+      TestTensor q1_slice = tensor_index_first_dim( q1, batch_index, false );
+      TestTensor q2_slice = tensor_index_first_dim( q2, batch_index, false );
+      TestTensor a1_slice = tensor_index_first_dim( a1, batch_index, false );
+      TestTensor a2_slice = tensor_index_first_dim( a2, batch_index, false );
+
+      tensor_linear( &k1_slice, &q1_slice, 0, &a1_slice );
+      tensor_linear( &k2_slice, &q2_slice, 0, &a2_slice );
+   }
+
+
+   // NOTE(irwin): 1.0f / sqrtf(head_length);
+   //              where head_length is the dimensionality of the head
+   //              (this is the sqrt(dk) in the paper Attention Is All You Need
+   //              https://arxiv.org/pdf/1706.03762.pdf)
+   // NOTE(irwin): this is done for numerical stability
+   const float scale = 1.0f / sqrtf((float)head_length);
+
+   tensor_mul_inplace( a1, scale );
+   tensor_mul_inplace( a2, scale );
+
+   softmax_inplace_stable( arena, a1 );
+   softmax_inplace_stable( arena, a2 );
+
+   // [25, 25] x [8, 25] = [25, 8]
+   TestTensor *attn1 = tensor_zeros_3d( arena, batch_size, tdim( a1, -2 ), tdim( v1, -2 ) );
+   TestTensor *attn2 = tensor_zeros_like( arena, attn1 );
+
+   for ( int batch_index = 0; batch_index < batch_size; ++batch_index )
+   {
+      TestTensor a1_slice = tensor_index_first_dim( a1, batch_index, false );
+      TestTensor a2_slice = tensor_index_first_dim( a2, batch_index, false );
+      TestTensor v1_slice = tensor_index_first_dim( v1, batch_index, false );
+      TestTensor v2_slice = tensor_index_first_dim( v2, batch_index, false );
+      TestTensor attn1_slice = tensor_index_first_dim( attn1, batch_index, false );
+      TestTensor attn2_slice = tensor_index_first_dim( attn2, batch_index, false );
+
+      // [25, 8]
+      // [25, 8]
+      tensor_linear( &a1_slice, &v1_slice, 0, &attn1_slice );
+      tensor_linear( &a2_slice, &v2_slice, 0, &attn2_slice );
+   }
+
+
+   for ( int batch_index = 0; batch_index < batch_size; ++batch_index )
+   {
+      TestTensor attn1_slice = tensor_index_first_dim( attn1, batch_index, false );
+      TestTensor attn2_slice = tensor_index_first_dim( attn2, batch_index, false );
+      TestTensor output_slice = tensor_index_first_dim( output_batch, batch_index, false );
+
+      // TODO(irwin): avoid taking an address of a stack variable
+      TestTensor *attn1_1b = &attn1_slice;
+      TestTensor *attn2_1b = &attn2_slice;
+      TestTensor *output = &output_slice;
+
+      TemporaryMemory mark_batch = beginTemporaryMemory( arena );
+
+      // [8, 25]
+      // [8, 25]
+      TestTensor *attn1_t = tensor_transpose_last_2d( arena, attn1_1b );
+      TestTensor *attn2_t = tensor_transpose_last_2d( arena, attn2_1b );
 
       // [16, 25]
       // TODO(irwin): tensor_concat routine
@@ -147,6 +307,7 @@ static void dual_head_attention(MemoryArena *arena, TestTensor *input_batch,
 
       endTemporaryMemory( mark_batch );
    }
+#endif
 
    endTemporaryMemory( mark );
    TracyCZoneEnd(dual_head_attention);
