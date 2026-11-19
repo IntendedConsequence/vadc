@@ -40,7 +40,7 @@ rem for /f "delims=" %%i in ('powershell -nologo -Command "[System.DateTime]::No
 rem     set "datetime_stamp=%%i"
 rem )
 
-set CL=/W4 /WX /Wv:18 /Zi /Od /Gm- /diagnostics:caret /options:strict /DWIN32 /D_CRT_SECURE_NO_WARNINGS
+set CL=/W4 /WX /Wv:19.34 /Zi /Od /Gm- /diagnostics:caret /options:strict /DWIN32 /D_CRT_SECURE_NO_WARNINGS
 rem set CL=%CL% /fsanitize=address
 set LINK=/INCREMENTAL:NO /SUBSYSTEM:CONSOLE kernel32.lib
 
