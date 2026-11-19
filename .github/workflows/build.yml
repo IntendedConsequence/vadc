@@ -22,8 +22,8 @@ jobs:
         submodules: recursive
 
     - name: 'Build vadc'
-      run: |
-        build_msvc.bat 0
+      shell: cmd
+      run: build_msvc.bat 0
     - uses: actions/upload-artifact@v7
       with:
         name: vadc-${{ runner.os }}
