@@ -33,7 +33,7 @@ jobs:
     runs-on: windows-2025
     strategy:
       fail-fast: false
-    name: Windows
+    name: Windows ONNX
     timeout-minutes: 15
     steps:
     - name: 'Checkout'
