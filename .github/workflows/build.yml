@@ -59,7 +59,12 @@ jobs:
     - uses: actions/upload-artifact@v7
       with:
         name: vadc-onnx-${{ runner.os }}
-        path: release_onnx/
+        path: |
+          release_onnx/vadc.exe
+          release_onnx/silero_vad_v3.onnx
+          release_onnx/silero_vad_v4.onnx
+          release_onnx/onnxruntime.dll
+          release_onnx/onnxruntime_providers_shared.dll
 
   release:
     needs: [build-win, build-win-onnx]
