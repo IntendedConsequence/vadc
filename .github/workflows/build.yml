@@ -28,6 +28,10 @@ jobs:
       with:
         name: vadc-${{ runner.os }}
         path: vadc.exe
+    - uses: actions/upload-artifact@v7
+      with:
+        name: filter_script-${{ runner.os }}
+        path: filter_script.exe
 
   build-win-onnx:
     runs-on: windows-2025
