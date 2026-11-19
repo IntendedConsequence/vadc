@@ -54,6 +54,7 @@ jobs:
         xcopy /i /y "vadc.exe" "release_onnx"
         xcopy /i /y "silero_vad_v3.onnx" "release_onnx"
         xcopy /i /y "silero_vad_v4.onnx" "release_onnx"
+        xcopy /i /y "silero_vad_v5_16k_minibatched-sim.onnx" "release_onnx"
         xcopy /i /y "lib\onnxruntime.dll" "release_onnx"
         xcopy /i /y "lib\onnxruntime_providers_shared.dll" "release_onnx"
     - uses: actions/upload-artifact@v7
@@ -63,6 +64,7 @@ jobs:
           release_onnx/vadc.exe
           release_onnx/silero_vad_v3.onnx
           release_onnx/silero_vad_v4.onnx
+          release_onnx/silero_vad_v5_16k_minibatched-sim.onnx
           release_onnx/onnxruntime.dll
           release_onnx/onnxruntime_providers_shared.dll
 
