@@ -51,11 +51,11 @@ jobs:
       shell: cmd
       run: |
         mkdir release_onnx
-        xcopy /i /y vadc.exe release_onnx
-        xcopy /i /y silero_vad_v3.onnx release_onnx
-        xcopy /i /y silero_vad_v4.onnx release_onnx
-        xcopy /i /y lib/onnxruntime.dll release_onnx
-        xcopy /i /y lib/onnxruntime_providers_shared.dll release_onnx
+        xcopy /i /y "vadc.exe" "release_onnx"
+        xcopy /i /y "silero_vad_v3.onnx" "release_onnx"
+        xcopy /i /y "silero_vad_v4.onnx" "release_onnx"
+        xcopy /i /y "lib/onnxruntime.dll" "release_onnx"
+        xcopy /i /y "lib/onnxruntime_providers_shared.dll" "release_onnx"
     - uses: actions/upload-artifact@v7
       with:
         name: vadc-onnx-${{ runner.os }}
