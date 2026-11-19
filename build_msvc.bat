@@ -74,6 +74,7 @@ rem set "VADC_DEV_FLAGS=%VADC_DEV_FLAGS% /DTRACY_ENABLE"
 del vadc.pdb >nul 2>&1 & cl.exe /nologo /MP %VADC_DEV_FLAGS% /DONNX_INFERENCE_ENABLED=%ONNX% /Itracy vadc.c tracy\TracyClient.cpp /link Shell32.lib Shlwapi.lib
 rem del vadc.pdb >nul 2>&1 & cl.exe /nologo /MD /MP /O2 /arch:AVX2 /DNDEBUG /DONNX_INFERENCE_ENABLED=1 /Itracy vadc.c tracy\TracyClient.cpp /link lib\onnxruntime.lib Shell32.lib
 
+if not exist vadc.exe EXIT /b 1
 
 rem
 rem fiter_script
