@@ -2271,6 +2271,8 @@ TestFunctionDescription test_function_descriptions[] =
 // int main(int argc, char *argv[])
 int main()
 {
+   int exit_code = 0;
+
    b32 all_pass = 1;
    int failed_count = 0;
    int passed_count = 0;
@@ -2298,9 +2300,10 @@ int main()
    }
    else
    {
+      exit_code = 1;
       fprintf( stderr, "%d out of %d tests FAILED!\n", failed_count, test_count );
    }
 
 
-   return 0;
+   return exit_code;
 }
