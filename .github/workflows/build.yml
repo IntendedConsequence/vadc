@@ -23,6 +23,8 @@ jobs:
 
     - name: 'Build vadc'
       shell: cmd
+      env:
+        TEST_INCLUDE_UNTRACKED: 0
       run: build_msvc.bat 0
     - name: 'Test vadc'
       shell: cmd

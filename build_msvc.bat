@@ -87,6 +87,10 @@ rem
 rem test
 rem
 
+if "%TEST_INCLUDE_UNTRACKED%" equ "" (
+  set "TEST_INCLUDE_UNTRACKED=1"
+)
+
 rem cl.exe /nologo test.c /Fdtest_%datetime_stamp%d.pdb /link /PDB:test_%datetime_stamp%.pdb
 rem cl.exe /nologo test.c /link /PDB:test_%datetime_stamp%.pdb
 
@@ -100,6 +104,8 @@ set CL=%CL% /fp:precise
 set CL=%CL% /O2 /arch:AVX2
 @REM set CL=%CL% /DTRACY_ENABLE /DTRACY_NO_SAMPLING
 rem set CL=%CL% /DNDEBUG
+set CL=%CL% /DTEST_INCLUDE_UNTRACKED=%TEST_INCLUDE_UNTRACKED%
+
 del test.pdb >nul & cl.exe /nologo /MP /Itracy test.c tracy\TracyClient.cpp /link
 
 
