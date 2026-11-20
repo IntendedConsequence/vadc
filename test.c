@@ -2247,13 +2247,16 @@ TestFunctionDescription test_function_descriptions[] =
    TEST_FUNCTION_DESCRIPTION( transformer_layers_1_2_3_test ),
    TEST_FUNCTION_DESCRIPTION( transformer_layers_1_2_3_4_test ),
    TEST_FUNCTION_DESCRIPTION( adaptive_normalization_encoder_test ),
+#if TEST_INCLUDE_UNTRACKED
    TEST_FUNCTION_DESCRIPTION( stft_normalization_encoder_test ),
    TEST_FUNCTION_DESCRIPTION( stft_normalization_encoder_lstm_test ),
    TEST_FUNCTION_DESCRIPTION( stft_normalization_encoder_lstm_decoder_test ),
    TEST_FUNCTION_DESCRIPTION( silero_test ),
    TEST_FUNCTION_DESCRIPTION(stft_test),
+#endif // TEST_INCLUDE_UNTRACKED
    TEST_FUNCTION_DESCRIPTION(adaptive_audio_normalization_test),
    TEST_FUNCTION_DESCRIPTION(lstm_test),
+#if TEST_INCLUDE_UNTRACKED
    TEST_FUNCTION_DESCRIPTION(lstm_test_RED),
    TEST_FUNCTION_DESCRIPTION(lstm_test_RED_new),
    TEST_FUNCTION_DESCRIPTION(lstm_test_RED_1layer),
@@ -2266,6 +2269,7 @@ TestFunctionDescription test_function_descriptions[] =
    TEST_FUNCTION_DESCRIPTION(lstm_test_RED_v5),
    TEST_FUNCTION_DESCRIPTION(decoder_test_v5),
    TEST_FUNCTION_DESCRIPTION(silero_v5_test),
+#endif // TEST_INCLUDE_UNTRACKED
 };
 
 // int main(int argc, char *argv[])
